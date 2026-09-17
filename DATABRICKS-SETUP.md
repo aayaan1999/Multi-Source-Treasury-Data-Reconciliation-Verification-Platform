@@ -36,6 +36,30 @@ When ready to move past logic validation (real storage, governed tables, CI-styl
 
 ---
 
+## Cost Notice: Sections 1-7 Are Paid Azure Services
+
+Everything from here on (workspace, compute, storage, Access Connector) is a normal billed Azure
+resource — none of it is free-tier by default. It can be covered by the Azure free account's
+**$200 / 30-day credit** (https://azure.microsoft.com/en-us/free/, requires a card at signup for
+identity verification — no charge unless you exceed the credit or explicitly upgrade to
+pay-as-you-go afterward). Given this POC's tiny data size, staying within $200 for a 1-week build
+is very unlikely to be an issue, but keep auto-terminate on the cluster (step 2) so nothing burns
+credit sitting idle. What actually generates cost:
+
+| Resource (section) | What's billed |
+|---|---|
+| Databricks workspace (1) | Nothing by itself — cost is driven by compute usage, not the workspace resource |
+| Compute cluster (2) | **Databricks DBUs** (Premium tier rate) + the underlying **Azure VM** it runs on, billed per hour while running |
+| Unity Catalog metastore (3) | Free to create; no separate charge |
+| ADLS Gen2 storage account (4) | Storage capacity + transactions — negligible at this data size (a few KB of CSVs) |
+| Access Connector (5) | Free — it's just a managed identity, no compute of its own |
+| Databricks Repos (7) | Free — no additional charge for Git integration |
+
+So in practice: the only meaningful line item is **cluster runtime** (step 2) — stop/auto-terminate
+it when not actively running notebooks, and the $200 credit comfortably covers a week of POC work.
+
+---
+
 ## 1. Create the Azure Databricks workspace
 
 - Azure Portal: https://portal.azure.com/
