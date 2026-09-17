@@ -1,45 +1,67 @@
 # Prerequisites
 
-Tech stack and access required to build and run this POC, based on `bank-x poc-brief.md`.
+Tech stack and access required to build and run this platform. Two source documents: the
+Databricks layer is per `bank-x poc-brief.md`; everything else (application layer, screens,
+database schema) is per `Middle East bank data cleaning and reporting.md`, the current source of
+truth — see `CLAUDE.md` for how the two fit together.
 
-## Data Processing (Databricks side)
+## Data Processing (Databricks side — unchanged)
 
 - **Databricks workspace** — runtime version to be confirmed with the client (brief section 11, Q1)
 - **Apache Spark / PySpark** — all four notebooks are written in PySpark
 - **Delta Lake** — required for every output table (`treasury_positions_raw`, `treasury_positions_clean`, `treasury_positions_exceptions`, `treasury_consolidated_report`, `exception_summary`); confirm with client whether it's already enabled on the workspace or needs setup (brief section 11, Q2)
-- **CSV export capability** — Databricks output must be exportable to CSV for the Appian handoff
+- **CSV export capability** — Databricks output must be exportable to CSV for the application-layer import job
 
-## Workflow & UI (Appian side)
+## Application Layer (replaces the original Appian scope)
 
-- **Appian platform access** — for building the Exception Queue, Case Detail, Consolidated Report, and Audit Trail views
-- **Appian connected system or file-drop mechanism** — to ingest Databricks CSV exports; exact mechanism still to be decided with the client (brief section 11, Q3-Q4)
+- **PostgreSQL** — full schema per the source doc: entity tables (`customers`, `accounts`, `loans`,
+  `branches`), time-series tables (`transactions`, `capital_positions`, `liquidity_daily`, `fx_rates`),
+  and reporting/workflow tables (`report_definitions`, `report_instances`, `report_line_items`,
+  `validation_rules`, `calculation_audit`, `risk_weights`, `submitted_files`, `users`, `roles`,
+  `workflow_steps`, `workflow_instances`, `tasks`, `comments`, `audit_log`, `limits`, `breaches`).
+  Row-level security is used to enforce who sees what.
+- **FastAPI** (Python) — backend/API layer
+- **React + Tailwind CSS + Recharts** — frontend, six screens
+- **APScheduler** — nightly batch jobs (Databricks CSV import, summary-table precomputation, breach
+  detection); Celery + Redis only if this needs to scale past POC
+- **ReportLab** — PDF export (regulatory report format)
+- **openpyxl** — Excel export (regulator template layout)
+- **Auth** — four seeded demo users (analyst, reviewer, approver, admin) is sufficient for the POC;
+  Keycloak only if real SSO is required later
+- Explicitly **not** required for the POC: a workflow engine (e.g. Camunda) — a status column and a
+  handful of API endpoints cover the approval chain per the source doc's own guidance
 
 ## Input Data
 
-- Three sample entity CSV files (not yet created): `lebanon_positions.csv`, `ksa_positions.csv`, `qatar_positions.csv` — see brief section 4 for required schema and injected data-quality issues
+- Three sample entity CSV files (built): `lebanon_positions.csv`, `ksa_positions.csv`, `qatar_positions.csv` — see brief section 4 for required schema and injected data-quality issues
 - Hardcoded FX rate table (USD/SAR/QAR/LBP conversions) — simulated for POC, no live feed
+- **Not yet available**: customers, accounts, loans, transactions, branches, capital_positions,
+  liquidity_daily, fx_rates data — no source brief covers these; a synthetic data generator is
+  needed before Screens 1, 2, 4, 5 can be built and demoed meaningfully (see `PLATFORM-BUILD-PLAN.md`
+  Phase 1)
 
 ## Dev Tooling
 
 - **Git / GitHub** — this repo (`https://github.com/aayaan1999/Multi-Source-Treasury-Data-Reconciliation-Verification-Platform`), branch `main`
-- **Claude Code** — used to generate the PySpark notebook code
+- **Claude Code** — used to generate the PySpark notebooks and the FastAPI/React application code
 
 ## Open Questions Blocking Setup
 
-These are listed in brief section 11 and should be resolved with the Dev Lead/client before Day 1 of the build:
-
 1. Databricks runtime version available in the client's environment
 2. Whether Delta Lake is already enabled or needs setup
-3. Simplest Databricks → Appian integration mechanism (file drop, REST API, or connected system)
-4. Whether Appian needs CSV or can read Delta tables directly
-5. Any branding requirements for the Appian UI for the demo
+3. Hosting target for PostgreSQL/FastAPI/React (Azure App Service, AKS, or local/dev for the demo) — not yet decided
+4. Does real customer/loan/account/branch data exist anywhere, or does the full platform demo run entirely on synthetic data?
+5. What scale should the synthetic dataset target — the source doc references "two million transactions" as a performance-proofing case; confirm whether the demo actually needs that scale
+6. Which regulatory report template(s) are needed first for Screen 3 (capital adequacy is the one worked out in the source doc; others may need their own layout)
+7. Any branding requirements for the React frontend for the demo
 
 ---
 
-## End-to-End Setup Process
+## End-to-End Setup Process (Databricks portion)
 
-This walks through standing up the full pipeline from an empty Databricks workspace through
-to Appian consuming clean output. `notebooks/01_ingestion_standardisation.py` currently defaults
+This walks through standing up the Databricks side of the pipeline, from an empty workspace
+through to CSV output ready for the PostgreSQL import job (`PLATFORM-BUILD-PLAN.md` Phase 1).
+`notebooks/01_ingestion_standardisation.py` currently defaults
 its `input_dir` widget to `/Volumes/treasury_poc/raw` — the storage setup below is what makes
 that path real.
 
@@ -60,7 +82,7 @@ workspace, that's **Azure Data Lake Storage Gen2 (ADLS Gen2)**:
 
 1. Provision the Azure Databricks workspace (Premium tier if Unity Catalog governance is needed for the client's compliance requirements — likely relevant given BDL/CMA/BCC regulatory context).
 2. Create a cluster (or use Serverless SQL/Jobs compute) with a Databricks Runtime version that includes Delta Lake by default (Runtime 10.4 LTS or later — bundled, no separate install) — confirms/resolves brief Q1-Q2.
-3. Enable **Unity Catalog** if available, so `treasury_positions_raw`, `treasury_positions_clean`, `treasury_positions_exceptions`, `treasury_consolidated_report`, and `exception_summary` are governed, three-level-namespace tables (`catalog.schema.table`) rather than legacy Hive metastore tables — cleaner for handing off to an Appian connected system later.
+3. Enable **Unity Catalog** if available, so `treasury_positions_raw`, `treasury_positions_clean`, `treasury_positions_exceptions`, `treasury_consolidated_report`, and `exception_summary` are governed, three-level-namespace tables (`catalog.schema.table`) rather than legacy Hive metastore tables — cleaner for the PostgreSQL import job to read from later.
 4. Connect this GitHub repo via **Repos** (Workspace → Repos → clone `https://github.com/aayaan1999/Multi-Source-Treasury-Data-Reconciliation-Verification-Platform`) so the four notebooks sync directly instead of being manually copy-pasted — see prior discussion on notebook deployment.
 
 ### 3. Connector: Databricks ↔ Azure Storage
@@ -85,20 +107,26 @@ The four notebooks execute in strict sequence — each depends on the previous n
 
 1. **Notebook 1 (Ingestion & Standardisation)** reads the raw CSVs from storage, fixes schema/date/currency-pair inconsistencies, converts amounts to USD, writes `treasury_positions_raw`. Nothing is dropped here — malformed data is normalized where possible and passed through for verification, not silently discarded.
 2. **Notebook 2 (Data Quality Verification)** reads `treasury_positions_raw`, runs the 8 checks from brief section 5 against every row, and splits the table in two: rows that pass everything go to `treasury_positions_clean`; anything that fails one or more checks goes to `treasury_positions_exceptions` with a flag label and description.
-3. **Notebook 3 (Reconciliation)** reads only `treasury_positions_clean` (exceptions are excluded until a human resolves them in Appian) and produces the group-level `treasury_consolidated_report`.
+3. **Notebook 3 (Reconciliation)** reads only `treasury_positions_clean` (exceptions are excluded until a human resolves them in the application layer's Screen 6 workflow) and produces the group-level `treasury_consolidated_report`.
 4. **Notebook 4 (Exception Summary)** reads `treasury_positions_exceptions` and produces `exception_summary` — counts by entity/flag type, for the demo narrative ("which entity has the most issues, of what type").
-5. Notebooks 3 and 4 also export their Delta table output to CSV in the `reports/`/`exceptions/` storage folders — this CSV is the file Appian actually reads.
+5. Notebooks 3 and 4 also export their Delta table output to CSV in the `reports/`/`exceptions/` storage folders — this CSV is what the nightly PostgreSQL import job (`PLATFORM-BUILD-PLAN.md` Phase 1) reads.
 
-An exception approved in Appian doesn't get looped back into `treasury_positions_clean` automatically for this POC — file-based, one-directional integration only (brief section 6, "no need for real-time API for POC").
+An exception approved in the application layer doesn't get looped back into `treasury_positions_clean` automatically for this POC — file-based, one-directional integration only, same philosophy as the original brief's "no need for real-time API for POC" guidance.
 
 ### 6. Databricks Jobs (running notebooks 1-4 in sequence)
 
 Once individual runs are validated manually, wire them into a **Databricks Job** (Workflows) with 4 sequential tasks (one per notebook) and a "run on new data arrival" or scheduled trigger — this is what would replace manually clicking "Run All" on each notebook in a live (non-demo) deployment. Not required for the 1-week POC demo itself, but worth setting up once notebooks are validated so the Day 7 rehearsal can show a live end-to-end run instead of pre-run output.
 
-### 7. Connector: Databricks → Appian
+### 7. Connector: Databricks → PostgreSQL (application layer)
 
-Per brief section 6/11 (Q3-Q4), pick whichever is simplest for the client's Appian environment:
+Pick whichever is simplest to stand up first; either works for a POC:
 
-- **File drop (simplest for POC)** — Notebook 3/4's CSV export lands in a storage folder (or SFTP/network share) that an Appian process model polls or is triggered on, using Appian's **File System connected system** or a scheduled process.
-- **Appian connected system reading Delta directly** — requires a JDBC/ODBC connection from Appian to Databricks SQL Warehouse (Databricks provides a JDBC driver); more setup, avoids the CSV intermediate step, but not necessary for a 1-week POC per the brief's own guidance ("file-based integration is sufficient").
-- **REST API** — Databricks Jobs/SQL REST API could be called from an Appian integration, but the brief explicitly deprioritizes this for POC scope.
+- **File-based import job (simplest, matches original brief's philosophy)** — Notebook 3/4's CSV
+  export lands in a storage folder; an APScheduler job (or a simple Python script run nightly)
+  reads the CSVs and upserts into the corresponding PostgreSQL tables (`treasury_consolidated_report`,
+  `exception_summary`, `treasury_positions_exceptions`).
+- **Direct read via Databricks SQL Warehouse (JDBC/ODBC)** — the FastAPI import job connects
+  straight to Databricks instead of reading CSV, avoiding the file intermediate step; more setup,
+  not necessary for the POC.
+- **REST API** — Databricks Jobs/SQL REST API could be called from the FastAPI backend, but adds
+  complexity with no POC-stage benefit over the file-based approach.

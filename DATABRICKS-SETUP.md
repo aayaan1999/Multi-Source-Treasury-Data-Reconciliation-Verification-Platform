@@ -8,7 +8,7 @@ Two paths are documented:
 - **Community Edition quick-start** (below) — free, zero Azure setup, good enough to validate the
   notebook logic against the small sample CSVs (10-11 rows each).
 - **Full Azure setup** (section 1 onward) — paid, Unity Catalog + ADLS Gen2 + Repos, needed once
-  you're past validating logic and into the real Appian file-drop integration.
+  you're past validating logic and into the real PostgreSQL import integration.
 
 ---
 
@@ -32,7 +32,7 @@ Steps:
 7. Also change the `OUTPUT_TABLE` write to the default Hive metastore (drop the three-level Unity Catalog namespace — `treasury_positions_raw` as a bare table name works as-is against Community Edition's default metastore)
 8. **Run All** — confirms the same row-count sanity check as the full setup, at zero cost
 
-When ready to move past logic validation (real storage, governed tables, CI-style Git sync, Appian integration), continue with the full Azure setup starting at section 1 below.
+When ready to move past logic validation (real storage, governed tables, CI-style Git sync, application-layer integration), continue with the full Azure setup starting at section 1 below.
 
 ---
 
