@@ -43,6 +43,9 @@ to Appian consuming clean output. `notebooks/01_ingestion_standardisation.py` cu
 its `input_dir` widget to `/Volumes/treasury_poc/raw` — the storage setup below is what makes
 that path real.
 
+For the click-by-click version of steps 1-4 below, with direct links to every Azure Portal blade
+and Databricks doc page used, see `DATABRICKS-SETUP.md`.
+
 ### 1. Azure Storage (raw file landing zone)
 
 The three entity CSVs need somewhere the Databricks cluster can read from. For an Azure-hosted
