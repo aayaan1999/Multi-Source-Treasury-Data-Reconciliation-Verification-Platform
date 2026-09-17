@@ -4,6 +4,36 @@ Step-by-step setup for the Azure Databricks environment this POC runs on, with d
 the portals/docs used at each step. Companion to the higher-level "End-to-End Setup Process"
 section in `PREREQUISITES.md` — this file is the click-by-click version.
 
+Two paths are documented:
+- **Community Edition quick-start** (below) — free, zero Azure setup, good enough to validate the
+  notebook logic against the small sample CSVs (10-11 rows each).
+- **Full Azure setup** (section 1 onward) — paid, Unity Catalog + ADLS Gen2 + Repos, needed once
+  you're past validating logic and into the real Appian file-drop integration.
+
+---
+
+## 0. Community Edition Quick-Start (free, no Azure account needed)
+
+Fastest, zero-cost way to prove Notebooks 1-4 work before investing in the full Azure setup below.
+**Trade-off:** no Unity Catalog, no ADLS Gen2, no Repos — Delta tables live in the workspace's
+default (Hive) metastore instead of a governed catalog, and notebooks have to be uploaded manually
+since Git integration isn't available on Community Edition.
+
+- Sign up: https://community.cloud.databricks.com/
+- Docs — Community Edition overview: https://docs.databricks.com/aws/en/getting-started/community-edition
+
+Steps:
+1. Go to https://community.cloud.databricks.com/ and sign up (email + password, no Azure/AWS account required)
+2. Once logged in, **Compute** (left sidebar) → **Create Compute** → accept the default single-node cluster (Community Edition caps you to one small cluster with a 6-hour auto-terminate — fine for this data size)
+3. **Data** (left sidebar) → **Add Data** → **Upload File** → upload `lebanon_positions.csv`, `ksa_positions.csv`, `qatar_positions.csv` from this repo — Community Edition stores them under DBFS at a path like `/FileStore/tables/lebanon_positions.csv`
+4. **Workspace** (left sidebar) → **Import** → upload `notebooks/01_ingestion_standardisation.py` directly from this repo (drag-and-drop or browse) — since there's no Repos/Git integration here, re-upload the file manually each time it changes
+5. Open the imported notebook, attach it to the cluster from step 2
+6. Since there's no Unity Catalog Volume here, set the `input_dir` widget to the DBFS path from step 3, e.g. `/FileStore/tables` — the notebook's `SOURCE_FILES` dict then resolves to `/FileStore/tables/lebanon_positions.csv` etc.
+7. Also change the `OUTPUT_TABLE` write to the default Hive metastore (drop the three-level Unity Catalog namespace — `treasury_positions_raw` as a bare table name works as-is against Community Edition's default metastore)
+8. **Run All** — confirms the same row-count sanity check as the full setup, at zero cost
+
+When ready to move past logic validation (real storage, governed tables, CI-style Git sync, Appian integration), continue with the full Azure setup starting at section 1 below.
+
 ---
 
 ## 1. Create the Azure Databricks workspace
@@ -122,6 +152,8 @@ Steps:
 
 | Purpose | Link |
 |---|---|
+| Databricks Community Edition (free signup) | https://community.cloud.databricks.com/ |
+| Community Edition docs | https://docs.databricks.com/aws/en/getting-started/community-edition |
 | Azure Portal | https://portal.azure.com/ |
 | Create Azure Databricks resource | https://portal.azure.com/#create/Microsoft.Databricks |
 | Create Storage Account | https://portal.azure.com/#create/Microsoft.StorageAccount |
