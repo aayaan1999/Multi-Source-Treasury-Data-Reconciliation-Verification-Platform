@@ -82,9 +82,14 @@ Lake:
    table, plus one shared `data_quality_exceptions` log (`source_table`, `record_key`,
    `flag_label`, `description`) since the 8 source tables don't share a schema. Spec:
    `specs/notebook-02-bank-data-quality.md`.
-3. **Notebook 3 — Reconciliation & Consolidated Report** (not yet built, **needs a new spec
-   first** — its original design read treasury-specific tables that no longer exist).
-4. **Notebook 4 — Exception Summary Report** (not yet built, same caveat as Notebook 3).
+3. **Notebook 3 — Nightly KPI Summary** (spec written, not yet implemented) — precomputes 5 of
+   the 8 Executive Summary KPIs (CAR, LCR, NPL ratio, total assets, dollarization ratio) from
+   Notebook 2's clean tables; NIM/cost-to-income/ROE are explicitly blocked pending schema gaps
+   (see the spec). Output: `kpi_daily_summary`. Spec: `specs/notebook-03-kpi-summary.md`.
+4. **Notebook 4 — Exception Summary Report** (spec written, not yet implemented) — summarises
+   `data_quality_exceptions` by table and flag type, plus an exception-rate-per-table figure.
+   Output: `exception_summary_by_table`, `exception_summary_by_flag`. Spec:
+   `specs/notebook-04-exception-summary.md`.
 
 Conventions when building these notebooks: PySpark + `.format("delta")` for every output table;
 inline comments explaining each transformation step (carried over from the original brief's

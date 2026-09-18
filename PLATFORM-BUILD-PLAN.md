@@ -21,9 +21,11 @@ phase is historical (`specs/day-01-sample-data-and-notebook-scaffolding.md`, sup
 - [x] Notebook 1 — Ingestion & Standardisation → `raw_customers`, `raw_accounts`, `raw_loans`,
   `raw_transactions`, `raw_branches`, `raw_capital_positions`, `raw_liquidity_daily`, `raw_fx_rates`
 - [x] Notebook 2 — Data Quality Verification → `{table}_clean` × 8, `data_quality_exceptions`
-- [ ] Notebook 3 — needs a new spec first; original design (reconciling treasury positions) no
-  longer applies to the bank-wide schema — decide what "reconciliation" means here before building
-- [ ] Notebook 4 — same caveat as Notebook 3
+- [ ] Notebook 3 — Nightly KPI Summary (`kpi_daily_summary`); spec written
+  (`specs/notebook-03-kpi-summary.md`), not yet implemented — 3 of 8 KPIs are blocked on schema
+  gaps flagged in that spec (NIM, cost-to-income, ROE)
+- [ ] Notebook 4 — Exception Summary (`exception_summary_by_table`, `exception_summary_by_flag`);
+  spec written (`specs/notebook-04-exception-summary.md`), not yet implemented
 - [ ] Run Notebooks 1-2 against a real Databricks cluster (Community Edition or Azure) and validate
   output against the traceability tables in the specs
 - [ ] Scale up `bank-data/*.csv` (or generate separately) once realistic volume is needed —
