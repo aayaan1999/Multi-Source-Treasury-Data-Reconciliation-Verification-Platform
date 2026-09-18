@@ -21,17 +21,20 @@ treasury-entity CSVs (`lebanon_positions.csv`, etc.) and the treasury-specific N
 used to feed are **no longer used by any notebook** — kept in the repo as historical reference
 (see `specs/day-01-sample-data-and-notebook-scaffolding.md`, marked superseded).
 
-**Notebooks 3-4 are not yet rebuilt** and their original design (reading `treasury_positions_clean`
-/ `treasury_positions_exceptions`) no longer applies, since Notebooks 1-2 no longer produce those
-tables. Before building them, a new spec is needed defining what "Reconciliation & Consolidated
-Report" and "Exception Summary" mean against the bank-wide schema's `{table}_clean` tables and
-`data_quality_exceptions` log — don't assume the original brief's design still fits.
+**Notebooks 3-5 are speced but not yet implemented.** Notebook 3 (Nightly KPI Summary) and
+Notebook 4 (Exception Summary) have specs at `specs/notebook-03-kpi-summary.md` and
+`specs/notebook-04-exception-summary.md`. Notebook 5 (Fraud & Business Rule Detection, new — see
+below) has a spec at `specs/notebook-05-fraud-business-rules.md`.
+
+**As of a 3-week timeline decision, the workflow architecture changed: Camunda 8 (self-hosted)
+replaces the "status column + endpoints" design** the source doc originally recommended for a
+plain POC — see "Workflow Engine Decision" below. `3-WEEK-POC-PLAN.md` is the current near-term
+build plan; `PLATFORM-BUILD-PLAN.md` remains the longer-term full-6-screen-platform reference but
+is **not the plan currently being executed** — don't build against its Phase 1-6 without checking
+`3-WEEK-POC-PLAN.md` first for what's actually in scope right now.
 
 The entire application layer (PostgreSQL schema, FastAPI backend, React frontend) is not yet
-built. See `PLATFORM-BUILD-PLAN.md` for the phased roadmap (note: its Phase 1 description of the
-Databricks→Postgres import job references the old treasury table names and needs updating to
-match the current `data_quality_exceptions`/`{table}_clean` output — flag this if picking up
-that phase).
+built.
 
 ## What This Project Is
 
@@ -90,6 +93,21 @@ Lake:
    `data_quality_exceptions` by table and flag type, plus an exception-rate-per-table figure.
    Output: `exception_summary_by_table`, `exception_summary_by_flag`. Spec:
    `specs/notebook-04-exception-summary.md`.
+5. **Notebook 5 — Fraud & Business Rule Detection** (spec written, not yet implemented; new for
+   the 3-week Camunda extension) — runs threshold-based fraud/business rules
+   (`LARGE_AMOUNT`, `VELOCITY_BREACH`, `STRUCTURING_PATTERN`, `DUPLICATE_TRANSACTION`) against
+   `transactions_clean`, separate from Notebook 2's structural checks since fraud and data-quality
+   are different concerns. Output: `flagged_transactions` (mutable `status`, updated by human
+   review — the one notebook output that isn't a clean overwrite-on-rerun). Spec:
+   `specs/notebook-05-fraud-business-rules.md`.
+6. **Notebook 6 — Portfolio, Branch & Scenario Snapshot** (spec written, not yet implemented; new
+   for the "no cuts, all 6 screens" plan revision) — Gold-layer aggregates feeding Screens 2, 4,
+   and 5 (loan breakdown by dimension, IFRS 9 staging, top-20 exposures, ageing, LTV distribution,
+   branch/segment/product performance, the Scenario Modelling snapshot). Reads only Notebook 2's
+   clean tables (not Notebook 3), so Notebooks 3 and 6 can be built in parallel. Introduces its
+   own documented assumptions (`PRODUCT_RATE_TYPE`, `ACCOUNT_RATE_TYPE`,
+   `SEGMENT_COST_ALLOCATION`) alongside Notebook 3's. Spec:
+   `specs/notebook-06-portfolio-branch-scenario-snapshot.md`.
 
 Conventions when building these notebooks: PySpark + `.format("delta")` for every output table;
 inline comments explaining each transformation step (carried over from the original brief's
@@ -108,9 +126,18 @@ orientation summary.
 React + Tailwind + Recharts (frontend). Background jobs: APScheduler for a POC (Celery + Redis
 only if scaling past POC). PDF export: ReportLab. Excel export: openpyxl. Auth: four seeded
 demo users (analyst, reviewer, approver, admin) for the POC — Keycloak only if real SSO is
-later required. **Do not reach for a workflow engine (e.g. Camunda) for the POC** — a status
-column and a handful of endpoints cover the approval chain; this is explicit guidance in the
-source doc, not a default to reconsider.
+later required.
+
+**Workflow Engine Decision (overrides the source doc's original guidance):** the source doc
+originally said not to reach for a workflow engine like Camunda for a plain POC — a status column
+and a handful of endpoints were meant to cover the approval chain. **For the 3-week Camunda
+extension, that's overridden**: Screen 6's approval chain is now built on **Camunda 8,
+self-hosted** (Zeebe + Elasticsearch + Operate + Tasklist via Docker Compose), not a Postgres
+status column. React's Screen 6 calls Camunda Tasklist's REST API rather than a custom FastAPI
+workflow endpoint. See `specs/camunda-bpmn-process-design.md` for the process design and
+`3-WEEK-POC-PLAN.md` for why. If a future session is *not* working under that 3-week Camunda
+scope, the original status-column guidance still applies — this override is specific to that
+timeline decision, not a permanent architecture change to the source doc's own recommendation.
 
 **Database — two kinds of tables:**
 - *Entities:* `customers`, `accounts`, `loans`, `branches`
@@ -163,7 +190,21 @@ system slots into the pipeline unchanged without confirming its actual export fo
 
 ## Roadmap
 
-See `PLATFORM-BUILD-PLAN.md` for the phased build plan (Databricks layer, then Postgres/FastAPI
-foundation, then screens in priority order, then workflow/audit-trail, then integration/demo
-prep). `7-DAY-PLAN.md` is retained for its original scope (Databricks Days 1-3 only) — the app
-layer no longer fits a 1-week timeline given the full platform scope.
+**`3-WEEK-POC-PLAN.md` is the plan currently being executed.** Per an explicit "no cuts" decision,
+**all 6 screens are in scope for the 3-week demo**, not a subset — made possible only by (a) every
+screen being "shallow-but-complete" rather than full source-doc depth (see that plan's
+"Per-Screen Shallow Scope" section for exactly what's simplified per screen), and (b) the plan
+assuming **~3 parallel workstreams** (data/Databricks, Camunda/workflow infra, React frontend),
+not one person working sequentially — if actual team size is smaller, the timeline slips; that's
+stated explicitly in the plan, not glossed over.
+
+Three previously-blocked KPIs (NIM, Cost-to-Income, ROE — `specs/notebook-03-kpi-summary.md`) and
+the Camunda Compliance-routing gap (`specs/camunda-bpmn-process-design.md`) are now resolved with
+**documented placeholder assumptions**, not left blank, so all 8 KPI tiles and all 3 task-routing
+groups actually work in the demo. These assumptions need a UI footnote wherever they feed a
+number, and need confirming with whoever owns the source-of-truth doc — they make the demo
+complete, not verified.
+
+`PLATFORM-BUILD-PLAN.md` is the longer-term full-depth reference (what each screen looks like with
+nothing shallow-cut) — still the eventual target once the 3-week window is done. `7-DAY-PLAN.md`
+is retained for its original scope (Databricks Days 1-3 only, treasury-specific, now historical).

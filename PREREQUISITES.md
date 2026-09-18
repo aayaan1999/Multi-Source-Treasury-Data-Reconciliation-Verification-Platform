@@ -30,8 +30,29 @@ Notebook 1-2 rewrite. `bank-x poc-brief.md` is historical reference only — see
 - **openpyxl** — Excel export (regulator template layout)
 - **Auth** — four seeded demo users (analyst, reviewer, approver, admin) is sufficient for the POC;
   Keycloak only if real SSO is required later
-- Explicitly **not** required for the POC: a workflow engine (e.g. Camunda) — a status column and a
-  handful of API endpoints cover the approval chain per the source doc's own guidance
+- **Dashboards stay custom React + Recharts, not Power BI/Tableau** — explicit decision (see
+  `CLAUDE.md`); a BI tool would be faster for the pure-reporting screens but breaks the "one
+  product" cohesion and can't do Screen 4's sub-second client-side recompute or Screen 6's
+  write-actions, which are needed regardless
+
+## Workflow Engine: Camunda 8 (self-hosted) — for the 3-week POC extension only
+
+Overrides the source doc's original "don't use a workflow engine for the POC" guidance — see
+`CLAUDE.md`'s "Workflow Engine Decision" and `3-WEEK-POC-PLAN.md`.
+
+- **Zeebe** — the Camunda 8 process engine/broker
+- **Elasticsearch** — required dependency for Operate
+- **Operate** — process/incident monitoring (dev/debugging use, not necessarily demoed)
+- **Tasklist** — human task UI + REST API; React's Screen 6 calls this instead of a custom
+  FastAPI workflow endpoint
+- **Docker Compose** (or the "Camunda 8 Run" self-managed bundle) — to stand up the above locally;
+  budget real setup time for this (see `specs/camunda-bpmn-process-design.md` section 2)
+- A small **bridge worker** (Python, Zeebe client SDK) — polls Postgres for newly-synced flagged
+  records and starts a Camunda process instance per one; this is bespoke code, not an
+  off-the-shelf Camunda Connector
+- **Not included**: Camunda Identity/Keycloak auth (seeded users are enough for the POC), Optimize
+  (redundant with the React Executive Summary screen), the Connectors runtime (overkill for one
+  specific integration)
 
 ## Input Data
 

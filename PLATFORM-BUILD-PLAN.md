@@ -1,5 +1,11 @@
 # Platform Build Plan
 
+**Not the plan currently being executed.** `3-WEEK-POC-PLAN.md` is — it prioritizes a Camunda
+8-based workflow extension over this plan's Phase 1-6 sequence. This document remains the
+longer-term reference for the full 6-screen platform (Screens 2-5, scenario modelling, regulatory
+reporting) once the 3-week scope is done, and its Phase 0/Phase 2 content (Databricks layer,
+Screen 1 & 6 prioritization) is what `3-WEEK-POC-PLAN.md` builds on.
+
 Phased roadmap for the full platform described in `Middle East bank data cleaning and reporting.md`.
 Supersedes `7-DAY-PLAN.md` for everything past the Databricks layer — six screens on a real
 banking data model is a multi-week build, not a 1-week POC. `7-DAY-PLAN.md` still stands for its

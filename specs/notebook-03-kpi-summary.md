@@ -61,28 +61,34 @@ approach and is a hardcoded-rate POC simplification, not a live feed — same ca
 | Total Assets | `SUM(loans.outstanding) + SUM(accounts.balance)` (USD-converted) — a simplified proxy, not a full balance-sheet total (no cash/investments/fixed-asset tables exist in the schema) | `loans_clean`, `accounts_clean` |
 | Dollarization Ratio | `SUM(accounts.balance WHERE currency != 'LBP') / SUM(accounts.balance) × 100` (USD-converted) — assumes LBP is *the* local currency platform-wide, which only holds for a Lebanon-headquartered entity; **not correct if this platform is ever used for a bank without LBP as home currency** | `accounts_clean` |
 
-## 6. KPIs Blocked by Schema Gaps (do NOT implement with a guessed formula)
+## 6. Remaining 3 KPIs — Resolved via Documented POC Assumptions
 
-These three are genuine gaps in the source doc's own database schema, not implementation
-shortcuts — flagging them here rather than fabricating a number that would look authoritative
-on a KPI tile but rest on an unstated assumption:
+These three hit genuine gaps in the source doc's own database schema (not implementation
+shortcuts). Per the decision to fit all 6 screens into the 3-week timeline (`3-WEEK-POC-PLAN.md`),
+they are now computed using explicit, documented placeholder assumptions rather than left `NULL`
+— Screen 1's design assumes all 8 tiles are populated, and a demo with 3 blank tiles undermines
+that. **These assumptions must be surfaced in the UI (e.g. a small "assumption" tooltip/footnote
+on the affected tiles) and confirmed with whoever owns the source-of-truth doc before this goes
+anywhere near production** — they are reasonable for a demo, not verified accounting.
 
 - **Net Interest Margin (NIM)** — "what we earn on loans minus what we pay on deposits."
-  Interest earned on loans is computable (`SUM(outstanding × interest_rate)`, USD-converted).
-  Interest **paid on deposits is not** — the `accounts` table has no interest-rate column. Needs
-  either a new column on `accounts` or a separate deposit-rate table before this is computable.
-- **Cost-to-Income** — needs branch cost (`branches.monthly_opex`) alongside revenue.
-  `branches` has **no currency column**, so it's unknown what currency `monthly_opex` is
-  denominated in — can't safely combine it with USD-converted revenue. Needs either a
-  `branches.currency` column or an explicit statement that opex is always reporting-currency.
-- **Return on Equity (ROE)** — needs `profit` (blocked transitively by Cost-to-Income's gap,
-  since profit = revenue − cost) and a `shareholders' equity` figure the schema doesn't define
-  anywhere (`tier1_capital` is a plausible proxy but that's an accounting judgment call, not
-  something to assume silently).
-
-**Recommendation:** raise these three gaps with whoever owns the source-of-truth doc before
-Screen 1 is built — Screen 1's design assumes all 8 tiles are populated. Until resolved, `kpi_daily_summary`
-should store these three columns as `NULL`, not a wrong or approximated number.
+  Interest earned on loans: `SUM(outstanding × interest_rate)`, USD-converted, computable as-is.
+  Interest paid on deposits: `accounts` has no rate column, so apply a **hardcoded placeholder
+  rate by account `type`** — `DEPOSIT_RATE_BY_TYPE = {"Current": 0.0, "Savings": 1.5,
+  "Term deposit": 3.0}` (percent) — to `SUM(balance × rate)`, USD-converted. `NIM = (interest
+  income − interest expense) / total earning assets × 100`.
+- **Cost-to-Income** — needs `branches.monthly_opex` in a known currency. `branches` has no
+  currency column, so apply a **hardcoded placeholder `REGION_CURRENCY` map** keyed on
+  `branches.region` — `{"Beirut": "USD", "North": "USD", "South": "USD", "KSA": "SAR",
+  "Qatar": "QAR"}` (matches the currency convention already used for accounts/loans in that
+  country in the sample data) — to convert each branch's `monthly_opex` to USD before summing.
+  `Cost-to-Income = SUM(monthly_opex, USD) / (interest income + fee income, USD) × 100`. Fee
+  income: `SUM(transactions.amount WHERE type = 'Fee')` joined transaction→account→customer→branch,
+  USD-converted.
+- **Return on Equity (ROE)** — `profit = revenue (interest + fee income) − cost (opex)`, both now
+  computable per the above. `equity` uses `tier1_capital` as a proxy (a common but not universal
+  accounting simplification — flag this specific substitution prominently, it's the shakiest of
+  the three assumptions). `ROE = profit / tier1_capital × 100`.
 
 ## 7. Output
 
@@ -96,15 +102,16 @@ Delta table `kpi_daily_summary`:
 | `npl_ratio_pct` | double | |
 | `total_assets_usd` | double | |
 | `dollarization_ratio_pct` | double | |
-| `nim_pct` | double | always `NULL` until section 6's gap is resolved |
-| `cost_to_income_pct` | double | always `NULL` until section 6's gap is resolved |
-| `roe_pct` | double | always `NULL` until section 6's gap is resolved |
+| `nim_pct` | double | computed via section 6's `DEPOSIT_RATE_BY_TYPE` placeholder — not verified accounting |
+| `cost_to_income_pct` | double | computed via section 6's `REGION_CURRENCY` placeholder |
+| `roe_pct` | double | computed via section 6's `tier1_capital`-as-equity proxy |
+| `assumptions_applied` | array\<string\> | which placeholder assumptions fed this row — the UI reads this to render the "assumption" footnote on affected tiles, so the demo never presents a placeholder-derived number as verified fact |
 
 ## 8. Acceptance Criteria
 
-- [ ] All 5 computable KPIs match the hand-traced values in section 9 when run against
-      `bank-data/*.csv`
-- [ ] `nim_pct`, `cost_to_income_pct`, `roe_pct` are `NULL`, not a fabricated number
+- [ ] All 8 KPIs match the hand-traced values in section 9 when run against `bank-data/*.csv`
+- [ ] `assumptions_applied` is populated correctly for `nim_pct`/`cost_to_income_pct`/`roe_pct`
+      and empty for the other 5
 - [ ] Currency conversion uses the latest *valid* (post-Notebook-2) rate per pair, not a raw
       `raw_fx_rates` row that might be an excluded duplicate/invalid rate
 - [ ] Running twice against the same `{table}_clean` state produces the same output (idempotent
@@ -124,6 +131,18 @@ Using latest clean FX rates: USD/LBP 89600 (2026-09-16), USD/SAR 3.75 (2026-09-1
 | NPL Ratio | ≈ 23.83% | Clean loans total outstanding (USD-converted) ≈ 2,098,462; NPL (L003, already USD) 500,000 |
 | Total Assets | ≈ 2,779,838 USD | Clean loans outstanding (≈2,098,462) + clean accounts balance (≈681,376), all USD-converted |
 | Dollarization Ratio | ≈ 99.98% | Only `ACC002` is LBP (≈167 USD-equivalent) out of ≈681,376 USD total — illustrates how hyperinflated LBP naturally pushes dollarization near 100%, consistent with the real post-2019 Lebanon context the source doc references |
+| NIM (assumption-based) | ≈ 6.14% | (Interest income ≈131,669 − deposit interest expense ≈2,872) / loans outstanding ≈2,098,462 × 100 |
+| Cost-to-Income (assumption-based) | ≈ 345% | Branch opex (USD-converted) ≈456,220 / revenue (interest + fee income) ≈132,219 × 100 |
+| ROE (assumption-based) | ≈ -0.16% | Loss of ≈-324,001 (revenue − opex) / tier1_capital 207,000,000 × 100 |
+
+**Cost-to-Income and ROE come out looking implausible (345% cost-to-income, negative ROE) on
+this sample data** — that's a scale mismatch, not a formula bug: `bank-data/*.csv` has only 5
+clean loans and a handful of transactions against branch opex figures sized for a real
+institution. This is expected given the "Data reality check" already noted elsewhere in this
+repo (sample data is notebook-testing size, not realistic scale) — don't be alarmed if the real
+run reproduces implausible ratios; it's a data-volume artifact, worth calling out explicitly in
+the demo narrative if these tiles are shown ("illustrative data, ratios normalize at realistic
+transaction volume").
 
 These are hand-computed, not verified by an actual run — treat as the test plan to check against
 real notebook output once implemented and run on a live cluster, same caveat as Notebooks 1-2's
