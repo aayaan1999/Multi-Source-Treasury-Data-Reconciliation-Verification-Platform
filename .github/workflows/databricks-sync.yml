@@ -1,0 +1,25 @@
+name: Sync Databricks Repo
+
+# Triggers the Databricks Repo (Git-connected workspace copy of this repo) to pull the latest
+# main branch immediately after every push, instead of requiring a manual "Pull" click in the
+# Databricks UI. See DATABRICKS-SETUP.md section 7 for how the Repo was originally connected.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  pull-databricks-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Databricks Repo to latest main
+        run: |
+          curl -sf -X PATCH \
+            "${DATABRICKS_HOST}/api/2.0/repos/${DATABRICKS_REPO_ID}" \
+            -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"branch": "main"}'
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          DATABRICKS_REPO_ID: ${{ secrets.DATABRICKS_REPO_ID }}

@@ -160,6 +160,34 @@ Steps:
 4. **Create Repo** — the `notebooks/` folder appears, and `01_ingestion_standardisation.py` opens as a native Databricks notebook
 5. To pull future updates pushed from this repo: open the Repo in the workspace → **Git** (branch icon) → **Pull**
 
+### 7a. Automate the pull (optional — `.github/workflows/databricks-sync.yml`)
+
+Databricks Repos never pulls automatically on its own — the manual "Pull" click in step 5 above
+is the default. `.github/workflows/databricks-sync.yml` in this repo automates it: a GitHub
+Actions workflow that calls the Databricks REST API to pull the Repo immediately after every push
+to `main`.
+
+- Docs — Repos API reference (the `PATCH /api/2.0/repos/{id}` call the workflow uses): https://learn.microsoft.com/en-us/azure/databricks/api/workspace/repos/update
+- Docs — Databricks personal access tokens: https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth/pat
+- GitHub Actions secrets: https://docs.github.com/en/actions/security-guides/encrypted-secrets
+
+Setup (one-time):
+1. **Get a Databricks PAT**: workspace → user icon (top right) → **Settings** → **Developer** →
+   **Access tokens** → **Generate new token**. Copy it immediately — it's shown only once.
+2. **Get the Repo ID**: open the Repo in the workspace; the ID is the numeric segment in the URL
+   (`.../repos/<id>/...`) — or list it via the CLI: `databricks repos list`.
+3. **Add three repository secrets** on GitHub (this repo → **Settings** → **Secrets and
+   variables** → **Actions** → **New repository secret**):
+   - `DATABRICKS_HOST` — your workspace URL, e.g. `https://adb-xxxxxxxxxxxx.xx.azuredatabricks.net`
+   - `DATABRICKS_TOKEN` — the PAT from step 1
+   - `DATABRICKS_REPO_ID` — the numeric ID from step 2
+4. Push to `main` — the workflow (Actions tab → "Sync Databricks Repo") runs automatically and
+   the Databricks Repo is updated within seconds, no manual Pull needed.
+
+**Note:** a PAT is a credential — GitHub Actions secrets are encrypted and not readable after
+creation, but treat the token itself with the same care as a password (rotate it if it's ever
+exposed, and prefer a token scoped to the minimum permissions Databricks allows).
+
 ---
 
 ## 8. First run

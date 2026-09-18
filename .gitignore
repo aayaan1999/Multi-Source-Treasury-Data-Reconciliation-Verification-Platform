@@ -1,0 +1,11 @@
+# Local Claude Code tooling config — machine/session-specific, not a project deliverable.
+# Skills under .claude/skills/ ARE tracked (e.g. .claude/skills/git-commit-push/), so this only
+# ignores the local settings file, not the whole .claude/ directory.
+.claude/settings.json
+.claude/settings.local.json
+
+# Databricks AI-tools local cache/state
+.databricks/
+
+# Editor-local settings
+.vscode/
