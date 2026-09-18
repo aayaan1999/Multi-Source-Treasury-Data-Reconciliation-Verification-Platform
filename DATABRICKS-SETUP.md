@@ -174,19 +174,46 @@ to `main`.
 Setup (one-time):
 1. **Get a Databricks PAT**: workspace → user icon (top right) → **Settings** → **Developer** →
    **Access tokens** → **Generate new token**. Copy it immediately — it's shown only once.
-2. **Get the Repo ID**: open the Repo in the workspace; the ID is the numeric segment in the URL
-   (`.../repos/<id>/...`) — or list it via the CLI: `databricks repos list`.
+2. **Get the Repo ID — do not read this off the browser URL.** The Databricks workspace UI now
+   shows Repos/Git folders under a `/browse/folders/<folder_id>` path, and that folder ID is
+   **not** the same as the Repo's API ID — using it is a common cause of this API call failing.
+   Get the real ID from the API/CLI instead:
+   ```
+   curl -s -H "Authorization: Bearer <your PAT>" "https://<your-workspace-host>/api/2.0/repos" | python3 -m json.tool
+   ```
+   or, with the Databricks CLI: `databricks repos list`. Find the entry whose `path` matches this
+   repo (e.g. `/Repos/<you>/Multi-Source-Treasury-Data-Reconciliation-Verification-Platform`) and
+   use its `id` field.
 3. **Add three repository secrets** on GitHub (this repo → **Settings** → **Secrets and
    variables** → **Actions** → **New repository secret**):
-   - `DATABRICKS_HOST` — your workspace URL, e.g. `https://adb-xxxxxxxxxxxx.xx.azuredatabricks.net`
-   - `DATABRICKS_TOKEN` — the PAT from step 1
-   - `DATABRICKS_REPO_ID` — the numeric ID from step 2
+   - `DATABRICKS_HOST` — your workspace URL, **no trailing slash**, e.g.
+     `https://adb-xxxxxxxxxxxx.xx.azuredatabricks.net` (not `.../net/`). The workflow now strips a
+     trailing slash defensively if one sneaks in, but don't rely on that — paste it clean.
+   - `DATABRICKS_TOKEN` — the PAT from step 1, pasted with **no surrounding quotes or spaces**
+     (a stray leading/trailing space or a wrapping `"..."` from a copy-paste is a common cause of
+     auth failures here)
+   - `DATABRICKS_REPO_ID` — the numeric ID from step 2 (from the API's `id` field, not a folder
+     path segment)
 4. Push to `main` — the workflow (Actions tab → "Sync Databricks Repo") runs automatically and
    the Databricks Repo is updated within seconds, no manual Pull needed.
 
 **Note:** a PAT is a credential — GitHub Actions secrets are encrypted and not readable after
 creation, but treat the token itself with the same care as a password (rotate it if it's ever
 exposed, and prefer a token scoped to the minimum permissions Databricks allows).
+
+#### Troubleshooting: curl exit code 22 / workflow fails
+
+`curl`'s `-f` flag turns any HTTP 4xx/5xx response into a bare non-zero exit (22) with no visible
+error — the updated workflow now prints the actual HTTP status and response body in the Action's
+log instead, so check that log first. The three most common causes, in order of likelihood:
+
+1. **Trailing slash on `DATABRICKS_HOST`** — produces a double slash in the request URL
+   (`.../net//api/2.0/repos/...`) → 404. The workflow strips this automatically now, but re-check
+   the secret's value if this was ever the cause.
+2. **Wrong Repo ID** — a `/browse/folders/` ID instead of the API's `id` field (step 2 above) →
+   404, "repo does not exist," or similar.
+3. **Bad token** — pasted with quotes/whitespace, expired, or lacking permission on that Repo →
+   401/403. Regenerate the PAT and re-paste carefully if so.
 
 ---
 

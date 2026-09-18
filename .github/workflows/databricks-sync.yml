@@ -14,11 +14,26 @@ jobs:
     steps:
       - name: Update Databricks Repo to latest main
         run: |
-          curl -sf -X PATCH \
-            "${DATABRICKS_HOST}/api/2.0/repos/${DATABRICKS_REPO_ID}" \
+          # Strip any trailing slash from DATABRICKS_HOST so the URL never becomes
+          # https://...net//api/2.0/... (a trailing-slash secret is a common cause of a 404 here).
+          HOST="${DATABRICKS_HOST%/}"
+
+          response=$(curl -s -w '\n%{http_code}' -X PATCH \
+            "${HOST}/api/2.0/repos/${DATABRICKS_REPO_ID}" \
             -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{"branch": "main"}'
+            -d '{"branch": "main"}')
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP status: $http_code"
+          echo "Response body: $body"
+
+          if [ "$http_code" -ge 400 ]; then
+            echo "::error::Databricks Repos API call failed with HTTP $http_code — see DATABRICKS-SETUP.md section 7a for common causes (wrong Repo ID, trailing slash in DATABRICKS_HOST, bad token)."
+            exit 1
+          fi
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
