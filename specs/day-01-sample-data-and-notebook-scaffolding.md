@@ -1,6 +1,12 @@
 # Spec: Day 1 — Sample Data + Notebook Scaffolding
 
-**Status:** Implemented (sample CSVs + Notebooks 1-2 built; Notebooks 3-4 remain — see Open Items)
+**Status:** SUPERSEDED — `notebooks/01_ingestion_standardisation.py` and
+`notebooks/02_data_quality_verification.py` were rewritten for the bank-wide schema per
+`specs/notebook-01-bank-data-ingestion.md` and `specs/notebook-02-bank-data-quality.md`. The
+treasury-specific notebook code this spec describes no longer exists in those files. This spec
+and the `lebanon_positions.csv`/`ksa_positions.csv`/`qatar_positions.csv` sample data it covers
+are kept as historical reference only — see `CLAUDE.md` for the current state.
+
 **Plan reference:** `7-DAY-PLAN.md` → Day 1
 **Owner:** Dev Lead (sample data) + Claude Code (notebooks)
 **Depends on:** `bank-x poc-brief.md` sections 4-5

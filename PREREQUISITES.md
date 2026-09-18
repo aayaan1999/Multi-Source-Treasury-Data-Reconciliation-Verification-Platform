@@ -1,15 +1,17 @@
 # Prerequisites
 
-Tech stack and access required to build and run this platform. Two source documents: the
-Databricks layer is per `bank-x poc-brief.md`; everything else (application layer, screens,
-database schema) is per `Middle East bank data cleaning and reporting.md`, the current source of
-truth — see `CLAUDE.md` for how the two fit together.
+Tech stack and access required to build and run this platform. `Middle East bank data cleaning
+and reporting.md` is the source of truth for everything, including the Databricks layer as of the
+Notebook 1-2 rewrite. `bank-x poc-brief.md` is historical reference only — see `CLAUDE.md`.
 
-## Data Processing (Databricks side — unchanged)
+## Data Processing (Databricks side)
 
-- **Databricks workspace** — runtime version to be confirmed with the client (brief section 11, Q1)
+- **Databricks workspace** — runtime version to be confirmed with the client
 - **Apache Spark / PySpark** — all four notebooks are written in PySpark
-- **Delta Lake** — required for every output table (`treasury_positions_raw`, `treasury_positions_clean`, `treasury_positions_exceptions`, `treasury_consolidated_report`, `exception_summary`); confirm with client whether it's already enabled on the workspace or needs setup (brief section 11, Q2)
+- **Delta Lake** — required for every output table (`raw_customers`, `raw_accounts`, `raw_loans`,
+  `raw_transactions`, `raw_branches`, `raw_capital_positions`, `raw_liquidity_daily`, `raw_fx_rates`
+  from Notebook 1; `{table}_clean` × 8 and `data_quality_exceptions` from Notebook 2); confirm
+  with client whether it's already enabled on the workspace or needs setup
 - **CSV export capability** — Databricks output must be exportable to CSV for the application-layer import job
 
 ## Application Layer (replaces the original Appian scope)
@@ -33,12 +35,16 @@ truth — see `CLAUDE.md` for how the two fit together.
 
 ## Input Data
 
-- Three sample entity CSV files (built): `lebanon_positions.csv`, `ksa_positions.csv`, `qatar_positions.csv` — see brief section 4 for required schema and injected data-quality issues
-- Hardcoded FX rate table (USD/SAR/QAR/LBP conversions) — simulated for POC, no live feed
-- **Not yet available**: customers, accounts, loans, transactions, branches, capital_positions,
-  liquidity_daily, fx_rates data — no source brief covers these; a synthetic data generator is
-  needed before Screens 1, 2, 4, 5 can be built and demoed meaningfully (see `PLATFORM-BUILD-PLAN.md`
-  Phase 1)
+- Eight bank-wide sample CSVs (built, `bank-data/`): `customers.csv`, `accounts.csv`, `loans.csv`,
+  `transactions.csv`, `branches.csv`, `capital_positions.csv`, `liquidity_daily.csv`,
+  `fx_rates.csv` — small, hand-built (6-10 rows/table) with injected data-quality issues; see
+  `specs/notebook-02-bank-data-quality.md` section 7 for what's in each
+- **Historical, no longer consumed by any notebook:** `lebanon_positions.csv`, `ksa_positions.csv`,
+  `qatar_positions.csv` (the original treasury-entity CSVs)
+- **Not yet available at realistic scale**: the `bank-data/` CSVs above are notebook-testing size
+  only — a proper synthetic data generator (the source doc references "two million transactions"
+  as a performance-proofing case) is still needed before Screens 1, 2, 4, 5 can be built and
+  demoed meaningfully (see `PLATFORM-BUILD-PLAN.md` Phase 1)
 
 ## Dev Tooling
 

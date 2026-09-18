@@ -2,235 +2,363 @@
 # MAGIC %md
 # MAGIC # Notebook 2: Data Quality Verification
 # MAGIC
-# MAGIC Reads `treasury_positions_raw` (Notebook 1's output) and runs the eight checks from the
-# MAGIC POC brief against every row. A row can trip more than one check — each tripped check
-# MAGIC produces its own exception record, and a row only lands in the clean table if it trips
-# MAGIC none of them.
+# MAGIC Reads the eight `raw_*` tables from Notebook 1 and runs per-table structural checks plus
+# MAGIC cross-table referential checks (does this `customer_id`/`account_id`/`branch_id` actually
+# MAGIC exist?). Unlike the treasury pipeline's per-table exception table, findings across all
+# MAGIC eight tables land in one central log (`data_quality_exceptions`) — the eight source tables
+# MAGIC have almost no columns in common, so a single wide exceptions table per source table would
+# MAGIC just be eight different shapes; a generic `(source_table, record_key, flag_label,
+# MAGIC description)` log is what an analyst or Screen 6's task queue actually needs to route work.
 # MAGIC
-# MAGIC Input: Delta table `treasury_positions_raw`
-# MAGIC Output: Delta tables `treasury_positions_clean`, `treasury_positions_exceptions`
+# MAGIC This replaces the earlier treasury-specific version of this notebook — see Notebook 1's
+# MAGIC header and `CLAUDE.md` for why.
+# MAGIC
+# MAGIC Input: Delta tables `raw_customers`, `raw_accounts`, `raw_loans`, `raw_transactions`,
+# MAGIC `raw_branches`, `raw_capital_positions`, `raw_liquidity_daily`, `raw_fx_rates`
+# MAGIC Output: Delta tables `customers_clean`, `accounts_clean`, `loans_clean`,
+# MAGIC `transactions_clean`, `branches_clean`, `capital_positions_clean`, `liquidity_daily_clean`,
+# MAGIC `fx_rates_clean`, and one `data_quality_exceptions` table
 
 # COMMAND ----------
 
+from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
-from pyspark.sql.types import ArrayType, StringType, StructType, StructField
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Config
-# MAGIC
-# MAGIC - `VALID_CURRENCY_CODES`: recognised ISO-style codes. A currency pair is only valid if both
-# MAGIC   sides are in this set — this is what separates a pair Notebook 1 could already fix by
-# MAGIC   inserting a slash (`USDSAR` → `USD/SAR`) from one that's genuinely wrong (`QR/USD`, `XYZ/USD`).
-# MAGIC - `PAIR_EXPECTED_RATE`: expected `counter_currency_amount / notional_amount` ratio per pair,
-# MAGIC   used by the reconciliation check. A pair not listed here is skipped by that check rather
-# MAGIC   than flagged — we can't judge reconciliation without a known expected rate for it.
-# MAGIC - `RECONCILIATION_TOLERANCE`: fractional tolerance (5%) before a counter-amount deviation
-# MAGIC   counts as a mismatch, to avoid flagging normal rounding.
 
 # COMMAND ----------
-
-dbutils.widgets.text("input_table", "treasury_positions_raw", "Input Delta table name")
-dbutils.widgets.text("clean_table", "treasury_positions_clean", "Clean output table name")
-dbutils.widgets.text("exceptions_table", "treasury_positions_exceptions", "Exceptions output table name")
-
-INPUT_TABLE = dbutils.widgets.get("input_table")
-CLEAN_TABLE = dbutils.widgets.get("clean_table")
-EXCEPTIONS_TABLE = dbutils.widgets.get("exceptions_table")
 
 VALID_CURRENCY_CODES = {"USD", "EUR", "LBP", "SAR", "QAR"}
-
-# Expected counter/notional ratio per currency pair (mirrors the hardcoded FX assumptions
-# used when standardising to USD in Notebook 1).
-PAIR_EXPECTED_RATE = {
-    "USD/LBP": 1500.0,
-    "EUR/USD": 1.0,
-    "USD/SAR": 3.75,
-    "USD/QAR": 3.64,
-}
-
-RECONCILIATION_TOLERANCE = 0.05  # 5%
+VALID_SEGMENTS = {"Retail", "SME", "Corporate"}
+VALID_RISK_RATINGS = {"A", "B", "C", "D", "E"}
+VALID_LOAN_STAGES = {1.0, 2.0, 3.0}
+VALID_CHANNELS = {"Branch", "ATM", "Mobile", "Online"}
+NPL_DAYS_PAST_DUE_THRESHOLD = 90
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Load input
-
-# COMMAND ----------
-
-positions = spark.table(INPUT_TABLE)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Row-level checks (checks 1-6)
+# MAGIC ## Helpers
 # MAGIC
-# MAGIC These six checks only need the row itself, unlike the duplicate/cross-entity checks below
-# MAGIC which need to compare a row against others. Each check produces a nullable `(flag, description)`
-# MAGIC struct — null when the check passes.
+# MAGIC Same pattern as the treasury pipeline: each check produces a nullable `(flag_label,
+# MAGIC description)` struct, non-null structs are collected into a `flags` array per row, a row
+# MAGIC is clean only if that array is empty, and every non-empty array is exploded into the
+# MAGIC central exceptions log.
 
 # COMMAND ----------
 
 def flag_struct(condition, flag_label: str, description):
-    """Returns a (flag_label, description) struct when `condition` is true, else null."""
     return F.when(
         condition,
         F.struct(F.lit(flag_label).alias("flag_label"), description.alias("description")),
     )
 
 
-pair_rate_map = F.create_map(*[x for pair, rate in PAIR_EXPECTED_RATE.items() for x in (F.lit(pair), F.lit(rate))])
-valid_ccy_pair = (
-    F.col("currency_pair").rlike("^[A-Z]{3}/[A-Z]{3}$")
-    & F.substring("currency_pair", 1, 3).isin(list(VALID_CURRENCY_CODES))
-    & F.substring("currency_pair", 5, 3).isin(list(VALID_CURRENCY_CODES))
-)
-expected_rate = pair_rate_map[F.col("currency_pair")]
-expected_counter = F.col("notional_amount") * expected_rate
-reconciliation_deviation = F.abs(F.col("counter_currency_amount") - expected_counter) / expected_counter
+def finalize(df: DataFrame, table_name: str, key_col: str, check_cols: list):
+    """Combines the named check columns into a `flags` array, splits the table into
+    (clean_df, exceptions_df), and returns both. `exceptions_df` is already shaped to match
+    the central `data_quality_exceptions` log."""
+    df = df.withColumn("flags", F.array_compact(F.array(*check_cols))).drop(*check_cols)
 
-checked = positions.select(
-    "*",
-    flag_struct(
-        F.col("trade_date").isNull(), "MISSING_DATE", F.lit("trade_date is missing")
-    ).alias("chk_missing_date"),
-    flag_struct(
-        F.col("trader_id").isNull() | (F.trim(F.col("trader_id")) == ""),
-        "MISSING_TRADER",
-        F.lit("trader_id is missing"),
-    ).alias("chk_missing_trader"),
-    flag_struct(
-        ~valid_ccy_pair,
-        "INVALID_CCY_PAIR",
-        F.concat(F.lit("currency_pair '"), F.coalesce(F.col("currency_pair"), F.lit("")), F.lit("' is not a recognised XXX/YYY pair")),
-    ).alias("chk_invalid_ccy_pair"),
-    flag_struct(
-        F.col("notional_amount").isNull() | (F.col("notional_amount") == 0),
-        "INVALID_AMOUNT",
-        F.lit("notional_amount is non-numeric, missing, or zero"),
-    ).alias("chk_invalid_amount"),
-    flag_struct(
-        expected_rate.isNotNull()
-        & F.col("notional_amount").isNotNull()
-        & (F.col("notional_amount") != 0)
-        & F.col("counter_currency_amount").isNotNull()
-        & (reconciliation_deviation > RECONCILIATION_TOLERANCE),
-        "RECONCILIATION_MISMATCH",
-        F.concat(
-            F.lit("counter_currency_amount "), F.col("counter_currency_amount").cast("string"),
-            F.lit(" deviates from expected "), F.round(expected_counter, 2).cast("string"),
-            F.lit(" by more than "), F.lit(str(int(RECONCILIATION_TOLERANCE * 100))), F.lit("%"),
-        ),
-    ).alias("chk_reconciliation_mismatch"),
-    flag_struct(
-        F.col("notional_amount").isNotNull()
-        & F.col("limit_threshold").isNotNull()
-        & (F.col("notional_amount") > F.col("limit_threshold")),
-        "LIMIT_BREACH",
-        F.concat(
-            F.lit("notional_amount "), F.col("notional_amount").cast("string"),
-            F.lit(" exceeds limit_threshold "), F.col("limit_threshold").cast("string"),
-        ),
-    ).alias("chk_limit_breach"),
-)
+    base_cols = [c for c in df.columns if c != "flags"]
+    clean_df = df.filter(F.size("flags") == 0).select(*base_cols)
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Duplicate check (check 7): `DUPLICATE_RECORD`
-# MAGIC
-# MAGIC Flags every row whose `trade_id` appears more than once *within the same entity*. Both
-# MAGIC (or all) copies are flagged, not just the second occurrence, so a reviewer in Appian sees
-# MAGIC every instance of the duplicate.
-
-# COMMAND ----------
-
-dup_counts = checked.groupBy("entity_code", "trade_id").agg(F.count("*").alias("dup_count"))
-
-checked = checked.join(dup_counts, on=["entity_code", "trade_id"], how="left").withColumn(
-    "chk_duplicate_record",
-    flag_struct(
-        F.col("dup_count") > 1,
-        "DUPLICATE_RECORD",
-        F.concat(F.lit("trade_id '"), F.col("trade_id"), F.lit("' appears "), F.col("dup_count").cast("string"), F.lit(" times for entity "), F.col("entity_code")),
-    ),
-).drop("dup_count")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Cross-entity check (check 8): `CROSS_ENTITY_MISMATCH`
-# MAGIC
-# MAGIC The same `trade_id` can legitimately appear in two entities' books (e.g. an inter-entity
-# MAGIC trade booked on both sides). It's only an exception when the USD-equivalent amount recorded
-# MAGIC for it disagrees beyond tolerance between entities — this check compares `base_currency_amount_usd`
-# MAGIC across every pair of entities sharing a `trade_id`.
-
-# COMMAND ----------
-
-by_trade = checked.select("trade_id", "entity_code", "base_currency_amount_usd").distinct()
-
-cross_entity_pairs = (
-    by_trade.alias("a")
-    .join(by_trade.alias("b"), on="trade_id")
-    .where(F.col("a.entity_code") < F.col("b.entity_code"))  # each unordered pair once
-    .where(
-        F.col("a.base_currency_amount_usd").isNotNull()
-        & F.col("b.base_currency_amount_usd").isNotNull()
-        & (
-            F.abs(F.col("a.base_currency_amount_usd") - F.col("b.base_currency_amount_usd"))
-            / F.greatest(F.abs(F.col("a.base_currency_amount_usd")), F.lit(0.01))
-            > RECONCILIATION_TOLERANCE
+    exceptions_df = (
+        df.filter(F.size("flags") > 0)
+        .select(F.col(key_col).cast("string").alias("record_key"), F.explode("flags").alias("flag"))
+        .select(
+            F.lit(table_name).alias("source_table"),
+            "record_key",
+            F.col("flag.flag_label").alias("flag_label"),
+            F.col("flag.description").alias("description"),
         )
     )
-    .select(F.col("trade_id").alias("mismatch_trade_id"))
-    .distinct()
-)
+    return clean_df, exceptions_df
 
-mismatched_trade_ids = [row.mismatch_trade_id for row in cross_entity_pairs.collect()]
 
-checked = checked.withColumn(
-    "chk_cross_entity_mismatch",
-    flag_struct(
-        F.col("trade_id").isin(mismatched_trade_ids),
-        "CROSS_ENTITY_MISMATCH",
-        F.concat(F.lit("trade_id '"), F.col("trade_id"), F.lit("' has a different amount recorded in another entity's file")),
-    ),
-)
+def orphan_flags(child_df: DataFrame, child_key_col: str, child_fk_col: str, parent_df: DataFrame, parent_key_col: str, flag_label: str, table_name: str):
+    """Anti-joins child against parent on the foreign key and returns exception rows for every
+    child record whose foreign key doesn't exist in the parent table."""
+    orphans = child_df.join(
+        parent_df.select(F.col(parent_key_col).alias("_parent_key")),
+        child_df[child_fk_col] == F.col("_parent_key"),
+        "left_anti",
+    )
+    return orphans.select(
+        F.lit(table_name).alias("source_table"),
+        F.col(child_key_col).cast("string").alias("record_key"),
+        F.lit(flag_label).alias("flag_label"),
+        F.concat(F.lit(f"{child_fk_col} '"), F.col(child_fk_col), F.lit(f"' has no matching {parent_key_col}")).alias("description"),
+    )
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Combine checks, split clean vs. exceptions
+# MAGIC ## Load raw tables
 
 # COMMAND ----------
 
-CHECK_COLUMNS = [
-    "chk_missing_date",
-    "chk_missing_trader",
-    "chk_invalid_ccy_pair",
-    "chk_invalid_amount",
-    "chk_reconciliation_mismatch",
-    "chk_limit_breach",
-    "chk_duplicate_record",
-    "chk_cross_entity_mismatch",
-]
+raw_customers = spark.table("raw_customers")
+raw_accounts = spark.table("raw_accounts")
+raw_loans = spark.table("raw_loans")
+raw_transactions = spark.table("raw_transactions")
+raw_branches = spark.table("raw_branches")
+raw_capital_positions = spark.table("raw_capital_positions")
+raw_liquidity_daily = spark.table("raw_liquidity_daily")
+raw_fx_rates = spark.table("raw_fx_rates")
 
-checked = checked.withColumn(
-    "flags",
-    F.array_compact(F.array(*CHECK_COLUMNS)),
-).drop(*CHECK_COLUMNS)
+exception_frames = []
 
-BASE_COLUMNS = [c for c in positions.columns]
+# COMMAND ----------
 
-treasury_positions_clean = checked.filter(F.size("flags") == 0).select(*BASE_COLUMNS)
+# MAGIC %md
+# MAGIC ## Customers
+# MAGIC
+# MAGIC `MISSING_CUSTOMER_ID`, `MISSING_RISK_RATING`, `INVALID_SEGMENT`, `MISSING_BRANCH_ID`, plus
+# MAGIC the cross-table `ORPHAN_BRANCH` (a `branch_id` that doesn't exist in `branches`).
 
-treasury_positions_exceptions = (
-    checked.filter(F.size("flags") > 0)
-    .select(*BASE_COLUMNS, F.explode("flags").alias("flag"))
-    .select(*BASE_COLUMNS, F.col("flag.flag_label").alias("flag_label"), F.col("flag.description").alias("description"))
+# COMMAND ----------
+
+customers_checked = raw_customers.select(
+    "*",
+    flag_struct(F.col("customer_id").isNull(), "MISSING_CUSTOMER_ID", F.lit("customer_id is missing")).alias("chk_1"),
+    flag_struct(
+        F.col("risk_rating").isNull() | (F.trim(F.col("risk_rating")) == ""),
+        "MISSING_RISK_RATING",
+        F.lit("risk_rating is missing"),
+    ).alias("chk_2"),
+    flag_struct(
+        ~F.col("segment").isin(list(VALID_SEGMENTS)),
+        "INVALID_SEGMENT",
+        F.concat(F.lit("segment '"), F.coalesce(F.col("segment"), F.lit("")), F.lit("' is not one of Retail/SME/Corporate")),
+    ).alias("chk_3"),
+    flag_struct(F.col("branch_id").isNull(), "MISSING_BRANCH_ID", F.lit("branch_id is missing")).alias("chk_4"),
 )
+
+customers_clean, customers_exceptions = finalize(customers_checked, "customers", "customer_id", ["chk_1", "chk_2", "chk_3", "chk_4"])
+exception_frames.append(customers_exceptions)
+exception_frames.append(
+    orphan_flags(raw_customers, "customer_id", "branch_id", raw_branches, "branch_id", "ORPHAN_BRANCH", "customers")
+)
+# Orphan customers get pulled out of the clean set too, not just logged.
+customer_orphan_ids = [r.record_key for r in exception_frames[-1].select("record_key").distinct().collect()]
+customers_clean = customers_clean.filter(~F.col("customer_id").isin(customer_orphan_ids))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Accounts
+# MAGIC
+# MAGIC `MISSING_ACCOUNT_ID`, `NEGATIVE_BALANCE`, `INVALID_CURRENCY`, plus `ORPHAN_CUSTOMER`.
+
+# COMMAND ----------
+
+accounts_checked = raw_accounts.select(
+    "*",
+    flag_struct(F.col("account_id").isNull(), "MISSING_ACCOUNT_ID", F.lit("account_id is missing")).alias("chk_1"),
+    flag_struct(
+        F.col("balance").isNotNull() & (F.col("balance") < 0),
+        "NEGATIVE_BALANCE",
+        F.concat(F.lit("balance "), F.col("balance").cast("string"), F.lit(" is negative")),
+    ).alias("chk_2"),
+    flag_struct(
+        ~F.col("currency").isin(list(VALID_CURRENCY_CODES)),
+        "INVALID_CURRENCY",
+        F.concat(F.lit("currency '"), F.coalesce(F.col("currency"), F.lit("")), F.lit("' is not recognised")),
+    ).alias("chk_3"),
+)
+
+accounts_clean, accounts_exceptions = finalize(accounts_checked, "accounts", "account_id", ["chk_1", "chk_2", "chk_3"])
+exception_frames.append(accounts_exceptions)
+accounts_orphan_exceptions = orphan_flags(raw_accounts, "account_id", "customer_id", raw_customers, "customer_id", "ORPHAN_CUSTOMER", "accounts")
+exception_frames.append(accounts_orphan_exceptions)
+account_orphan_ids = [r.record_key for r in accounts_orphan_exceptions.select("record_key").distinct().collect()]
+accounts_clean = accounts_clean.filter(~F.col("account_id").isin(account_orphan_ids))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Loans
+# MAGIC
+# MAGIC `MISSING_LOAN_ID`, `OUTSTANDING_EXCEEDS_PRINCIPAL`, `INVALID_STAGE`, `NEGATIVE_DPD`,
+# MAGIC `NPL_STAGE_MISMATCH` (days_past_due >= 90 but stage isn't 3 — the IFRS 9 definition from
+# MAGIC the source doc says a loan that far past due should already be staged as impaired), plus
+# MAGIC `ORPHAN_CUSTOMER`.
+
+# COMMAND ----------
+
+loans_checked = raw_loans.select(
+    "*",
+    flag_struct(F.col("loan_id").isNull(), "MISSING_LOAN_ID", F.lit("loan_id is missing")).alias("chk_1"),
+    flag_struct(
+        F.col("outstanding").isNotNull() & F.col("principal").isNotNull() & (F.col("outstanding") > F.col("principal")),
+        "OUTSTANDING_EXCEEDS_PRINCIPAL",
+        F.concat(F.lit("outstanding "), F.col("outstanding").cast("string"), F.lit(" exceeds principal "), F.col("principal").cast("string")),
+    ).alias("chk_2"),
+    flag_struct(
+        F.col("stage").isNotNull() & ~F.col("stage").isin(list(VALID_LOAN_STAGES)),
+        "INVALID_STAGE",
+        F.concat(F.lit("stage "), F.col("stage").cast("string"), F.lit(" is not 1, 2, or 3")),
+    ).alias("chk_3"),
+    flag_struct(
+        F.col("days_past_due").isNotNull() & (F.col("days_past_due") < 0),
+        "NEGATIVE_DPD",
+        F.concat(F.lit("days_past_due "), F.col("days_past_due").cast("string"), F.lit(" is negative")),
+    ).alias("chk_4"),
+    flag_struct(
+        (F.col("days_past_due") >= NPL_DAYS_PAST_DUE_THRESHOLD) & (F.col("stage") != 3),
+        "NPL_STAGE_MISMATCH",
+        F.concat(
+            F.lit("days_past_due "), F.col("days_past_due").cast("string"),
+            F.lit(" is >= 90 but stage is "), F.col("stage").cast("string"), F.lit(", expected 3"),
+        ),
+    ).alias("chk_5"),
+)
+
+loans_clean, loans_exceptions = finalize(loans_checked, "loans", "loan_id", ["chk_1", "chk_2", "chk_3", "chk_4", "chk_5"])
+exception_frames.append(loans_exceptions)
+loans_orphan_exceptions = orphan_flags(raw_loans, "loan_id", "customer_id", raw_customers, "customer_id", "ORPHAN_CUSTOMER", "loans")
+exception_frames.append(loans_orphan_exceptions)
+loan_orphan_ids = [r.record_key for r in loans_orphan_exceptions.select("record_key").distinct().collect()]
+loans_clean = loans_clean.filter(~F.col("loan_id").isin(loan_orphan_ids))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Transactions
+# MAGIC
+# MAGIC `MISSING_TRANSACTION_ID`, `INVALID_AMOUNT`, `INVALID_CHANNEL`, plus `ORPHAN_ACCOUNT`.
+
+# COMMAND ----------
+
+transactions_checked = raw_transactions.select(
+    "*",
+    flag_struct(F.col("transaction_id").isNull(), "MISSING_TRANSACTION_ID", F.lit("transaction_id is missing")).alias("chk_1"),
+    flag_struct(F.col("amount").isNull(), "INVALID_AMOUNT", F.lit("amount is missing or non-numeric")).alias("chk_2"),
+    flag_struct(
+        ~F.col("channel").isin(list(VALID_CHANNELS)),
+        "INVALID_CHANNEL",
+        F.concat(F.lit("channel '"), F.coalesce(F.col("channel"), F.lit("")), F.lit("' is not one of Branch/ATM/Mobile/Online")),
+    ).alias("chk_3"),
+)
+
+transactions_clean, transactions_exceptions = finalize(transactions_checked, "transactions", "transaction_id", ["chk_1", "chk_2", "chk_3"])
+exception_frames.append(transactions_exceptions)
+transactions_orphan_exceptions = orphan_flags(raw_transactions, "transaction_id", "account_id", raw_accounts, "account_id", "ORPHAN_ACCOUNT", "transactions")
+exception_frames.append(transactions_orphan_exceptions)
+transaction_orphan_ids = [r.record_key for r in transactions_orphan_exceptions.select("record_key").distinct().collect()]
+transactions_clean = transactions_clean.filter(~F.col("transaction_id").isin(transaction_orphan_ids))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Branches
+# MAGIC
+# MAGIC `MISSING_BRANCH_ID`, `NEGATIVE_OPEX`.
+
+# COMMAND ----------
+
+branches_checked = raw_branches.select(
+    "*",
+    flag_struct(F.col("branch_id").isNull(), "MISSING_BRANCH_ID", F.lit("branch_id is missing")).alias("chk_1"),
+    flag_struct(
+        F.col("monthly_opex").isNotNull() & (F.col("monthly_opex") < 0),
+        "NEGATIVE_OPEX",
+        F.concat(F.lit("monthly_opex "), F.col("monthly_opex").cast("string"), F.lit(" is negative")),
+    ).alias("chk_2"),
+)
+
+branches_clean, branches_exceptions = finalize(branches_checked, "branches", "branch_id", ["chk_1", "chk_2"])
+exception_frames.append(branches_exceptions)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Capital positions
+# MAGIC
+# MAGIC `MISSING_MONTH`, `INVALID_RWA` (risk_weighted_assets must be positive — it's a denominator
+# MAGIC for every capital ratio, so zero/negative breaks Screen 1 downstream).
+
+# COMMAND ----------
+
+capital_checked = raw_capital_positions.select(
+    "*",
+    flag_struct(
+        F.col("month").isNull() | (F.trim(F.col("month")) == ""),
+        "MISSING_MONTH",
+        F.lit("month is missing"),
+    ).alias("chk_1"),
+    flag_struct(
+        F.col("risk_weighted_assets").isNull() | (F.col("risk_weighted_assets") <= 0),
+        "INVALID_RWA",
+        F.concat(F.lit("risk_weighted_assets "), F.coalesce(F.col("risk_weighted_assets").cast("string"), F.lit("null")), F.lit(" must be positive")),
+    ).alias("chk_2"),
+)
+
+capital_positions_clean, capital_positions_exceptions = finalize(capital_checked, "capital_positions", "month", ["chk_1", "chk_2"])
+exception_frames.append(capital_positions_exceptions)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Liquidity daily
+# MAGIC
+# MAGIC `MISSING_DATE`, `NEGATIVE_HQLA`.
+
+# COMMAND ----------
+
+liquidity_checked = raw_liquidity_daily.select(
+    "*",
+    flag_struct(F.col("date").isNull(), "MISSING_DATE", F.lit("date is missing")).alias("chk_1"),
+    flag_struct(
+        F.col("hqla").isNotNull() & (F.col("hqla") < 0),
+        "NEGATIVE_HQLA",
+        F.concat(F.lit("hqla "), F.col("hqla").cast("string"), F.lit(" is negative")),
+    ).alias("chk_2"),
+)
+
+liquidity_daily_clean, liquidity_daily_exceptions = finalize(liquidity_checked, "liquidity_daily", "date", ["chk_1", "chk_2"])
+exception_frames.append(liquidity_daily_exceptions)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## FX rates
+# MAGIC
+# MAGIC `INVALID_RATE` (missing or <= 0), `DUPLICATE_RATE` (more than one rate for the same
+# MAGIC date + currency_pair — ambiguous which one downstream conversions should use).
+
+# COMMAND ----------
+
+fx_dup_counts = raw_fx_rates.groupBy("date", "currency_pair").agg(F.count("*").alias("dup_count"))
+fx_with_dups = raw_fx_rates.join(fx_dup_counts, on=["date", "currency_pair"], how="left")
+
+# fx_rates has no single-column primary key — date + currency_pair together identify a rate —
+# so build a composite key column upfront and pass that to finalize() as the "key_col".
+fx_with_dups = fx_with_dups.withColumn(
+    "fx_key", F.concat_ws("_", F.col("date").cast("string"), F.col("currency_pair"))
+)
+
+fx_checked = fx_with_dups.select(
+    "*",
+    flag_struct(
+        F.col("rate").isNull() | (F.col("rate") <= 0),
+        "INVALID_RATE",
+        F.concat(F.lit("rate "), F.coalesce(F.col("rate").cast("string"), F.lit("null")), F.lit(" must be positive")),
+    ).alias("chk_1"),
+    flag_struct(
+        F.col("dup_count") > 1,
+        "DUPLICATE_RATE",
+        F.concat(F.lit("currency_pair '"), F.col("currency_pair"), F.lit("' has "), F.col("dup_count").cast("string"), F.lit(" rates for date "), F.col("date").cast("string")),
+    ).alias("chk_2"),
+).drop("dup_count")
+
+fx_rates_clean, fx_rates_exceptions = finalize(fx_checked, "fx_rates", "fx_key", ["chk_1", "chk_2"])
+fx_rates_clean = fx_rates_clean.drop("fx_key")
+exception_frames.append(fx_rates_exceptions)
 
 # COMMAND ----------
 
@@ -239,23 +367,38 @@ treasury_positions_exceptions = (
 
 # COMMAND ----------
 
+CLEAN_TABLES = {
+    "customers_clean": customers_clean,
+    "accounts_clean": accounts_clean,
+    "loans_clean": loans_clean,
+    "transactions_clean": transactions_clean,
+    "branches_clean": branches_clean,
+    "capital_positions_clean": capital_positions_clean,
+    "liquidity_daily_clean": liquidity_daily_clean,
+    "fx_rates_clean": fx_rates_clean,
+}
+
+for table_name, df in CLEAN_TABLES.items():
+    (
+        df.write.format("delta")
+        .mode("overwrite")
+        .option("overwriteSchema", "true")
+        .saveAsTable(table_name)
+    )
+
+data_quality_exceptions = exception_frames[0]
+for df in exception_frames[1:]:
+    data_quality_exceptions = data_quality_exceptions.unionByName(df)
+
 (
-    treasury_positions_clean.write
+    data_quality_exceptions.write
     .format("delta")
     .mode("overwrite")
     .option("overwriteSchema", "true")
-    .saveAsTable(CLEAN_TABLE)
+    .saveAsTable("data_quality_exceptions")
 )
 
-(
-    treasury_positions_exceptions.write
-    .format("delta")
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable(EXCEPTIONS_TABLE)
-)
-
-display(spark.table(EXCEPTIONS_TABLE))
+display(spark.table("data_quality_exceptions"))
 
 # COMMAND ----------
 
@@ -264,7 +407,8 @@ display(spark.table(EXCEPTIONS_TABLE))
 
 # COMMAND ----------
 
-print(f"Clean rows: {spark.table(CLEAN_TABLE).count()}")
-print(f"Exception records: {spark.table(EXCEPTIONS_TABLE).count()}")
-spark.table(EXCEPTIONS_TABLE).groupBy("flag_label").count().orderBy(F.desc("count")).show()
-spark.table(EXCEPTIONS_TABLE).groupBy("entity_code", "flag_label").count().orderBy("entity_code", "flag_label").show(50)
+for table_name in CLEAN_TABLES:
+    print(f"{table_name}: {spark.table(table_name).count()} rows")
+
+print(f"data_quality_exceptions: {spark.table('data_quality_exceptions').count()} rows")
+spark.table("data_quality_exceptions").groupBy("source_table", "flag_label").count().orderBy("source_table", "flag_label").show(50)

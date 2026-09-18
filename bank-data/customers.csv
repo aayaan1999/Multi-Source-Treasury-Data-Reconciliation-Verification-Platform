@@ -1,0 +1,11 @@
+customer_id,name,segment,branch_id,onboard_date,risk_rating,country
+C001,Khalil Trading SAL,Corporate,B01,2018-03-12,B,Lebanon
+C002,Rana Haddad,Retail,B01,2020-06-01,A,Lebanon
+C003,Nadia Corp,Corporate,B02,2019-11-20,C,Lebanon
+C004,SME Traders,SME,B03,2021-01-15,,Lebanon
+C005,Gulf Holdings,Corporate,B04,2017-07-09,B,KSA
+C006,Fahad Al-Otaibi,Retail,B04,2022-02-28,A,KSA
+C007,Al Jazeera Trading,SME,B05,2020-09-10,D,Qatar
+C008,Mona Retail,Retail,B05,2021-05-05,A,Qatar
+C009,Unknown Segment Co,Corp,B02,2019-03-03,C,Lebanon
+C010,No Branch Customer,Retail,B99,2020-01-01,B,Lebanon

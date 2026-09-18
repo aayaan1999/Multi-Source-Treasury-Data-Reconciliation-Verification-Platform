@@ -1,0 +1,7 @@
+branch_id,name,region,staff_count,monthly_opex
+B01,Beirut Main,Beirut,42,210000
+B02,Tripoli North,North,14,81000
+B03,Saida Central,South,16,95000
+B04,Riyadh Central,KSA,30,150000
+B05,Doha Main,Qatar,20,110000
+B06,Batroun Branch,North,8,-5000

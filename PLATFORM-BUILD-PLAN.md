@@ -12,17 +12,25 @@ produces something demoable, rather than front-loading all plumbing before anyth
 
 ## Phase 0 — Databricks Data Layer (in progress)
 
-Owner: Databricks Developer + Claude Code. Unchanged from `bank-x poc-brief.md` section 5.
+Owner: Databricks Developer + Claude Code. Rebuilt against the bank-wide schema per
+`Middle East bank data cleaning and reporting.md` — see `specs/notebook-01-bank-data-ingestion.md`
+and `specs/notebook-02-bank-data-quality.md`. The original treasury-specific version of this
+phase is historical (`specs/day-01-sample-data-and-notebook-scaffolding.md`, superseded).
 
-- [x] Sample entity CSVs (Lebanon, KSA, Qatar) with injected data-quality issues
-- [x] Notebook 1 — Ingestion & Standardisation → `treasury_positions_raw`
-- [x] Notebook 2 — Data Quality Verification → `treasury_positions_clean`, `treasury_positions_exceptions`
-- [ ] Notebook 3 — Reconciliation & Consolidated Report → `treasury_consolidated_report`
-- [ ] Notebook 4 — Exception Summary Report → `exception_summary`
-- [ ] Run all four against a real Databricks cluster (Community Edition or Azure) and validate output
+- [x] Sample CSVs for the 8 bank-wide tables (`bank-data/*.csv`) with injected data-quality issues
+- [x] Notebook 1 — Ingestion & Standardisation → `raw_customers`, `raw_accounts`, `raw_loans`,
+  `raw_transactions`, `raw_branches`, `raw_capital_positions`, `raw_liquidity_daily`, `raw_fx_rates`
+- [x] Notebook 2 — Data Quality Verification → `{table}_clean` × 8, `data_quality_exceptions`
+- [ ] Notebook 3 — needs a new spec first; original design (reconciling treasury positions) no
+  longer applies to the bank-wide schema — decide what "reconciliation" means here before building
+- [ ] Notebook 4 — same caveat as Notebook 3
+- [ ] Run Notebooks 1-2 against a real Databricks cluster (Community Edition or Azure) and validate
+  output against the traceability tables in the specs
+- [ ] Scale up `bank-data/*.csv` (or generate separately) once realistic volume is needed —
+  current sample data is notebook-testing size only (6-10 rows/table)
 
-**Exit criteria:** four Delta tables produced and CSV-exportable; this is the first real data feed
-into the application layer built from Phase 1 onward.
+**Exit criteria:** all Delta tables produced and CSV-exportable; `data_quality_exceptions` is the
+first real data feed into the application layer built from Phase 1 onward.
 
 ---
 
@@ -39,8 +47,8 @@ Owner: Claude Code (backend/frontend scaffolding) + Dev Lead (environment decisi
 - [ ] Synthetic data generator for customers/accounts/loans/transactions/branches/capital/liquidity/FX
   — no real source exists for these yet; check scale/realism expectations with the user before
   generating large volumes
-- [ ] Nightly import job: Databricks CSV exports (`treasury_consolidated_report`, `exception_summary`,
-  `treasury_positions_exceptions`) → PostgreSQL tables
+- [ ] Nightly import job: Databricks CSV exports (`data_quality_exceptions`, plus the `{table}_clean`
+  outputs once Phase 1's synthetic data generator gives them meaningful volume) → PostgreSQL tables
 - [ ] React app skeleton: routing for all 6 screens (placeholder pages), Tailwind theming, seeded-user
   login (analyst/reviewer/approver/admin)
 - [ ] `limits` table + a nightly breach-check job that creates `tasks`/`breaches` rows automatically
@@ -50,23 +58,25 @@ flowing into Postgres nightly.
 
 ---
 
-## Phase 2 — Screens 1 & 6 (the treasury-reconciliation demo case)
+## Phase 2 — Screens 1 & 6 (the data-quality-exceptions demo case)
 
-These two screens most directly cover the original POC brief's requirements (exception review,
-approval, consolidated view, audit trail), so they come first — this is the fastest path to a
-demoable story using data that's actually real (Databricks treasury output), not synthetic.
+These two screens most directly cover the original project's motivating requirements (exception
+review, approval, consolidated view, audit trail), so they come first — this is the fastest path
+to a demoable story using data that's actually real (Databricks `data_quality_exceptions`
+output), not synthetic.
 
 - [ ] **Screen 6 — Report Workflow**: My Tasks landing view, visual approval chain (prepared →
   reviewed → approved → submitted), review screen with comments + approve/return-with-comment,
   breach alerts from Phase 1's `limits`/`breaches` tables, insert-only `audit_log` (enforce via DB
   grants: INSERT only, no UPDATE/DELETE)
-  - Wire the treasury `treasury_positions_exceptions` records in as the concrete task type here —
-    this is the direct replacement for the brief's Appian Exception Queue + Case Detail views
+  - Wire Databricks' `data_quality_exceptions` records in as the concrete task type here — this
+    is what an officer actually reviews/approves/rejects, replacing the original brief's Appian
+    Exception Queue + Case Detail concept
 - [ ] **Screen 1 — Executive Summary**: 8 KPI tiles, 24-month trend chart, plain-language alert
   strip, nightly precomputed summary table (do not compute live)
   - CAR/LCR/NIM/ROE/cost-to-income/dollarization need `capital_positions`/`liquidity_daily`/
-    `accounts`/`loans` data (synthetic, from Phase 1) — only the treasury exposure angle has real
-    Databricks data behind it initially
+    `accounts`/`loans` data — real per Notebook 1-2's small sample, but at demo-meaningful scale
+    only once Phase 1's synthetic data generator exists
 
 **Exit criteria:** an officer can see an exception, claim/review it, approve or reject with a
 mandatory comment, and see it reflected in an audit trail — the original brief's demo story,
