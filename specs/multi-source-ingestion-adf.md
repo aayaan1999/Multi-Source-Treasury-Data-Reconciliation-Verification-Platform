@@ -166,14 +166,20 @@ service-account share step. Salesforce is the most involved, due to the OAuth fl
       public CompactData SDMX endpoint per country, writes to `bronze_imf_macro`. **Not yet run
       against a live cluster** — the per-country fetch, JSON shape, and empty-result handling are
       unverified against IMF's actual current response format.
-- [ ] Neon: **pending.** JDBC read succeeds from a Databricks notebook, watermarked pull works on
-      a second run (no full-table reprocessing). Blocked on provisioning a Neon project.
-- [ ] Mockaroo: **pending.** Mock API returns realistic loan-origination-shaped JSON, ingestion
-      notebook lands it in Bronze. Blocked on designing the mock schema and generating an API key.
-- [ ] Salesforce: **pending.** OAuth flow works, sample Account/Contact data lands in Bronze.
-      Blocked on signing up for a Developer org and registering a Connected App.
-- [ ] Google Sheets: **pending.** Service-account auth works, sheet contents land in Bronze.
-      Blocked on creating a service account and manually sharing a Sheet with it.
+- [x]/[ ] Neon: **written** (`notebooks/multi_source_neon_ingestion.py`), watermarked via a
+      `multi_source_watermarks` control table. **Cannot run yet** — blocked on provisioning a
+      Neon project and populating the `neon_jdbc_url`/`neon_user`/`neon_password` secrets.
+- [x]/[ ] Mockaroo: **written** (`notebooks/multi_source_mockaroo_ingestion.py`). **Cannot run
+      yet** — blocked on designing the mock schema in Mockaroo's UI and generating
+      `mockaroo_api_key`.
+- [x]/[ ] Salesforce: **written** (`notebooks/multi_source_salesforce_ingestion.py`), username-
+      password OAuth flow. **Cannot run yet** — blocked on a Developer org signup, registering a
+      Connected App, and populating `sf_client_id`/`sf_client_secret`/`sf_username`/`sf_password`/
+      `sf_security_token`.
+- [x]/[ ] Google Sheets: **written** (`notebooks/multi_source_google_sheets_ingestion.py`), via
+      `gspread` + a service-account key. **Cannot run yet** — blocked on creating the service
+      account, manually sharing the target Sheet with it, and populating
+      `google_service_account_json`.
 - [ ] Notebook 1 requires **zero code changes** to pick up files landed by any of these five
       sources — if it needs changes, the source-agnostic design has failed. Not yet verified even
       for IMF, since IMF's own notebook hasn't run on a cluster yet.

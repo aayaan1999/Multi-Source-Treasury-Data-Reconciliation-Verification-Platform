@@ -109,14 +109,18 @@ Delta table `kpi_daily_summary`:
 
 ## 8. Acceptance Criteria
 
+- [x] Written: `notebooks/03_kpi_summary.py`. **Not yet run against a live cluster** — none of
+      the below is verified by an actual run.
 - [ ] All 8 KPIs match the hand-traced values in section 9 when run against `bank-data/*.csv`
 - [ ] `assumptions_applied` is populated correctly for `nim_pct`/`cost_to_income_pct`/`roe_pct`
       and empty for the other 5
-- [ ] Currency conversion uses the latest *valid* (post-Notebook-2) rate per pair, not a raw
-      `raw_fx_rates` row that might be an excluded duplicate/invalid rate
-- [ ] Running twice against the same `{table}_clean` state produces the same output (idempotent
-      overwrite of the day's `kpi_daily_summary` row, not an ever-growing duplicate)
-- [ ] Not yet implemented — this spec exists to define scope before writing the notebook code
+- [x]/[ ] Currency conversion superseded by `specs/fx-realtime-ingestion.md`: uses
+      `fx_utils.get_live_rate()` (live API call, logged to `fx_rate_usage_log`), not a
+      `fx_rates_clean` table lookup as this section originally specified. Implemented this way;
+      not yet verified against a live cluster or the live API's actual LBP/SAR/QAR coverage.
+- [ ] Running twice against the same `{table}_clean` state produces the same output — implemented
+      via a per-`calculation_date` overwrite (filter out today's row, union, overwrite), not yet
+      verified by an actual rerun
 
 ## 9. Traceability (hand-computed against `bank-data/*.csv`, latest-rate assumptions per section 4)
 

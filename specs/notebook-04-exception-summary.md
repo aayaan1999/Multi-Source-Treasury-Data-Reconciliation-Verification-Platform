@@ -72,6 +72,8 @@ issues" directly, without a human eyeballing raw counts against differently-size
 
 ## 5. Acceptance Criteria
 
+- [x] Written: `notebooks/04_exception_summary.py`. **Not yet run against a live cluster** —
+      none of the below is verified by an actual run.
 - [ ] `exception_summary_by_table` has exactly 8 rows (one per source table) every run, regardless
       of whether a table has any exceptions
 - [ ] `exception_summary_by_flag` row counts match `data_quality_exceptions` grouped counts exactly
@@ -79,7 +81,6 @@ issues" directly, without a human eyeballing raw counts against differently-size
       the number of exception log rows for that table (not necessarily `flagged_record_count`,
       since one record can contribute multiple flag rows)
 - [ ] Values match the hand-traced table in section 6 when run against `bank-data/*.csv`
-- [ ] Not yet implemented — this spec exists to define scope before writing the notebook code
 
 ## 6. Traceability (hand-computed against `bank-data/*.csv`, per `specs/notebook-02-bank-data-quality.md` section 7)
 

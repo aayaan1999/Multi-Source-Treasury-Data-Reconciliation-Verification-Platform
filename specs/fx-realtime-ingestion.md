@@ -79,15 +79,28 @@ the original design without reintroducing a pre-populated lookup table.
 
 ## 6. Acceptance Criteria
 
-- [ ] Notebook 3 and Notebook 6 call `get_live_rate()` inline for every USD conversion, not a
-      table lookup
+- [x] Written: `notebooks/fx_utils.py` (`get_live_rate`, `log_fx_usage`,
+      `get_live_rate_and_log`). **Not yet run against a live cluster** — none of the below is
+      verified by an actual call.
+- [x]/[ ] Notebook 3 and Notebook 6 call `get_live_rate()` inline for every USD conversion, not a
+      table lookup — implemented in both (`03_kpi_summary.py`, `06_portfolio_branch_scenario_snapshot.py`);
+      Notebook 5 also adopted this for its one conversion site, beyond what this criterion asked
+      for. Not yet verified against a live cluster.
 - [ ] Confirm the chosen FX API's currency coverage includes USD, EUR, LBP, SAR, QAR specifically
-- [ ] A live API failure causes a loud, explicit error for that calculation step — not a silent
-      fallback presented as current
-- [ ] `fx_rate_usage_log` captures every fetch, correctly attributing which calculation used it
+      — **not verified**. Implementation picked `open.er-api.com` (free, keyless) over
+      ExchangeRate-API/Open Exchange Rates specifically to avoid a manual signup step, but its
+      actual LBP/SAR/QAR coverage has not been checked against a live response.
+- [x]/[ ] A live API failure causes a loud, explicit error for that calculation step —
+      implemented via retry-with-backoff (3 attempts) then `raise RuntimeError`, no silent
+      fallback. Not yet verified against an actual failure.
+- [x]/[ ] `fx_rate_usage_log` captures every fetch — implemented as an append-only write in
+      `log_fx_usage()`, called from every conversion site in Notebooks 3/5/6. Not yet verified.
 - [ ] `specs/notebook-02-bank-data-quality.md`'s `fx_rates` DQ row is reverted/removed to reflect
-      that `fx_rates` is no longer an ingested data-quality subject (see section 2)
-- [ ] Not yet implemented
+      that `fx_rates` is no longer an ingested data-quality subject (see section 2) — **not done**.
+      Notebook 1/2 still ingest and validate `fx_rates.csv` unchanged; this spec's section 2 says
+      that path becomes unnecessary once live conversion lands, but the actual removal from
+      Notebooks 1-2 hasn't been made, to avoid touching working, already-run code as a side effect
+      of this work. Revisit deliberately, not as a byproduct.
 
 ## 7. Non-Goals
 

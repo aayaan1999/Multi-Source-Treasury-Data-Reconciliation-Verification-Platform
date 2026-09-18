@@ -121,12 +121,18 @@ requirement):
 
 ## 5. Acceptance Criteria
 
+- [x] Written: `notebooks/06_portfolio_branch_scenario_snapshot.py`. **Not yet run against a
+      live cluster** — none of the below is verified by an actual run.
 - [ ] All values in section 6 (traceability) match a real run against `bank-data/*.csv`
-- [ ] `loan_ageing_summary` bucket boundaries are correct at the edges (a loan at exactly 30, 90,
-      or 180 days lands in the lower bucket, per section 4's bucket definitions)
-- [ ] Zero-collateral loans land in the `>100%` LTV bucket, not excluded or divide-by-zero errored
-- [ ] `scenario_snapshot` always has exactly one row (overwrite, not append, each run)
-- [ ] Not yet implemented — this spec exists to define scope before writing the notebook code
+- [x]/[ ] `loan_ageing_summary` bucket boundaries — implemented with `<` on the upper edge of
+      each bucket (a loan at exactly 30/90/180 days falls into the lower bucket); not yet
+      verified against a live run
+- [x]/[ ] Zero-collateral loans — implemented as an explicit `>100%` bucket assignment before the
+      ratio is computed, avoiding a divide-by-zero; not yet verified
+- [x]/[ ] `scenario_snapshot` always has exactly one row — implemented via `mode("overwrite")`
+      on a single-row DataFrame each run; not yet verified
+- [x]/[ ] Currency conversion superseded by `specs/fx-realtime-ingestion.md`: uses
+      `fx_utils.get_live_rate()`, not `fx_rates_clean`, same as Notebook 3 — not yet verified
 
 ## 6. Traceability (hand-computed against `bank-data/*.csv`'s 5 clean loans: L001, L002, L003,
 L005, L007 — full depth here since this is the most formula-heavy output; branch/segment/product

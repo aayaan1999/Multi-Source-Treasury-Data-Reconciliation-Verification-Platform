@@ -23,41 +23,53 @@ Owner: Databricks Developer + Claude Code. Rebuilt against the bank-wide schema 
 and `specs/notebook-02-bank-data-quality.md`. The original treasury-specific version of this
 phase is historical (`specs/day-01-sample-data-and-notebook-scaffolding.md`, superseded).
 
-**Next up, in order:** (1) Mockaroo ingestion notebook — next-easiest of the 4 remaining sources,
-just needs an API key once the mock schema is designed; (2) run Notebooks 1-2-and-IMF against a
-real cluster to move them off "written but unverified"; (3) Notebook 4 (Exception Summary) — spec
-is written and it's a straightforward aggregation over Notebook 2's existing output; (4) Notebook
-3 (KPI Summary) — same readiness, slightly more logic. Neon/Salesforce/Google Sheets and Notebooks
-5-6 come after those, per the ordering below.
+**Next up, in order:** every notebook in this phase is now written — nothing is left to *write*
+in Phase 0. What's left is entirely (1) a Databricks configuration/account-provisioning pass (see
+the checklist this plan links to below) and (2) running everything against a real cluster and
+checking output against each spec's traceability table. Do those in this order: (a) configure the
+workspace basics (cluster, libraries, secret scope, Unity Catalog/schema) — needed before anything
+runs at all; (b) run Notebooks 1 → 2 → IMF → 3/6 (parallel) → 4 → 5, checking each against its
+spec's traceability table before moving to the next, since 3/4/5/6 all read Notebooks 1-2's
+output; (c) provision the 4 remaining external accounts (Mockaroo, Neon, Salesforce, Google
+Sheets) and run those ingestion notebooks — not blocking on the cluster-validation pass above,
+can happen in parallel with it.
 
 - [x] Sample CSVs for the 8 bank-wide tables (`bank-data/*.csv`) with injected data-quality issues
 - [x] Notebook 1 — Ingestion & Standardisation → `raw_customers`, `raw_accounts`, `raw_loans`,
   `raw_transactions`, `raw_branches`, `raw_capital_positions`, `raw_liquidity_daily`, `raw_fx_rates`
 - [x] Notebook 2 — Data Quality Verification → `{table}_clean` × 8, `data_quality_exceptions`
-- [ ] Notebook 3 — Nightly KPI Summary (`kpi_daily_summary`); spec written
-  (`specs/notebook-03-kpi-summary.md`), not yet implemented — 3 of 8 KPIs are blocked on schema
-  gaps flagged in that spec (NIM, cost-to-income, ROE)
-- [ ] Notebook 4 — Exception Summary (`exception_summary_by_table`, `exception_summary_by_flag`);
-  spec written (`specs/notebook-04-exception-summary.md`), not yet implemented
-- [ ] Notebook 5 — Fraud & Business Rule Detection (`flagged_transactions`); spec written
-  (`specs/notebook-05-fraud-business-rules.md`), not yet implemented — runs against
-  `transactions_clean`, independent of Notebooks 3/4
-- [ ] Notebook 6 — Portfolio, Branch & Scenario Snapshot; spec written
-  (`specs/notebook-06-portfolio-branch-scenario-snapshot.md`), not yet implemented — reads only
-  Notebook 2's clean tables, so it can be built in parallel with Notebook 3
-- [ ] Real-time FX rate utility (`get_live_rate()` + `fx_rate_usage_log`); spec written
-  (`specs/fx-realtime-ingestion.md`), not yet implemented — makes the old `fx_rates` ingestion
-  path in Notebook 1 unnecessary once this lands
-- [ ] Multi-source ingestion (`specs/multi-source-ingestion-adf.md`) — 5 free-cloud-source notebooks
-  feeding Notebook 1's Bronze input:
-  - [x] IMF Data API — `notebooks/multi_source_imf_ingestion.py` written, **not yet run against a
-    live cluster**
-  - [ ] Mockaroo — pending, blocked on designing the mock schema + generating an API key
-  - [ ] Neon — pending, blocked on provisioning a Neon project
-  - [ ] Salesforce — pending, blocked on a Developer org signup + Connected App registration
-  - [ ] Google Sheets — pending, blocked on creating a service account + sharing a Sheet with it
-- [ ] Run Notebooks 1-2 (and the IMF ingestion notebook above) against a real Databricks cluster
-  and validate output against the traceability tables in the specs
+- [x] Notebook 3 — Nightly KPI Summary (`kpi_daily_summary`); written
+  (`notebooks/03_kpi_summary.py`) per `specs/notebook-03-kpi-summary.md`. **Not yet run against a
+  live cluster.** 3 of 8 KPIs (NIM, cost-to-income, ROE) use documented placeholder assumptions,
+  not verified accounting.
+- [x] Notebook 4 — Exception Summary (`exception_summary_by_table`, `exception_summary_by_flag`);
+  written (`notebooks/04_exception_summary.py`) per `specs/notebook-04-exception-summary.md`.
+  **Not yet run against a live cluster.**
+- [x] Notebook 5 — Fraud & Business Rule Detection (`flagged_transactions`); written
+  (`notebooks/05_fraud_business_rules.py`) per `specs/notebook-05-fraud-business-rules.md`. **Not
+  yet run against a live cluster.**
+- [x] Notebook 6 — Portfolio, Branch & Scenario Snapshot; written
+  (`notebooks/06_portfolio_branch_scenario_snapshot.py`) per
+  `specs/notebook-06-portfolio-branch-scenario-snapshot.md`. **Not yet run against a live
+  cluster.**
+- [x] Real-time FX rate utility (`get_live_rate()` + `fx_rate_usage_log`); written
+  (`notebooks/fx_utils.py`) per `specs/fx-realtime-ingestion.md`, called from Notebooks 3/5/6.
+  **Not yet run against a live cluster** — the chosen keyless API's LBP/SAR/QAR coverage is
+  unverified. The old `fx_rates.csv` ingestion path in Notebook 1 was deliberately left in place
+  rather than removed as a side effect of this work (see that spec's acceptance criteria).
+- [x] Multi-source ingestion (`specs/multi-source-ingestion-adf.md`) — 5 free-cloud-source
+  notebooks feeding Notebook 1's Bronze input, **all 5 now written**, none run yet:
+  - [x] IMF Data API — `notebooks/multi_source_imf_ingestion.py`, no account needed, could run
+    against a cluster today
+  - [x] Mockaroo — `notebooks/multi_source_mockaroo_ingestion.py`, blocked on designing the mock
+    schema + generating an API key
+  - [x] Neon — `notebooks/multi_source_neon_ingestion.py`, blocked on provisioning a Neon project
+  - [x] Salesforce — `notebooks/multi_source_salesforce_ingestion.py`, blocked on a Developer org
+    signup + Connected App registration
+  - [x] Google Sheets — `notebooks/multi_source_google_sheets_ingestion.py`, blocked on creating
+    a service account + sharing a Sheet with it
+- [ ] Run every notebook above against a real Databricks cluster and validate output against the
+  traceability tables in the specs — **this is now Phase 0's single biggest remaining item**
 - [ ] Scale up `bank-data/*.csv` (or generate separately) once realistic volume is needed —
   current sample data is notebook-testing size only (6-10 rows/table)
 

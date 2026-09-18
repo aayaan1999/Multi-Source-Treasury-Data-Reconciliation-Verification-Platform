@@ -78,13 +78,19 @@ reruns. This is the one notebook in the pipeline that isn't a clean overwrite-on
 
 ## 6. Acceptance Criteria
 
+- [x] Written: `notebooks/05_fraud_business_rules.py`. **Not yet run against a live cluster** —
+      none of the below is verified by an actual run.
 - [ ] Every rule in section 3 fires correctly against `bank-data/transactions.csv` (see
       traceability, section 7)
-- [ ] A transaction can carry multiple flags (e.g. both `STRUCTURING_PATTERN` and
-      `VELOCITY_BREACH`) — same multi-flag design as Notebook 2
-- [ ] Rerunning the notebook does not reset `status` on a row a reviewer has already actioned
-      (requires `MERGE INTO`, not `overwrite` — see section 5)
-- [ ] Not yet implemented
+- [x]/[ ] A transaction can carry multiple flags (e.g. both `STRUCTURING_PATTERN` and
+      `VELOCITY_BREACH`) — implemented via `unionByName` across the 4 rules, each contributing
+      its own row(s); not yet verified against the traceability table
+- [x]/[ ] Rerunning the notebook does not reset `status` on a row a reviewer has already actioned
+      — implemented via `MERGE INTO ... WHEN NOT MATCHED INSERT`, not `overwrite`; not yet
+      verified by an actual rerun against a cluster with a pre-existing reviewed row
+- [x]/[ ] `LARGE_AMOUNT`'s USD conversion uses `fx_utils.get_live_rate()` per
+      `specs/fx-realtime-ingestion.md`'s platform-wide move off `fx_rates_clean`, even though that
+      spec's acceptance criteria only names Notebooks 3/6 explicitly — not yet verified
 
 ## 7. Traceability (hand-computed against `bank-data/transactions.csv`)
 
