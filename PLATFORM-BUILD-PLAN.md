@@ -23,6 +23,13 @@ Owner: Databricks Developer + Claude Code. Rebuilt against the bank-wide schema 
 and `specs/notebook-02-bank-data-quality.md`. The original treasury-specific version of this
 phase is historical (`specs/day-01-sample-data-and-notebook-scaffolding.md`, superseded).
 
+**Next up, in order:** (1) Mockaroo ingestion notebook — next-easiest of the 4 remaining sources,
+just needs an API key once the mock schema is designed; (2) run Notebooks 1-2-and-IMF against a
+real cluster to move them off "written but unverified"; (3) Notebook 4 (Exception Summary) — spec
+is written and it's a straightforward aggregation over Notebook 2's existing output; (4) Notebook
+3 (KPI Summary) — same readiness, slightly more logic. Neon/Salesforce/Google Sheets and Notebooks
+5-6 come after those, per the ordering below.
+
 - [x] Sample CSVs for the 8 bank-wide tables (`bank-data/*.csv`) with injected data-quality issues
 - [x] Notebook 1 — Ingestion & Standardisation → `raw_customers`, `raw_accounts`, `raw_loans`,
   `raw_transactions`, `raw_branches`, `raw_capital_positions`, `raw_liquidity_daily`, `raw_fx_rates`
@@ -32,8 +39,25 @@ phase is historical (`specs/day-01-sample-data-and-notebook-scaffolding.md`, sup
   gaps flagged in that spec (NIM, cost-to-income, ROE)
 - [ ] Notebook 4 — Exception Summary (`exception_summary_by_table`, `exception_summary_by_flag`);
   spec written (`specs/notebook-04-exception-summary.md`), not yet implemented
-- [ ] Run Notebooks 1-2 against a real Databricks cluster (Community Edition or Azure) and validate
-  output against the traceability tables in the specs
+- [ ] Notebook 5 — Fraud & Business Rule Detection (`flagged_transactions`); spec written
+  (`specs/notebook-05-fraud-business-rules.md`), not yet implemented — runs against
+  `transactions_clean`, independent of Notebooks 3/4
+- [ ] Notebook 6 — Portfolio, Branch & Scenario Snapshot; spec written
+  (`specs/notebook-06-portfolio-branch-scenario-snapshot.md`), not yet implemented — reads only
+  Notebook 2's clean tables, so it can be built in parallel with Notebook 3
+- [ ] Real-time FX rate utility (`get_live_rate()` + `fx_rate_usage_log`); spec written
+  (`specs/fx-realtime-ingestion.md`), not yet implemented — makes the old `fx_rates` ingestion
+  path in Notebook 1 unnecessary once this lands
+- [ ] Multi-source ingestion (`specs/multi-source-ingestion-adf.md`) — 5 free-cloud-source notebooks
+  feeding Notebook 1's Bronze input:
+  - [x] IMF Data API — `notebooks/multi_source_imf_ingestion.py` written, **not yet run against a
+    live cluster**
+  - [ ] Mockaroo — pending, blocked on designing the mock schema + generating an API key
+  - [ ] Neon — pending, blocked on provisioning a Neon project
+  - [ ] Salesforce — pending, blocked on a Developer org signup + Connected App registration
+  - [ ] Google Sheets — pending, blocked on creating a service account + sharing a Sheet with it
+- [ ] Run Notebooks 1-2 (and the IMF ingestion notebook above) against a real Databricks cluster
+  and validate output against the traceability tables in the specs
 - [ ] Scale up `bank-data/*.csv` (or generate separately) once realistic volume is needed —
   current sample data is notebook-testing size only (6-10 rows/table)
 

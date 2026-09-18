@@ -9,3 +9,6 @@
 
 # Editor-local settings
 .vscode/
+
+# Reference material (legacy treasury CSVs, external PDFs) — not project deliverables
+resources/

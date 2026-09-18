@@ -101,21 +101,84 @@ enterprise systems — Mockaroo's mock schema and Google Sheets' columns can sim
 with a `source_code` field from the start, since you control their schema. Salesforce and Neon
 would need actual field mapping once their schemas are defined.
 
-## 9. Acceptance Criteria
+## 9. Implementation Approach
 
-- [ ] Neon: JDBC read succeeds from a Databricks notebook, watermarked pull works on a second run
-      (no full-table reprocessing)
-- [ ] Mockaroo: mock API returns realistic loan-origination-shaped JSON, ingestion notebook lands
-      it in Bronze
-- [ ] IMF API: a successful call retrieves real published data (confirms the free/no-key claim
-      holds in practice, not just in documentation)
-- [ ] Salesforce: OAuth flow works, sample Account/Contact data lands in Bronze
-- [ ] Google Sheets: service-account auth works, sheet contents land in Bronze
+One Databricks notebook per source, all converging on the same Bronze landing convention: one
+subfolder per source (e.g. `bronze/neon_customers/`, `bronze/mockaroo_loans/`), written with
+`.format("delta")`, timestamped so reruns don't silently overwrite. Notebook 1 reads from Bronze
+unchanged — per section 5, it stays source-agnostic.
+
+**Shared setup (once, before any source-specific work)**
+- Create a Databricks secret scope (e.g. `multi-source-demo`) and add each credential to it as its
+  account is provisioned: Neon connection string, Mockaroo API key, Salesforce OAuth client
+  ID/secret, Google service-account JSON.
+- A small Delta control table tracking the last watermark pulled per source (needed for Neon's
+  incremental read, section 10 below).
+
+**1. Neon (Postgres)**
+- Provision a free Neon project; create `customers`/`accounts` tables with sample rows.
+- `spark.read.jdbc(url=neon_jdbc_url, table="customers", properties={"user": ..., "password": ...})`.
+- Watermark: filter `WHERE updated_at > last_watermark` (read from the control table), update the
+  control table with the new max `updated_at` after a successful write — this is what makes reruns
+  incremental instead of full-table each time, per the pattern in `specs/bidirectional-sync.md`.
+- Write to `bronze/neon_customers/`.
+
+**2. Mockaroo**
+- Design a loan-origination schema in Mockaroo's UI (`loan_id`, `customer_id`, `amount`, `product`,
+  `origination_date`, ...); get the mock REST endpoint + API key.
+- `requests.get(mockaroo_url, headers={"X-API-Key": dbutils.secrets.get("multi-source-demo", "mockaroo_key")})`,
+  parse the JSON response into a Spark DataFrame.
+- Write to `bronze/mockaroo_loans/`.
+
+**3. IMF Data API**
+- No account or key needed — call the public SDMX endpoint directly.
+- Same `requests.get()` pattern, no auth header; parse the SDMX/JSON response into a DataFrame.
+- Write to `bronze/imf_macro/`.
+
+**4. Salesforce Developer Edition**
+- Sign up for a free Developer org (comes pre-seeded with sample Account/Contact records).
+- Register a Connected App to get an OAuth client ID/secret; do the OAuth token exchange (or use
+  `simple-salesforce`'s login helper), credentials pulled from the secret scope.
+- Pull via REST (`/services/data/vXX/query?q=SELECT+Id,Name+FROM+Account`) or the Bulk API for
+  larger volume.
+- Write to `bronze/salesforce_accounts/`.
+
+**5. Google Sheets**
+- Create a Google Cloud service account; manually share the target Sheet with that service
+  account's email (one-time action outside any notebook).
+- Authenticate `gspread` with the service-account JSON key from the secret scope;
+  `sheet.get_all_records()` → DataFrame.
+- Write to `bronze/branch_finance/`.
+
+**Scheduling**
+- A Databricks Job with 5 parallel ingestion tasks (one per source above), followed by Notebook 1
+  as the downstream task — matching the existing nightly-run pattern. Notebook 1 requires no code
+  changes to consume any of the five; if it does, the source-agnostic design (section 5) has
+  failed.
+
+**Relative effort, easiest to hardest:** IMF (no auth, plain GET) and Mockaroo (API-key GET) are
+the simplest. Neon reuses an existing watermark pattern. Google Sheets needs one manual
+service-account share step. Salesforce is the most involved, due to the OAuth flow.
+
+## 10. Acceptance Criteria
+
+- [x] IMF API: ingestion notebook written (`notebooks/multi_source_imf_ingestion.py`) — calls the
+      public CompactData SDMX endpoint per country, writes to `bronze_imf_macro`. **Not yet run
+      against a live cluster** — the per-country fetch, JSON shape, and empty-result handling are
+      unverified against IMF's actual current response format.
+- [ ] Neon: **pending.** JDBC read succeeds from a Databricks notebook, watermarked pull works on
+      a second run (no full-table reprocessing). Blocked on provisioning a Neon project.
+- [ ] Mockaroo: **pending.** Mock API returns realistic loan-origination-shaped JSON, ingestion
+      notebook lands it in Bronze. Blocked on designing the mock schema and generating an API key.
+- [ ] Salesforce: **pending.** OAuth flow works, sample Account/Contact data lands in Bronze.
+      Blocked on signing up for a Developer org and registering a Connected App.
+- [ ] Google Sheets: **pending.** Service-account auth works, sheet contents land in Bronze.
+      Blocked on creating a service account and manually sharing a Sheet with it.
 - [ ] Notebook 1 requires **zero code changes** to pick up files landed by any of these five
-      sources — if it needs changes, the source-agnostic design has failed
-- [ ] Not yet implemented — none of the five accounts/services are set up yet
+      sources — if it needs changes, the source-agnostic design has failed. Not yet verified even
+      for IMF, since IMF's own notebook hasn't run on a cluster yet.
 
-## 10. Non-Goals
+## 11. Non-Goals
 
 - No ADF deployment for this MVP (documented as the future path, section 7)
 - No real ERP/CRM belonging to an actual bank (Salesforce Developer Edition is a real CRM
