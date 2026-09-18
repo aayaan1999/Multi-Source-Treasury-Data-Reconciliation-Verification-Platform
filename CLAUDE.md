@@ -108,6 +108,33 @@ Lake:
    own documented assumptions (`PRODUCT_RATE_TYPE`, `ACCOUNT_RATE_TYPE`,
    `SEGMENT_COST_ALLOCATION`) alongside Notebook 3's. Spec:
    `specs/notebook-06-portfolio-branch-scenario-snapshot.md`.
+7. **Notebook 7 — ML-Based Fraud/Anomaly Scoring** — **FUTURE PHASE, explicitly not in current
+   scope.** Architecture documented (unsupervised Isolation Forest via MLflow batch scoring,
+   combined with Notebook 5's deterministic rules per "AI gives a signal, not a decision") so the
+   pipeline accommodates it later without rework — not because it's being built now. Real
+   blockers (no labeled data, no behavioral baseline, no device telemetry) are documented in the
+   spec itself. Spec: `specs/notebook-07-fraud-ml-future-phase.md`.
+
+**Two more additions, both in current scope (unlike Notebook 7 above):**
+- **Real-time FX rate fetching** — **not a polling job or a source table.** Currency-conversion
+  logic inside Notebook 3/6 calls a shared `get_live_rate()` utility directly, inline, at the
+  moment the notebook runs — the live rate is a utility call, not ingested data. This makes
+  Notebook 1-2's old `fx_rates` ingestion path unnecessary (see the spec's section 2), and the
+  `DUPLICATE_RATE`/`INVALID_RATE` checks in `specs/notebook-02-bank-data-quality.md` no longer
+  apply once this is implemented (that spec's `fx_rates` row is marked superseded). Auditability
+  is preserved via a `fx_rate_usage_log` written *after* each live fetch, not a pre-populated
+  lookup table. Spec: `specs/fx-realtime-ingestion.md`.
+- **Multi-source ingestion — revised to 5 free cloud sources, MVP scope.** Originally designed
+  around Azure Data Factory + on-prem enterprise systems; revised once the actual scope was
+  clarified as a demo/MVP using real free cloud services instead: **Neon** (Postgres, stands in
+  for a core banking DB), **Mockaroo** (mock API, stands in for a loan origination system),
+  **IMF's free public API** (regulatory/macro feed), **Salesforce Developer Edition** (real CRM,
+  free), **Google Sheets** (branch/finance data). **ADF itself is no longer being stood up for
+  this MVP** — small Databricks ingestion notebooks pull directly from these 5 sources instead;
+  ADF remains documented as the enterprise-scale path if this ever needs real on-prem ERP/CRM
+  integration. Still introduces the same real, currently-blocked schema gap
+  (`transaction_code_mapping`, `source_system` column) needing actual source-system code lists —
+  not resolvable with a placeholder assumption. Spec: `specs/multi-source-ingestion-adf.md`.
 
 Conventions when building these notebooks: PySpark + `.format("delta")` for every output table;
 inline comments explaining each transformation step (carried over from the original brief's

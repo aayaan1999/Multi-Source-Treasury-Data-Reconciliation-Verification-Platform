@@ -60,7 +60,7 @@ without N different exception-table shapes.
 | liquidity_daily | `MISSING_DATE` | `date` is null |
 | liquidity_daily | `NEGATIVE_HQLA` | `hqla` < 0 |
 | fx_rates | `INVALID_RATE` | `rate` is null or <= 0 |
-| fx_rates | `DUPLICATE_RATE` | more than one rate for the same `(date, currency_pair)` |
+| fx_rates | `DUPLICATE_RATE` | more than one rate for the same `(date, currency_pair)` — **superseded**: per `specs/fx-realtime-ingestion.md`, FX rates are now fetched live inline by Notebook 3/6's conversion logic, not ingested as a `fx_rates` data-quality subject at all. This row (and `fx_rates`/`raw_fx_rates`/`fx_rates_clean` generally) stops applying once that spec is implemented — see its section 2 |
 
 `NPL_STAGE_MISMATCH` directly encodes the source doc's own definitions ("a bad loan is any loan
 where `days_past_due` is 90 or more" and "Stage 3 — already bad ... heavy provisions") as a

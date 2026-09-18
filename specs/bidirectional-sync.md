@@ -57,13 +57,25 @@ A new step (either folded into Notebook 3 or a small standalone step run just be
    before Notebook 3 aggregates it
 3. For `APPROVED`: no data change — the record was reviewed and confirmed fine, already counted
 
-### Idempotency
+### Idempotency — now built as a watermark, per the multi-source ingestion decision
 
-`review_outcomes` grows over time (append-only from the Postgres/Camunda side); Databricks should
-process it as "apply every outcome whose `reviewed_at` is newer than the last processed
-watermark," not reprocess the whole table every run once volume grows. For the POC's scale,
-reprocessing the whole table each run is acceptable and simpler — **flagging the watermark
-approach as the production-scale follow-up, not building it now.**
+Originally deferred ("reprocess the whole table each run, simpler for POC scale"). Now formalized,
+consistent with the same watermark approach `specs/multi-source-ingestion-adf.md` section 5 uses
+for source-database ingestion — keeping both directions of this pipeline on the same incremental
+pattern rather than one being watermarked and the other a full-table reload:
+
+- `review_outcomes` gets a `synced_at` column, set by Databricks after processing a row (not by
+  Postgres/Camunda when the row is written — this distinguishes "when the decision was made" from
+  "when Databricks last picked it up")
+- Each run: `WHERE reviewed_at > :last_watermark` (the max `reviewed_at` Databricks has already
+  processed, tracked in a small checkpoint table or file), not a full-table read
+- **This is a simple watermark-column approach, not log-based CDC (Debezium).** Research into
+  Postgres CDC options for this session confirmed Debezium (WAL-based, via a replication slot and
+  typically a Kafka broker) is the production-grade pattern — but it requires real operational
+  setup (`wal_level = logical`, replication-slot lag monitoring, WAL-retention limits) that isn't
+  warranted for a low-volume table like `review_outcomes`. A watermark column is the right-sized
+  choice at this scale; Debezium remains the documented upgrade path if this table's write volume
+  or freshness requirements ever justify it.
 
 ## 4. Latency
 
@@ -88,3 +100,11 @@ a demo would be a credibility risk with a banking audience that will ask.
 - No real-time/event-driven sync (explicitly batch, matching the rest of the pipeline)
 - No conflict resolution for a record reviewed twice or corrected inconsistently — out of scope
   for a POC; would need real design (last-write-wins? reviewer role precedence?) before production
+- No Debezium/log-based CDC (see the "Idempotency" section — a watermark column is the right-sized
+  choice at this table's scale)
+
+---
+
+**Research sources** (grounding the watermark-vs-CDC decision, fetched during this session):
+- [PostgreSQL CDC: Logical Replication vs Debezium vs Native Streaming | RisingWave](https://risingwave.com/blog/postgresql-cdc-logical-replication-debezium/)
+- [Debezium in Production: PostgreSQL to Kafka to Iceberg CDC Patterns That Actually Work](https://bigdataboutique.com/blog/debezium-production-cdc-patterns)

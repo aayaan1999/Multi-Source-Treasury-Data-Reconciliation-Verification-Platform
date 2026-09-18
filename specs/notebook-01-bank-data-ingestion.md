@@ -13,6 +13,14 @@
 Ingest the eight core banking tables described in the source doc from CSV into standardised
 Delta tables, ready for Notebook 2's data-quality checks.
 
+**Update:** per `specs/multi-source-ingestion-adf.md`, Bronze-layer files landing in
+`input_dir` may now originate from an Azure Data Factory-orchestrated pipeline (database pulls,
+API extracts) rather than only manual CSV uploads. **This notebook requires zero code changes for
+that** — it reads whatever's in `input_dir` regardless of upstream origin, by design (see that
+spec's section 2, "two layers, not one"). If a future change to this notebook is ever motivated by
+"we added a new source system," that's a sign the source-agnostic design has broken down and
+should be reconsidered, not accepted as normal.
+
 ## 2. Relationship to Prior Work
 
 The original Notebook 1 (see `specs/day-01-sample-data-and-notebook-scaffolding.md`, now

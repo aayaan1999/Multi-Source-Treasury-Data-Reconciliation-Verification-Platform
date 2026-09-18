@@ -14,6 +14,18 @@ Notebook 1-2 rewrite. `bank-x poc-brief.md` is historical reference only — see
   with client whether it's already enabled on the workspace or needs setup
 - **CSV export capability** — Databricks output must be exportable to CSV for the application-layer import job
 
+## Ingestion Layer (new — real-time FX + multi-source, MVP scope)
+
+- **A live FX rate API account** (ExchangeRate-API or Open Exchange Rates are the leading
+  candidates — confirm the chosen provider actually covers USD/EUR/LBP/SAR/QAR before committing;
+  free ECB-only feeds like Frankfurter don't cover LBP/QAR) — see `specs/fx-realtime-ingestion.md`.
+  **Called inline by Notebook 3/6's conversion logic at run time — not a scheduled polling job,
+  not a source table.** No separate Databricks Job needed for this.
+- **5 free cloud accounts** for multi-source ingestion (no ADF needed for this MVP — see
+  `specs/multi-source-ingestion-adf.md`): **Neon** (Postgres), **Mockaroo** (mock API),
+  **IMF Data API** (free, no key), **Salesforce Developer Edition** (free CRM), **Google Sheets**
+  (+ a Google service account for API access)
+
 ## Application Layer (replaces the original Appian scope)
 
 - **PostgreSQL** — full schema per the source doc: entity tables (`customers`, `accounts`, `loans`,
@@ -88,6 +100,12 @@ Overrides the source doc's original "don't use a workflow engine for the POC" gu
    a table-extraction/OCR preprocessing step *before* Notebook 1 can ingest anything, which is
    extra scope not currently accounted for anywhere in this plan. Confirm this before assuming
    any new entity/source system slots into the existing pipeline unchanged.
+9. Which FX rate API to commit to (`specs/fx-realtime-ingestion.md`) — needs confirmed
+   USD/EUR/LBP/SAR/QAR coverage, not just "many currencies supported"
+10. What are the real ERP/CRM/external-banking source systems this platform will eventually
+    connect to, and what are their actual transaction codes? `transaction_code_mapping`
+    (`specs/multi-source-ingestion-adf.md` section 6) can't be populated without this — it's a
+    hard blocker, not something resolvable with a placeholder assumption
 
 ---
 
