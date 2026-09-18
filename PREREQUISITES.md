@@ -54,6 +54,13 @@ truth — see `CLAUDE.md` for how the two fit together.
 5. What scale should the synthetic dataset target — the source doc references "two million transactions" as a performance-proofing case; confirm whether the demo actually needs that scale
 6. Which regulatory report template(s) are needed first for Screen 3 (capital adequacy is the one worked out in the source doc; others may need their own layout)
 7. Any branding requirements for the React frontend for the demo
+8. What file format(s) do the real source systems (core banking, loan systems, branch systems)
+   actually export in? The current pipeline (Notebook 1) reads CSV directly — Spark also reads
+   JSON/Parquet/Avro natively and Excel with an added library (`com.crealytics:spark-excel`), so
+   any of those are a straightforward swap. **PDF or scanned-image exports are not** — those need
+   a table-extraction/OCR preprocessing step *before* Notebook 1 can ingest anything, which is
+   extra scope not currently accounted for anywhere in this plan. Confirm this before assuming
+   any new entity/source system slots into the existing pipeline unchanged.
 
 ---
 

@@ -124,6 +124,14 @@ source yet — will need a synthetic data generator before Screens 1, 2, 4, 5 ca
 demoed meaningfully. Flag this to the user before generating large synthetic datasets rather than
 assuming scale/realism requirements.
 
+**Source file format assumption:** Notebook 1 currently reads CSV directly (`spark.read.csv`).
+Spark also reads JSON/Parquet/Avro natively, and Excel with an added library — any of those are a
+straightforward swap if a new source system exports differently. **PDF or scanned-image sources
+are not a direct swap** — Spark can't parse those into rows/columns; they'd need a table-extraction
+or OCR preprocessing step before anything reaches Notebook 1. Don't assume a newly-added source
+system slots into the pipeline unchanged without confirming its actual export format first (see
+`PREREQUISITES.md` open question 8).
+
 ## Roadmap
 
 See `PLATFORM-BUILD-PLAN.md` for the phased build plan (Databricks layer, then Postgres/FastAPI
