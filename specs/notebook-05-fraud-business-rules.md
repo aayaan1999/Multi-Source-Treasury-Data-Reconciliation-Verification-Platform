@@ -13,9 +13,12 @@ fault/fraud type and status.")
 ## 1. Objective
 
 Run fraud- and business-rule checks against `transactions_clean` (Notebook 2's Silver-layer
-output) and produce a flagged-transaction table with a **type** (`FRAUD` vs `FAULT`) and a mutable
-**status** field — the input Camunda's process needs to create and route review tasks (see
-`specs/camunda-bpmn-process-design.md`).
+output) and produce `flagged_transactions`, a table with a **type** (`FRAUD` vs `FAULT`) and a
+mutable **status** field — the input Camunda's process needs to create and route review tasks (see
+`specs/camunda-bpmn-process-design.md`). In medallion terms, `flagged_transactions` sits between
+Silver and Gold: it's an enrichment of Silver-layer `transactions_clean` (not a re-validation of
+structure — that's Notebook 2's job), and it in turn feeds toward Gold consumers (Screen 6's task
+queue, and any future Gold-layer fraud rollups).
 
 ## 2. Why a Separate Notebook, Not an Extension of Notebook 2
 
@@ -25,8 +28,9 @@ still looks wrong** (unusually large, suspiciously patterned, duplicated). Confl
 would mean a single `flags` array mixing "the data is broken" with "the data is fine but
 suspicious" — different downstream handling (a broken record needs data correction; a suspicious
 one needs an investigator's judgment). Keeping them as separate notebooks/tables keeps that
-distinction explicit, and matches the medallion framing: Silver → business-rule layer, output
-feeding toward Gold.
+distinction explicit and matches the medallion framing established in `specs/notebook-01-bank-
+data-ingestion.md` (Bronze) and `specs/notebook-02-bank-data-quality.md` (Silver): this notebook
+reads Silver, adds a business-rule enrichment layer on top, and its output feeds toward Gold.
 
 ## 3. Rules
 

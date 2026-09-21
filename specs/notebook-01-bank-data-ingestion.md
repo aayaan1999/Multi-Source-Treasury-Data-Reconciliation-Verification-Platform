@@ -11,7 +11,12 @@
 ## 1. Objective
 
 Ingest the eight core banking tables described in the source doc from CSV into standardised
-Delta tables, ready for Notebook 2's data-quality checks.
+Delta tables, ready for Notebook 2's data-quality checks. In medallion terms, this notebook
+produces the **Bronze layer**: the `raw_*` Delta tables have standardised types/formats but are
+not yet validated (no structural or referential checks — that's Notebook 2's Silver layer). The
+landing-zone files this notebook reads from `input_dir` are Bronze too, in the sense used by
+`specs/multi-source-ingestion-adf.md` — Bronze spans both "files landing in `input_dir`" and "the
+`raw_*` tables this notebook writes from them."
 
 **Update:** per `specs/multi-source-ingestion-adf.md`, Bronze-layer files landing in
 `input_dir` may now originate from an Azure Data Factory-orchestrated pipeline (database pulls,

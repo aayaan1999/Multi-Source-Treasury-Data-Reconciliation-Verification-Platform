@@ -10,9 +10,12 @@
 
 ## 1. Objective
 
-Run structural and referential data-quality checks against all eight `raw_*` tables, split each
-into a `{table}_clean` Delta table plus a shared `data_quality_exceptions` log — the input Screen
-6's task queue (`PLATFORM-BUILD-PLAN.md` Phase 2) will eventually consume.
+Run structural and referential data-quality checks against all eight `raw_*` tables (Notebook 1's
+Bronze layer), split each into a `{table}_clean` Delta table plus a shared `data_quality_exceptions`
+log. In medallion terms, `{table}_clean` is the **Silver layer** — structurally and referentially
+validated, ready to be trusted by downstream notebooks (3, 4, 5, 6) and the Gold aggregates they
+produce. `data_quality_exceptions` is the input Screen 6's task queue (`PLATFORM-BUILD-PLAN.md`
+Phase 2) will eventually consume.
 
 ## 2. Design Decision: One Central Exceptions Log, Not Eight
 
