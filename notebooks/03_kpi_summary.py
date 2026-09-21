@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC # Notebook 3: Nightly KPI Summary
 # MAGIC
@@ -201,7 +205,6 @@ ASSUMPTIONS_APPLIED = [
 ]
 
 new_row = spark.createDataFrame([{
-    "calculation_date": None,  # set below via withColumn so it's a real `date`, not a Python str
     "car_pct": float(car_pct),
     "lcr_pct": float(lcr_pct),
     "npl_ratio_pct": float(npl_ratio_pct),

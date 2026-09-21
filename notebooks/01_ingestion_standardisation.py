@@ -22,7 +22,12 @@
 
 # COMMAND ----------
 
-
+# DBTITLE 1,Set catalog and schema
+# Pin reads/writes to the existing workspace catalog so bare table names resolve the same
+# way in every notebook (same pattern as Notebook 2 Cell 2).
+spark.sql("USE CATALOG dbw_bankx_treasury_poc")
+spark.sql("CREATE SCHEMA IF NOT EXISTS raw")
+spark.sql("USE SCHEMA raw")
 
 # COMMAND ----------
 
@@ -42,7 +47,7 @@ from pyspark.sql import functions as F
 
 # COMMAND ----------
 
-dbutils.widgets.text("input_dir", "/Volumes/bank_poc/raw", "Input directory")
+dbutils.widgets.text("input_dir", "/Volumes/dbw_bankx_treasury_poc/raw/raw/resources", "Input directory")
 
 INPUT_DIR = dbutils.widgets.get("input_dir")
 
