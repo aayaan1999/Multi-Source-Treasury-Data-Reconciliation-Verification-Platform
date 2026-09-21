@@ -1,6 +1,6 @@
 # Spec: Notebook 1 — Bank Data Ingestion & Standardisation
 
-**Status:** Implemented (not yet run against a live cluster)
+**Status:** Implemented; ran to completion without errors on Azure Databricks (2026-09-21). Output values not yet compared against this spec's traceability table.
 **Supersedes:** the treasury-specific version of `notebooks/01_ingestion_standardisation.py`
 (see "Relationship to prior work" below)
 **Source of truth:** `Middle East bank data cleaning and reporting.md` (database schema section)
@@ -51,7 +51,8 @@ longer consumed by any notebook. See `CLAUDE.md` for the current state of that r
 ## 4. Input
 
 Eight CSVs, one per table, read from a configurable `input_dir` widget (default
-`/Volumes/bank_poc/raw`, mirroring the original notebook's pattern). Sample files exist at
+`/Volumes/dbw_bankx_treasury_poc/raw/raw/resources` — a full `/Volumes/<catalog>/<schema>/<volume>/<folder>` path;
+omitting the volume segment fails with `UC_VOLUME_NOT_FOUND`). Sample files exist at
 `bank-data/*.csv` in this repo — see section 7 for what's deliberately wrong in them.
 
 ## 5. Requirements
@@ -82,7 +83,8 @@ Eight CSVs, one per table, read from a configurable `input_dir` widget (default
       no-slash pairs exist in the current sample data, so slash-insertion is logic-verified but
       not exercised by the current sample — worth adding a no-slash row if this needs demoing
       explicitly
-- [ ] **Not yet verified**: execution against a live Databricks cluster
+- [x] Executed against a live Databricks cluster: ran to completion with no errors (2026-09-21). Input path is now
+      `/Volumes/dbw_bankx_treasury_poc/raw/raw/resources`. Row counts/nulls not yet checked against section 7
 
 ## 7. Sample Data Summary (`bank-data/*.csv`)
 
@@ -102,4 +104,4 @@ logic verification.
 
 - No FX conversion to reporting currency
 - No synthetic data generation beyond what's needed to exercise Notebook 2's checks
-- No live cluster run (blocked on Databricks environment setup, same as before)
+- No live cluster run at original spec time (since done — see section 6)

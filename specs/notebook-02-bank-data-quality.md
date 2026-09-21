@@ -1,6 +1,6 @@
 # Spec: Notebook 2 — Bank Data Quality Verification
 
-**Status:** Implemented (not yet run against a live cluster)
+**Status:** Implemented; ran to completion without errors on Azure Databricks (2026-09-21). Output values not yet compared against this spec's traceability table.
 **Supersedes:** the treasury-specific version of `notebooks/02_data_quality_verification.py`
 **Source of truth:** `Middle East bank data cleaning and reporting.md`
 **File:** `notebooks/02_data_quality_verification.py`
@@ -90,7 +90,8 @@ cross-check rather than trusting the source system's `stage` column blindly.
       and nowhere in `data_quality_exceptions`
 - [x] `data_quality_exceptions` has a consistent 4-column shape regardless of which of the 8
       source tables a row came from
-- [ ] **Not yet verified**: execution against a live Databricks cluster
+- [x] Executed against a live Databricks cluster: ran to completion with no errors (2026-09-21). Exception counts by
+      flag not yet compared against this spec's expected counts
 
 ## 6. Non-Goals
 

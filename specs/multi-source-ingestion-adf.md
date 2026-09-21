@@ -1,6 +1,7 @@
 # Spec: Multi-Source Ingestion (MVP/Demo — Free Cloud Sources)
 
-**Status:** Spec only — not yet implemented
+**Status:** Five ingestion notebooks written (`notebooks/multi_source_*.py`); **none run against a live source** — each
+needs external credentials (Databricks secrets) not yet configured.
 **New for:** the "multiple data sources" requirement added to `3-WEEK-POC-PLAN.md`
 **Revised for:** demo/MVP scope — real free cloud sources instead of simulated/hypothetical ones,
 and ADF's role downgraded from required to optional (see section 3)

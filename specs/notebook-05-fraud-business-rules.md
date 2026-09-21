@@ -1,6 +1,6 @@
 # Spec: Notebook 5 — Fraud & Business Rule Detection
 
-**Status:** Spec only — not yet implemented
+**Status:** Implemented; ran to completion without errors on Azure Databricks (2026-09-21). Output values not yet compared against this spec's traceability table.
 **New for:** the 3-week Camunda-based POC extension — see `3-WEEK-POC-PLAN.md`
 **Source of truth:** user-provided "Proposed End-to-End Process" (Step 2: "Fraud/business rules
 identify fraudulent or faulty transactions. Each problematic transaction can be assigned a
@@ -82,8 +82,7 @@ reruns. This is the one notebook in the pipeline that isn't a clean overwrite-on
 
 ## 6. Acceptance Criteria
 
-- [x] Written: `notebooks/05_fraud_business_rules.py`. **Not yet run against a live cluster** —
-      none of the below is verified by an actual run.
+- [x] Written: `notebooks/05_fraud_business_rules.py`. **Ran to completion with no errors on Azure Databricks (2026-09-21, reported by the project owner); output values not yet compared against the traceability table**; the checks below remain unverified.
 - [ ] Every rule in section 3 fires correctly against `bank-data/transactions.csv` (see
       traceability, section 7)
 - [x]/[ ] A transaction can carry multiple flags (e.g. both `STRUCTURING_PATTERN` and

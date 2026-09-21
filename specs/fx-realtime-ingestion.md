@@ -1,6 +1,7 @@
 # Spec: Real-Time FX Rate Fetching (Inline, Not a Data Source)
 
-**Status:** Spec only — not yet implemented
+**Status:** Implemented (`notebooks/fx_utils.py`); exercised via notebooks 3, 5 and 6, which ran without errors on
+Azure Databricks (2026-09-21). Per-currency API coverage (LBP/SAR/QAR) and `fx_rate_usage_log` contents not yet inspected.
 **New for:** the "real-time FX rates" requirement added to `3-WEEK-POC-PLAN.md`
 **Corrected:** an earlier version of this spec designed FX as a separately-scheduled polling job
 writing to a table (`fx_rates_live`), read like any other ingested data source. **That's wrong.**
@@ -80,8 +81,8 @@ the original design without reintroducing a pre-populated lookup table.
 ## 6. Acceptance Criteria
 
 - [x] Written: `notebooks/fx_utils.py` (`get_live_rate`, `log_fx_usage`,
-      `get_live_rate_and_log`). **Not yet run against a live cluster** — none of the below is
-      verified by an actual call.
+      `get_live_rate_and_log`). Called by notebooks 3, 5 and 6 during runs that completed without errors on a live cluster
+      (2026-09-21); the checks below remain unverified.
 - [x]/[ ] Notebook 3 and Notebook 6 call `get_live_rate()` inline for every USD conversion, not a
       table lookup — implemented in both (`03_kpi_summary.py`, `06_portfolio_branch_scenario_snapshot.py`);
       Notebook 5 also adopted this for its one conversion site, beyond what this criterion asked

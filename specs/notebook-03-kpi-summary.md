@@ -1,6 +1,6 @@
 # Spec: Notebook 3 — Nightly KPI Summary
 
-**Status:** Spec only — not yet implemented
+**Status:** Implemented; ran to completion without errors on Azure Databricks (2026-09-21). Output values not yet compared against this spec's traceability table.
 **Supersedes:** the treasury-specific "Reconciliation & Consolidated Report" design (aggregating
 positions by entity/currency pair/position type) — that no longer applies now that Notebooks 1-2
 ingest the bank-wide schema instead of treasury positions
@@ -109,8 +109,8 @@ Delta table `kpi_daily_summary`:
 
 ## 8. Acceptance Criteria
 
-- [x] Written: `notebooks/03_kpi_summary.py`. **Not yet run against a live cluster** — none of
-      the below is verified by an actual run.
+- [x] Written: `notebooks/03_kpi_summary.py`. **Ran to completion with no errors on Azure Databricks (2026-09-21, reported by the project owner); output values not yet compared against the traceability table**. Bug found and fixed on the cluster: an unused
+      `calculation_date: None` key in the `createDataFrame` row broke schema inference and was removed.
 - [ ] All 8 KPIs match the hand-traced values in section 9 when run against `bank-data/*.csv`
 - [ ] `assumptions_applied` is populated correctly for `nim_pct`/`cost_to_income_pct`/`roe_pct`
       and empty for the other 5

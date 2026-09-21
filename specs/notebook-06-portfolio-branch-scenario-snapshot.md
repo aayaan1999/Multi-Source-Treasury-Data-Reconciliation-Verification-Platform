@@ -1,6 +1,6 @@
 # Spec: Notebook 6 — Portfolio, Branch & Scenario Snapshot
 
-**Status:** Spec only — not yet implemented
+**Status:** Implemented; ran to completion without errors on Azure Databricks (2026-09-21). Output values not yet compared against this spec's traceability table.
 **New for:** the "no cuts, all 6 screens" revision of `3-WEEK-POC-PLAN.md` — flagged there as
 needing its own spec before Track A builds it
 **Source of truth:** `Middle East bank data cleaning and reporting.md`, Screen 2 / Screen 4 /
@@ -121,8 +121,10 @@ requirement):
 
 ## 5. Acceptance Criteria
 
-- [x] Written: `notebooks/06_portfolio_branch_scenario_snapshot.py`. **Not yet run against a
-      live cluster** — none of the below is verified by an actual run.
+- [x] Written: `notebooks/06_portfolio_branch_scenario_snapshot.py`. **Ran to completion with no errors on Azure Databricks (2026-09-21, reported by the project owner); output values not yet compared against the traceability table**; the checks below remain unverified. Bug found and
+      fixed on the cluster: ANSI-mode division by zero, patched with a `DIVISION_PATCHES` block using `try_divide` for
+      `coverage_pct`, `cost_to_income_pct`, `profit_per_staff_usd` and `revenue_per_customer_usd`;
+      `product_performance_summary.npl_pct` is not patched (safe on sample data, would fail on a zero-outstanding product).
 - [ ] All values in section 6 (traceability) match a real run against `bank-data/*.csv`
 - [x]/[ ] `loan_ageing_summary` bucket boundaries — implemented with `<` on the upper edge of
       each bucket (a loan at exactly 30/90/180 days falls into the lower bucket); not yet

@@ -1,6 +1,6 @@
 # Spec: Notebook 4 — Exception Summary Report
 
-**Status:** Spec only — not yet implemented
+**Status:** Implemented; ran to completion without errors on Azure Databricks (2026-09-21). Output values not yet compared against this spec's traceability table.
 **Supersedes:** the treasury-specific "Exception Summary Report" design (counts by entity/flag
 type against `treasury_positions_exceptions`) — rebuilt against Notebook 2's `data_quality_exceptions`
 log instead
@@ -72,8 +72,7 @@ issues" directly, without a human eyeballing raw counts against differently-size
 
 ## 5. Acceptance Criteria
 
-- [x] Written: `notebooks/04_exception_summary.py`. **Not yet run against a live cluster** —
-      none of the below is verified by an actual run.
+- [x] Written: `notebooks/04_exception_summary.py`. **Ran to completion with no errors on Azure Databricks (2026-09-21, reported by the project owner); output values not yet compared against the traceability table**; the checks below remain unverified.
 - [ ] `exception_summary_by_table` has exactly 8 rows (one per source table) every run, regardless
       of whether a table has any exceptions
 - [ ] `exception_summary_by_flag` row counts match `data_quality_exceptions` grouped counts exactly
