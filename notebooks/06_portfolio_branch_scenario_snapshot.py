@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC # Notebook 6: Portfolio, Branch & Scenario Snapshot
 # MAGIC
@@ -440,6 +444,22 @@ scenario_row = spark.createDataFrame([{
 
 # COMMAND ----------
 
+DIVISION_PATCHES = {
+    "loan_stage_summary": {
+        "coverage_pct": F.expr("try_divide(provisions_usd, outstanding_usd)") * 100,
+    },
+    "branch_performance_summary": {
+        "cost_to_income_pct": F.expr("try_divide(cost_usd, revenue_usd)") * 100,
+        "profit_per_staff_usd": F.expr("try_divide(profit_usd, CAST(staff_count AS DOUBLE))"),
+    },
+    "segment_performance_summary": {
+        "revenue_per_customer_usd": F.expr("try_divide(revenue_usd, CAST(customer_count AS DOUBLE))"),
+    },
+    # product_performance_summary.npl_pct: npl_outstanding_usd is dropped by Cell 26's
+    # .select() so try_divide cannot be applied here; safe with sample data since
+    # all products have outstanding_usd > 0. Fix Cell 26 if zero-outstanding products arise.
+}
+
 OUTPUT_TABLES = {
     "loan_breakdown_by_dimension": loan_breakdown_by_dimension,
     "loan_stage_summary": loan_stage_summary,
@@ -453,6 +473,8 @@ OUTPUT_TABLES = {
 }
 
 for table_name, df in OUTPUT_TABLES.items():
+    if table_name in DIVISION_PATCHES:
+        df = df.withColumns(DIVISION_PATCHES[table_name])
     (
         df.write.format("delta")
         .mode("overwrite")
