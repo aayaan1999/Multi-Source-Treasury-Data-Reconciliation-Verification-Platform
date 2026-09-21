@@ -1,6 +1,8 @@
 # Spec: PostgreSQL Schema (Application Layer Foundation)
 
-**Status:** Spec only — not yet implemented
+**Status:** DDL written at `db/schema.sql` (41 tables); syntax-checked with `pglast`, **not yet executed against a live
+Postgres** (Docker Desktop wasn't running). SQLAlchemy models + Alembic migrations not yet written — see
+section 4.
 **Plan reference:** `PLATFORM-BUILD-PLAN.md` Phase 1, `3-WEEK-POC-PLAN.md` Track A Week 2
 **Depends on:** nothing (foundational) — everything else in the application layer depends on this
 **Source of truth:** `Middle East bank data cleaning and reporting.md`'s database section, plus
@@ -61,6 +63,13 @@ authoritative for "is this task still open" — ask Zeebe/Tasklist for that.
 - **`review_outcomes`** (`specs/bidirectional-sync.md`): `record_type`, `source_table`,
   `record_key`, `outcome`, `corrected_value` (JSON), `reviewed_by`, `reviewed_at`, `synced_at`
   (added per the watermark update in that spec)
+
+**Deviations recorded while writing `db/schema.sql`:** (a) `fx_rates` keeps the `(date, currency_pair, rate)`
+shape and a new `fx_rate_usage_log` table is added, because `specs/fx-realtime-ingestion.md` removed
+`fx_rates_live`; (b) every Gold table carries `calculation_date` (notebooks 4 and 6 write it though
+their spec column tables omit it); (c) `data_quality_exceptions` gains an app-side `exception_id`;
+(d) the `report_*`, `risk_weights`, `validation_rules`, `calculation_audit` and `submitted_files`
+columns are inferred — the source doc names only their purpose.
 - **`transaction_code_mapping`** (`specs/multi-source-ingestion-adf.md` section 8): `source_system`,
   `source_code`, `centralized_code` — **schema defined, population blocked** on real source-system
   code lists; create the empty table now, don't wait to define its shape
@@ -87,7 +96,10 @@ everything else depends on them existing before it can be seeded or imported int
       (`accounts.customer_id` → `customers.customer_id`, etc.)
 - [ ] `review_outcomes` and `transaction_code_mapping` exist even though population is
       blocked/deferred — the shape shouldn't wait for the data
-- [ ] Not yet implemented
+- [x] `db/schema.sql` written; parses as valid PostgreSQL and every FK target is created before its referrer
+- [ ] Executed against a live Postgres (e.g. `docker run postgres:16` + `psql -f db/schema.sql`)
+- [ ] Import check: load `bank-data/*.csv` (post-Notebook-2 shape) and confirm no column mismatch
+- [ ] SQLAlchemy models + Alembic migrations generated from / reconciled with `db/schema.sql`
 
 ## 6. Non-Goals
 

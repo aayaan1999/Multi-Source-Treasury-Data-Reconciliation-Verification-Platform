@@ -21,10 +21,22 @@ treasury-entity CSVs (`lebanon_positions.csv`, etc.) and the treasury-specific N
 used to feed are **no longer used by any notebook** — kept in the repo as historical reference
 (see `specs/day-01-sample-data-and-notebook-scaffolding.md`, marked superseded).
 
-**Notebooks 3-5 are speced but not yet implemented.** Notebook 3 (Nightly KPI Summary) and
-Notebook 4 (Exception Summary) have specs at `specs/notebook-03-kpi-summary.md` and
-`specs/notebook-04-exception-summary.md`. Notebook 5 (Fraud & Business Rule Detection, new — see
-below) has a spec at `specs/notebook-05-fraud-business-rules.md`.
+**Notebooks 3-6, the live-FX utility (`notebooks/fx_utils.py`), and the five `multi_source_*`
+ingestion notebooks are now written** (commit `a0bda22`) against their specs in `specs/`, but
+**none of the Databricks notebooks has been verified on a live cluster yet** — verification is in
+progress on Azure Databricks (catalog `dbw_bankx_treasury_poc`, schema `raw`, landing volume
+`/Volumes/dbw_bankx_treasury_poc/raw/landing`; see `DATABRICKS-SETUP.md`). Treat every
+acceptance-criteria checkbox as hand-traced, not proven, until a spec is updated to say otherwise.
+Some spec `Status:` header lines (notebooks 3-6, `fx-realtime-ingestion.md`,
+`multi-source-ingestion-adf.md`) still read "Spec only — not yet implemented" and are stale.
+
+Notebooks follow a medallion layout: Bronze = `raw_*` (Notebook 1), Silver = `*_clean` and
+`data_quality_exceptions` (Notebook 2), business-rule enrichment = `flagged_transactions`
+(Notebook 5), Gold = the aggregates from Notebooks 3, 4 and 6. Every notebook's first code cell
+pins `USE CATALOG dbw_bankx_treasury_poc` / `USE SCHEMA raw`, so tables are referenced by bare
+name. Development flow: notebooks are edited and verified in Databricks (inside the Repo folder),
+pushed to GitHub from there, then pulled locally — avoid editing `notebooks/` locally at the same
+time.
 
 **As of a 3-week timeline decision, the workflow architecture changed: Camunda 8 (self-hosted)
 replaces the "status column + endpoints" design** the source doc originally recommended for a
@@ -34,7 +46,7 @@ is **not the plan currently being executed** — don't build against its Phase 1
 `3-WEEK-POC-PLAN.md` first for what's actually in scope right now.
 
 The entire application layer (PostgreSQL schema, FastAPI backend, React frontend) is not yet
-built.
+built; specs for each exist in `specs/` (`postgres-schema.md`, `fastapi-backend.md`, `screen-0*.md`).
 
 ## What This Project Is
 
@@ -70,37 +82,37 @@ just landing in Postgres instead of Appian.
 
 ## Databricks Build Scope
 
-Four PySpark notebooks against the bank-wide schema (`customers`, `accounts`, `loans`,
+Six PySpark notebooks (plus a future-phase seventh) against the bank-wide schema (`customers`, `accounts`, `loans`,
 `transactions`, `branches`, `capital_positions`, `liquidity_daily`, `fx_rates`), all using Delta
 Lake:
 
-1. **Notebook 1 — Ingestion & Standardisation** (built) — reads the eight source CSVs
+1. **Notebook 1 — Ingestion & Standardisation** (built, live-cluster verification in progress) — reads the eight source CSVs
    (`bank-data/*.csv`), standardises date formats and numeric types, normalises `fx_rates`'
    currency-pair notation. Output: `raw_customers`, `raw_accounts`, `raw_loans`,
    `raw_transactions`, `raw_branches`, `raw_capital_positions`, `raw_liquidity_daily`,
    `raw_fx_rates`. Spec: `specs/notebook-01-bank-data-ingestion.md`.
-2. **Notebook 2 — Data Quality Verification** (built) — runs structural + referential checks
+2. **Notebook 2 — Data Quality Verification** (built, not yet verified live) — runs structural + referential checks
    per table (27 flag labels total across the 8 tables — see the spec for the full list, e.g.
    `NPL_STAGE_MISMATCH`, `ORPHAN_CUSTOMER`, `DUPLICATE_RATE`). Output: `{table}_clean` per source
    table, plus one shared `data_quality_exceptions` log (`source_table`, `record_key`,
    `flag_label`, `description`) since the 8 source tables don't share a schema. Spec:
    `specs/notebook-02-bank-data-quality.md`.
-3. **Notebook 3 — Nightly KPI Summary** (spec written, not yet implemented) — precomputes 5 of
+3. **Notebook 3 — Nightly KPI Summary** (written, not yet verified on a live cluster) — precomputes 5 of
    the 8 Executive Summary KPIs (CAR, LCR, NPL ratio, total assets, dollarization ratio) from
    Notebook 2's clean tables; NIM/cost-to-income/ROE are explicitly blocked pending schema gaps
    (see the spec). Output: `kpi_daily_summary`. Spec: `specs/notebook-03-kpi-summary.md`.
-4. **Notebook 4 — Exception Summary Report** (spec written, not yet implemented) — summarises
+4. **Notebook 4 — Exception Summary Report** (written, not yet verified on a live cluster) — summarises
    `data_quality_exceptions` by table and flag type, plus an exception-rate-per-table figure.
    Output: `exception_summary_by_table`, `exception_summary_by_flag`. Spec:
    `specs/notebook-04-exception-summary.md`.
-5. **Notebook 5 — Fraud & Business Rule Detection** (spec written, not yet implemented; new for
+5. **Notebook 5 — Fraud & Business Rule Detection** (written, not yet verified on a live cluster; new for
    the 3-week Camunda extension) — runs threshold-based fraud/business rules
    (`LARGE_AMOUNT`, `VELOCITY_BREACH`, `STRUCTURING_PATTERN`, `DUPLICATE_TRANSACTION`) against
    `transactions_clean`, separate from Notebook 2's structural checks since fraud and data-quality
    are different concerns. Output: `flagged_transactions` (mutable `status`, updated by human
    review — the one notebook output that isn't a clean overwrite-on-rerun). Spec:
    `specs/notebook-05-fraud-business-rules.md`.
-6. **Notebook 6 — Portfolio, Branch & Scenario Snapshot** (spec written, not yet implemented; new
+6. **Notebook 6 — Portfolio, Branch & Scenario Snapshot** (written, not yet verified on a live cluster; new
    for the "no cuts, all 6 screens" plan revision) — Gold-layer aggregates feeding Screens 2, 4,
    and 5 (loan breakdown by dimension, IFRS 9 staging, top-20 exposures, ageing, LTV distribution,
    branch/segment/product performance, the Scenario Modelling snapshot). Reads only Notebook 2's
