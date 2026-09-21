@@ -77,10 +77,15 @@ cross-check rather than trusting the source system's `stage` column blindly.
   logged the same way as structural checks — an orphan record is excluded from `{table}_clean`
   even though it wasn't caught by that table's own structural checks (see `notebooks/02_*.py`'s
   `orphan_flags` + follow-up filter)
-- Referential checks only validate the direct parent named in the source doc's "how they join up"
-  section (accounts/loans → customers, transactions → accounts, customers → branches). Deeper
-  transitive checks (e.g. "does this transaction's account's customer's branch exist") aren't
-  implemented — would be redundant given each link is checked independently
+- Referential checks validate the direct parent named in the source doc's "how they join up"
+  section (accounts/loans → customers, transactions → accounts, customers → branches) **against the
+  parent's `{table}_clean` output, not its `raw_*` table**. A parent quarantined for any reason
+  (e.g. `MISSING_RISK_RATING`) therefore also quarantines its children, logged with the child's
+  usual `ORPHAN_*` label. Without this a clean child could reference a row absent from the clean
+  parent table, and the PostgreSQL foreign keys (`db/schema.sql`) would reject it at import. The
+  notebook processes tables in dependency order (branches → customers → accounts/loans →
+  transactions) for this reason. Each link is still only checked against its direct parent; the
+  cascade reaches deeper levels because each parent's clean table already reflects its own parent.
 
 ## 5. Acceptance Criteria
 
@@ -127,9 +132,15 @@ Hand-traced against `bank-data/*.csv` (not yet confirmed by an actual notebook r
 | capital_positions | `2026-08` | `INVALID_RWA` (risk_weighted_assets = 0) |
 | liquidity_daily | `2026-09-13` | `NEGATIVE_HQLA` |
 | liquidity_daily | *(blank date row)* | `MISSING_DATE` |
+| accounts | `ACC004` | also `ORPHAN_CUSTOMER` (parent `C004` is quarantined for `MISSING_RISK_RATING`) |
+| accounts | `ACC009` | also `ORPHAN_CUSTOMER` (parent `C009` is quarantined for `INVALID_SEGMENT`) |
+| loans | `L004` | also `ORPHAN_CUSTOMER` (parent `C004` quarantined) |
+| loans | `L009` | also `ORPHAN_CUSTOMER` (parent `C009` quarantined) |
+| transactions | `T0009` | also `ORPHAN_ACCOUNT` (parent `ACC004` quarantined) |
 | fx_rates | `2026-09-16_USD/SAR` | `DUPLICATE_RATE` (both rows for that date+pair) |
 | fx_rates | `2026-09-17_USD/QAR` | `INVALID_RATE` (rate = 0) |
 
-All other rows across all eight tables are expected to land in their respective `{table}_clean`
-table. This table is the test plan to verify against real notebook output once run on a live
+The five "also" rows are the cascade rule (section 4): those records were already quarantined for their own
+flag, so `{table}_clean` contents are unchanged, but the exceptions log gains five rows. All other rows across
+all eight tables are expected to land in their respective `{table}_clean` table. This table is the test plan to verify against real notebook output once run on a live
 cluster (see Acceptance Criteria section 5).

@@ -1,7 +1,7 @@
 # Spec: PostgreSQL Schema (Application Layer Foundation)
 
-**Status:** DDL written at `db/schema.sql` (41 tables); syntax-checked with `pglast`, **not yet executed against a live
-Postgres** (Docker Desktop wasn't running). SQLAlchemy models + Alembic migrations not yet written — see
+**Status:** DDL written at `db/schema.sql` (41 tables); syntax-checked with `pglast`, **executed against PostgreSQL 16.2**
+(embedded `pgserver`, 2026-09-21): 41 tables created, constraint and audit_log tests pass, sample CSVs load. SQLAlchemy models + Alembic migrations not yet written — see
 section 4.
 **Plan reference:** `PLATFORM-BUILD-PLAN.md` Phase 1, `3-WEEK-POC-PLAN.md` Track A Week 2
 **Depends on:** nothing (foundational) — everything else in the application layer depends on this
@@ -97,8 +97,15 @@ everything else depends on them existing before it can be seeded or imported int
 - [ ] `review_outcomes` and `transaction_code_mapping` exist even though population is
       blocked/deferred — the shape shouldn't wait for the data
 - [x] `db/schema.sql` written; parses as valid PostgreSQL and every FK target is created before its referrer
-- [ ] Executed against a live Postgres (e.g. `docker run postgres:16` + `psql -f db/schema.sql`)
-- [ ] Import check: load `bank-data/*.csv` (post-Notebook-2 shape) and confirm no column mismatch
+- [x] Executed against a live Postgres 16.2 (embedded `pgserver`, not Docker): all 41 tables create with no errors
+- [x] Constraint behaviour verified: FK, CHECK (segment, month, flag_label), UNIQUE, `status` default, and `audit_log`
+      UPDATE/DELETE/TRUNCATE rejected once a row exists (row-level trigger doesn't fire on an empty table — harmless)
+- [x] Import check (partial): `bank-data/*.csv` rows expected to survive Notebook 2 load into all 7 entity/time-series
+      tables with no column mismatch. `fx_rates` and the Gold tables not yet loaded (need real Databricks exports).
+- [x] **FK vs Notebook 2 quarantine — resolved in Notebook 2:** its orphan checks used the *raw* parent tables, so a
+      child could stay in `*_clean` while its parent was quarantined for a different flag, and these FKs would
+      reject it at import. Notebook 2 now checks children against the parent's *clean* table (cascade); the FKs
+      stay enforced. Local change, not yet re-run on Databricks.
 - [ ] SQLAlchemy models + Alembic migrations generated from / reconciled with `db/schema.sql`
 
 ## 6. Non-Goals

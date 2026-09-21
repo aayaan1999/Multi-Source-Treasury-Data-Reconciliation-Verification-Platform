@@ -104,6 +104,11 @@ emphasis on loan-book quality (IFRS 9 staging, NPL tracking).
 `specs/notebook-02-bank-data-quality.md` section 7 (no record in the current sample data trips
 more than one check, so `exception_count` is 1 for every `(source_table, flag_label)` pair in
 this particular dataset — that will change once a richer sample or real data is used).
+**Correction after Notebook 2's clean-parent cascade** (`specs/notebook-02-bank-data-quality.md` section 4):
+five records now also carry an `ORPHAN_*` flag, so three pairs are no longer 1 — `accounts / ORPHAN_CUSTOMER` = 3
+(`ACC010`, `ACC004`, `ACC009`), `loans / ORPHAN_CUSTOMER` = 3 (`L010`, `L004`, `L009`), `transactions /
+ORPHAN_ACCOUNT` = 2 (`T0010`, `T0009`). The row count stays 22 and `flagged_record_count` per table above is
+unchanged (it counts distinct record keys). Not yet re-run on a cluster.
 
 These are hand-computed, not verified by an actual run — treat as the test plan to check against
 real notebook output once implemented and run on a live cluster.

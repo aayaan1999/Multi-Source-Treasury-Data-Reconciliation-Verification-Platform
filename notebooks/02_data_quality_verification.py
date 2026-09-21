@@ -93,7 +93,13 @@ def finalize(df: DataFrame, table_name: str, key_col: str, check_cols: list):
 
 def orphan_flags(child_df: DataFrame, child_key_col: str, child_fk_col: str, parent_df: DataFrame, parent_key_col: str, flag_label: str, table_name: str):
     """Anti-joins child against parent on the foreign key and returns exception rows for every
-    child record whose foreign key doesn't exist in the parent table."""
+    child record whose foreign key doesn't exist in the parent table.
+
+    Callers pass the parent's *clean* table, not its raw one: a parent quarantined for any other
+    reason (e.g. MISSING_RISK_RATING) must also take its children out of the clean set, otherwise a
+    clean child would point at a row that isn't in the clean parent table and the PostgreSQL
+    foreign keys would reject it at import. This is why Branches is processed before Customers,
+    and Customers/Accounts before their children."""
     orphans = child_df.join(
         parent_df.select(F.col(parent_key_col).alias("_parent_key")),
         child_df[child_fk_col] == F.col("_parent_key"),
@@ -103,7 +109,7 @@ def orphan_flags(child_df: DataFrame, child_key_col: str, child_fk_col: str, par
         F.lit(table_name).alias("source_table"),
         F.col(child_key_col).cast("string").alias("record_key"),
         F.lit(flag_label).alias("flag_label"),
-        F.concat(F.lit(f"{child_fk_col} '"), F.col(child_fk_col), F.lit(f"' has no matching {parent_key_col}")).alias("description"),
+        F.concat(F.lit(f"{child_fk_col} '"), F.col(child_fk_col), F.lit(f"' has no matching {parent_key_col} in the clean parent table")).alias("description"),
     )
 
 # COMMAND ----------
@@ -123,6 +129,28 @@ raw_liquidity_daily = spark.table("raw_liquidity_daily")
 raw_fx_rates = spark.table("raw_fx_rates")
 
 exception_frames = []
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Branches
+# MAGIC
+# MAGIC `MISSING_BRANCH_ID`, `NEGATIVE_OPEX`.
+
+# COMMAND ----------
+
+branches_checked = raw_branches.select(
+    "*",
+    flag_struct(F.col("branch_id").isNull(), "MISSING_BRANCH_ID", F.lit("branch_id is missing")).alias("chk_1"),
+    flag_struct(
+        F.col("monthly_opex").isNotNull() & (F.col("monthly_opex") < 0),
+        "NEGATIVE_OPEX",
+        F.concat(F.lit("monthly_opex "), F.col("monthly_opex").cast("string"), F.lit(" is negative")),
+    ).alias("chk_2"),
+)
+
+branches_clean, branches_exceptions = finalize(branches_checked, "branches", "branch_id", ["chk_1", "chk_2"])
+exception_frames.append(branches_exceptions)
 
 # COMMAND ----------
 
@@ -153,7 +181,7 @@ customers_checked = raw_customers.select(
 customers_clean, customers_exceptions = finalize(customers_checked, "customers", "customer_id", ["chk_1", "chk_2", "chk_3", "chk_4"])
 exception_frames.append(customers_exceptions)
 exception_frames.append(
-    orphan_flags(raw_customers, "customer_id", "branch_id", raw_branches, "branch_id", "ORPHAN_BRANCH", "customers")
+    orphan_flags(raw_customers, "customer_id", "branch_id", branches_clean, "branch_id", "ORPHAN_BRANCH", "customers")
 )
 # Orphan customers get pulled out of the clean set too, not just logged.
 customer_orphan_ids = [r.record_key for r in exception_frames[-1].select("record_key").distinct().collect()]
@@ -185,7 +213,7 @@ accounts_checked = raw_accounts.select(
 
 accounts_clean, accounts_exceptions = finalize(accounts_checked, "accounts", "account_id", ["chk_1", "chk_2", "chk_3"])
 exception_frames.append(accounts_exceptions)
-accounts_orphan_exceptions = orphan_flags(raw_accounts, "account_id", "customer_id", raw_customers, "customer_id", "ORPHAN_CUSTOMER", "accounts")
+accounts_orphan_exceptions = orphan_flags(raw_accounts, "account_id", "customer_id", customers_clean, "customer_id", "ORPHAN_CUSTOMER", "accounts")
 exception_frames.append(accounts_orphan_exceptions)
 account_orphan_ids = [r.record_key for r in accounts_orphan_exceptions.select("record_key").distinct().collect()]
 accounts_clean = accounts_clean.filter(~F.col("account_id").isin(account_orphan_ids))
@@ -232,7 +260,7 @@ loans_checked = raw_loans.select(
 
 loans_clean, loans_exceptions = finalize(loans_checked, "loans", "loan_id", ["chk_1", "chk_2", "chk_3", "chk_4", "chk_5"])
 exception_frames.append(loans_exceptions)
-loans_orphan_exceptions = orphan_flags(raw_loans, "loan_id", "customer_id", raw_customers, "customer_id", "ORPHAN_CUSTOMER", "loans")
+loans_orphan_exceptions = orphan_flags(raw_loans, "loan_id", "customer_id", customers_clean, "customer_id", "ORPHAN_CUSTOMER", "loans")
 exception_frames.append(loans_orphan_exceptions)
 loan_orphan_ids = [r.record_key for r in loans_orphan_exceptions.select("record_key").distinct().collect()]
 loans_clean = loans_clean.filter(~F.col("loan_id").isin(loan_orphan_ids))
@@ -259,32 +287,10 @@ transactions_checked = raw_transactions.select(
 
 transactions_clean, transactions_exceptions = finalize(transactions_checked, "transactions", "transaction_id", ["chk_1", "chk_2", "chk_3"])
 exception_frames.append(transactions_exceptions)
-transactions_orphan_exceptions = orphan_flags(raw_transactions, "transaction_id", "account_id", raw_accounts, "account_id", "ORPHAN_ACCOUNT", "transactions")
+transactions_orphan_exceptions = orphan_flags(raw_transactions, "transaction_id", "account_id", accounts_clean, "account_id", "ORPHAN_ACCOUNT", "transactions")
 exception_frames.append(transactions_orphan_exceptions)
 transaction_orphan_ids = [r.record_key for r in transactions_orphan_exceptions.select("record_key").distinct().collect()]
 transactions_clean = transactions_clean.filter(~F.col("transaction_id").isin(transaction_orphan_ids))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Branches
-# MAGIC
-# MAGIC `MISSING_BRANCH_ID`, `NEGATIVE_OPEX`.
-
-# COMMAND ----------
-
-branches_checked = raw_branches.select(
-    "*",
-    flag_struct(F.col("branch_id").isNull(), "MISSING_BRANCH_ID", F.lit("branch_id is missing")).alias("chk_1"),
-    flag_struct(
-        F.col("monthly_opex").isNotNull() & (F.col("monthly_opex") < 0),
-        "NEGATIVE_OPEX",
-        F.concat(F.lit("monthly_opex "), F.col("monthly_opex").cast("string"), F.lit(" is negative")),
-    ).alias("chk_2"),
-)
-
-branches_clean, branches_exceptions = finalize(branches_checked, "branches", "branch_id", ["chk_1", "chk_2"])
-exception_frames.append(branches_exceptions)
 
 # COMMAND ----------
 
