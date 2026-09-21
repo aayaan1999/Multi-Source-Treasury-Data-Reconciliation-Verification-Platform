@@ -1,0 +1,23 @@
+# Render Blueprint for the FastAPI backend. See DEPLOYMENT.md.
+# In Render: New + -> Blueprint -> pick this repo. Render creates the service and asks for the
+# two values marked `sync: false` (they are secrets/URLs that must not live in Git).
+services:
+  - type: web
+    name: bank-data-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/live   # not /health: that one needs the database, and Neon may be asleep
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL          # Neon connection string, direct (non-pooled) host, ?sslmode=require
+        sync: false
+      - key: CORS_ORIGINS          # the Netlify site URL, e.g. https://your-site.netlify.app (no trailing slash)
+        sync: false
+      - key: JWT_SECRET            # Render generates a random one; it signs login tokens
+        generateValue: true
+      - key: JWT_EXPIRE_MINUTES
+        value: "480"

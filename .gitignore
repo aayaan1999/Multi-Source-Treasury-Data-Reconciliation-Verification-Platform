@@ -13,8 +13,25 @@
 # Reference material (legacy treasury CSVs, external PDFs) — not project deliverables
 resources/
 
-# Python / backend local files
-backend/.env
-backend/.venv/
+# Environment-specific files: secrets, per-machine settings and local build output.
+# Only the *.example templates are committed; copy one to .env and fill it in locally.
+.env
+.env.*
+!.env.example
+*.local
+
+# Python environments and caches
+.venv/
+venv/
 __pycache__/
+*.pyc
 .pytest_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+*.log
+
+# Hosting-tool local state (created by the Netlify / Render / Vercel CLIs, not needed in Git)
+.netlify/
+.vercel/

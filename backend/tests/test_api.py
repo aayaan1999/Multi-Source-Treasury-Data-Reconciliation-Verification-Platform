@@ -11,6 +11,15 @@ def test_health_reports_database_up(client):
     assert client.get(f"{API}/health").json() == {"status": "ok", "database": True}
 
 
+def test_liveness_never_touches_the_database(client, monkeypatch):
+    def down(*_, **__):
+        raise psycopg2.OperationalError("connection refused")
+
+    monkeypatch.setattr("app.routers.health.query_one", down)
+    assert client.get(f"{API}/live").json() == {"status": "alive"}
+    assert client.get(f"{API}/health").status_code == 503  # ...while /health does report the outage
+
+
 def test_login_returns_token_and_role(client):
     r = client.post(f"{API}/auth/login", json={"email": "Approver@BankX.demo", "password": PASSWORD})
     assert r.status_code == 200
