@@ -1,0 +1,97 @@
+# Databricks Asset Bundle: the pipeline job. See specs/pipeline-job-and-neon-load.md.
+#
+#   databricks bundle validate
+#   databricks bundle deploy
+#
+# Runs automatically when a file lands in the landing folder (file-arrival trigger). Compute is
+# serverless (no cluster is defined); if serverless JDBC to Neon is blocked in your workspace,
+# give the `load_postgres` task a job cluster instead.
+bundle:
+  name: bank-data-pipeline
+
+variables:
+  landing_path:
+    description: Folder the CSVs are uploaded to (Unity Catalog volume path, no trailing slash).
+    default: /Volumes/dbw_bankx_treasury_poc/raw/raw/resources
+
+targets:
+  default:
+    default: true
+
+resources:
+  jobs:
+    bank_data_pipeline:
+      name: bank-data-pipeline
+      description: Ingest -> data quality -> Gold aggregates + fraud rules -> load to Neon Postgres.
+
+      # One run at a time; an upload that arrives mid-run queues the next run instead of overlapping.
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+
+      trigger:
+        pause_status: UNPAUSED
+        file_arrival:
+          url: ${var.landing_path}/
+          # Uploading 8 files takes a while: wait until the folder has been quiet for 2 minutes
+          # so one upload batch starts one run, not eight.
+          wait_after_last_change_seconds: 120
+          min_time_between_triggers_seconds: 300
+
+      tasks:
+        - task_key: ingest
+          description: Notebook 1 - CSV to standardised raw_* Delta tables (Bronze).
+          notebook_task:
+            notebook_path: ./notebooks/01_ingestion_standardisation.py
+            base_parameters:
+              input_dir: ${var.landing_path}
+
+        - task_key: quality
+          description: Notebook 2 - structural + referential checks, *_clean tables (Silver).
+          depends_on:
+            - task_key: ingest
+          notebook_task:
+            notebook_path: ./notebooks/02_data_quality_verification.py
+
+        - task_key: kpi_summary
+          description: Notebook 3 - KPI tiles (live FX API).
+          depends_on:
+            - task_key: quality
+          max_retries: 1
+          notebook_task:
+            notebook_path: ./notebooks/03_kpi_summary.py
+
+        - task_key: exception_summary
+          description: Notebook 4 - exception rollups.
+          depends_on:
+            - task_key: quality
+          notebook_task:
+            notebook_path: ./notebooks/04_exception_summary.py
+
+        - task_key: fraud_rules
+          description: Notebook 5 - fraud/business rules (live FX API).
+          depends_on:
+            - task_key: quality
+          max_retries: 1
+          notebook_task:
+            notebook_path: ./notebooks/05_fraud_business_rules.py
+
+        - task_key: portfolio_snapshot
+          description: Notebook 6 - portfolio, branch, scenario aggregates (live FX API).
+          depends_on:
+            - task_key: quality
+          max_retries: 1
+          notebook_task:
+            notebook_path: ./notebooks/06_portfolio_branch_scenario_snapshot.py
+
+        - task_key: load_postgres
+          description: Merge Silver/Gold into Neon Postgres in one transaction.
+          depends_on:
+            - task_key: kpi_summary
+            - task_key: exception_summary
+            - task_key: fraud_rules
+            - task_key: portfolio_snapshot
+          # Neon can be suspended and take a moment to wake; one retry covers a slow first connect.
+          max_retries: 1
+          notebook_task:
+            notebook_path: ./notebooks/load_to_postgres.py

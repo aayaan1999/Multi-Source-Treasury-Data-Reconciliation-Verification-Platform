@@ -76,9 +76,11 @@ data source; it's kept only as historical context for why this platform exists.
    model, the workflow/audit-trail engine, scenario modelling, and PDF/Excel regulatory exports.
    Replaces the POC brief's Appian scope. See "Application Layer" below.
 
-Handoff between the two layers: Databricks output tables (Delta + CSV export) are loaded into
-PostgreSQL via a nightly import job — same file-based handoff philosophy as the original brief,
-just landing in Postgres instead of Appian.
+Handoff between the two layers: a Databricks Job (`databricks.yml`) runs notebooks 1-6 and then
+`notebooks/load_to_postgres.py`, which merges the Silver/Gold Delta tables into PostgreSQL on
+**Neon** in one transaction. The job starts by itself when a file lands in the landing volume
+(file-arrival trigger), so results appear in the app minutes after an upload. Written and locally
+tested, **not yet deployed** — see `specs/pipeline-job-and-neon-load.md`.
 
 ## Databricks Build Scope
 

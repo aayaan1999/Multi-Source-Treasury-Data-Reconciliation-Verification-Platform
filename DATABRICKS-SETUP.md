@@ -239,6 +239,32 @@ hardcoded.
 
 ---
 
+## 10. Pipeline job and Neon Postgres
+
+Full design and acceptance checks: `specs/pipeline-job-and-neon-load.md`. Steps:
+
+1. **Neon:** create a free project + database at https://neon.tech and copy the connection details.
+2. **Create the tables in Neon** (from your laptop, in the repo root):
+   ```
+   pip install psycopg2-binary
+   $env:DATABASE_URL = "postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require"   # PowerShell
+   python db/apply_schema.py
+   ```
+3. **Store the Neon credentials as Databricks secrets** (never in code):
+   ```
+   databricks secrets create-scope neon
+   databricks secrets put-secret neon host --string-value <neon host>
+   databricks secrets put-secret neon database --string-value <db name>
+   databricks secrets put-secret neon user --string-value <user>
+   databricks secrets put-secret neon password --string-value <password>
+   ```
+4. **Deploy the job:** `databricks bundle validate`, then `databricks bundle deploy` (needs the Databricks CLI
+   authenticated to the workspace: `databricks auth login --host <workspace url>`).
+5. **Trigger it:** upload the 8 CSVs to the landing folder. The job (Workflows → `bank-data-pipeline`) starts after
+   the folder has been quiet for 2 minutes. To run it manually, click **Run now**.
+
+---
+
 ## Reference: link list
 
 | Purpose | Link |
