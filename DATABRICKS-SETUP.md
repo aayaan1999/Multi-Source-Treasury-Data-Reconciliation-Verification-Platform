@@ -11,7 +11,7 @@ schema** (`customers`, `accounts`, `loans`, `transactions`, `branches`, `capital
 |---|---|
 | Catalog | `dbw_bankx_treasury_poc` (the workspace's existing catalog) |
 | Schema | `raw` (all Bronze/Silver/Gold tables land here, bare table names) |
-| Landing volume | `/Volumes/dbw_bankx_treasury_poc/raw/landing` |
+| Landing volume + folder | volume `raw`, folder `resources`: `/Volumes/dbw_bankx_treasury_poc/raw/raw/resources` |
 | Sample data | `bank-data/*.csv` (8 files); a gitignored copy lives in `resources/bank-data-upload/` |
 
 Every notebook starts with a cell running `USE CATALOG` / `USE SCHEMA` so bare table names resolve
@@ -92,8 +92,8 @@ workspace's existing catalog (this project uses `dbw_bankx_treasury_poc`; find y
 Then, in the SQL editor:
 ```sql
 CREATE SCHEMA IF NOT EXISTS dbw_bankx_treasury_poc.raw;
-CREATE VOLUME IF NOT EXISTS dbw_bankx_treasury_poc.raw.landing;
-SHOW VOLUMES IN dbw_bankx_treasury_poc.raw;      -- expect: landing
+CREATE VOLUME IF NOT EXISTS dbw_bankx_treasury_poc.raw.raw;
+SHOW VOLUMES IN dbw_bankx_treasury_poc.raw;      -- expect: raw
 ```
 
 **Volume paths need four parts:** `/Volumes/<catalog>/<schema>/<volume>/<file>`. A path like
@@ -134,12 +134,12 @@ Upload the 8 CSVs from `bank-data/` (or the gitignored copy in `resources/bank-d
 `customers`, `accounts`, `loans`, `transactions`, `branches`, `capital_positions`,
 `liquidity_daily`, `fx_rates`.
 
-- **UI:** **Catalog** → `dbw_bankx_treasury_poc` → `raw` → **Volumes** → `landing` → **Upload to this volume**. Files must be at the volume's top level, not in a subfolder.
-- **CLI:** `databricks fs cp bank-data/customers.csv dbfs:/Volumes/dbw_bankx_treasury_poc/raw/landing/customers.csv` (repeat per file)
+- **UI:** **Catalog** → `dbw_bankx_treasury_poc` → `raw` → **Volumes** → `raw`, create a folder named `resources` inside it, open it → **Upload to this volume**. Files go directly in `resources/`, not in a further subfolder.
+- **CLI:** `databricks fs cp bank-data/customers.csv dbfs:/Volumes/dbw_bankx_treasury_poc/raw/raw/resources/customers.csv` (repeat per file)
 
 Verify:
 ```sql
-LIST '/Volumes/dbw_bankx_treasury_poc/raw/landing';   -- expect 8 files
+LIST '/Volumes/dbw_bankx_treasury_poc/raw/raw/resources';   -- expect 8 files
 ```
 
 - Docs: https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/volumes
@@ -198,7 +198,7 @@ All notebooks use bare table names in `dbw_bankx_treasury_poc.raw` (set by their
 
 | # | Notebook | Reads | Writes | Layer |
 |---|---|---|---|---|
-| 1 | `01_ingestion_standardisation` | the 8 CSVs in the landing volume | `raw_*` (8 tables) | Bronze |
+| 1 | `01_ingestion_standardisation` | the 8 CSVs in `raw/raw/resources` | `raw_*` (8 tables) | Bronze |
 | 2 | `02_data_quality_verification` | `raw_*` | `*_clean` (8), `data_quality_exceptions` | Silver |
 | 3 | `03_kpi_summary` | `*_clean` | `kpi_daily_summary` | Gold |
 | 4 | `04_exception_summary` | `data_quality_exceptions`, `raw_*` | `exception_summary_by_table`, `exception_summary_by_flag` | Gold |
@@ -215,7 +215,7 @@ hardcoded.
 ## 9. First run and verification
 
 1. Open `notebooks/01_ingestion_standardisation.py` in the Repo and attach it to compute.
-2. Set the `input_dir` widget to `/Volumes/dbw_bankx_treasury_poc/raw/landing` (an existing widget value overrides the notebook default, so check it).
+2. Set the `input_dir` widget to `/Volumes/dbw_bankx_treasury_poc/raw/raw/resources` (an existing widget value overrides the notebook default, so check it).
 3. **Run All**, then verify:
    ```sql
    SHOW TABLES IN dbw_bankx_treasury_poc.raw;                    -- 8 raw_* tables

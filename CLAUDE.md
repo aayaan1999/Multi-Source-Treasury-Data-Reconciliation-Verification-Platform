@@ -24,8 +24,8 @@ used to feed are **no longer used by any notebook** — kept in the repo as hist
 **Notebooks 3-6, the live-FX utility (`notebooks/fx_utils.py`), and the five `multi_source_*`
 ingestion notebooks are now written** (commit `a0bda22`) against their specs in `specs/`, but
 **none of the Databricks notebooks has been verified on a live cluster yet** — verification is in
-progress on Azure Databricks (catalog `dbw_bankx_treasury_poc`, schema `raw`, landing volume
-`/Volumes/dbw_bankx_treasury_poc/raw/landing`; see `DATABRICKS-SETUP.md`). Treat every
+progress on Azure Databricks (catalog `dbw_bankx_treasury_poc`, schema `raw`, volume `raw`, CSVs in its `resources/` folder:
+`/Volumes/dbw_bankx_treasury_poc/raw/raw/resources`; see `DATABRICKS-SETUP.md`). Treat every
 acceptance-criteria checkbox as hand-traced, not proven, until a spec is updated to say otherwise.
 Some spec `Status:` header lines (notebooks 3-6, `fx-realtime-ingestion.md`,
 `multi-source-ingestion-adf.md`) still read "Spec only — not yet implemented" and are stale.
