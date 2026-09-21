@@ -12,8 +12,8 @@
 # COMMAND ----------
 
 # Pin every table read/write to one catalog + schema so bare table names resolve the same way in
-# every notebook (catalog `bank_poc` was created in the UI, since Default Storage blocks CREATE CATALOG via SQL).
-spark.sql("USE CATALOG bank_poc")
+# every notebook (the workspace's existing catalog `dbw_bankx_treasury_poc`; Default Storage blocks CREATE CATALOG via SQL).
+spark.sql("USE CATALOG dbw_bankx_treasury_poc")
 spark.sql("CREATE SCHEMA IF NOT EXISTS raw")
 spark.sql("USE SCHEMA raw")
 

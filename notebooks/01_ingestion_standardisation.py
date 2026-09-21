@@ -19,8 +19,8 @@
 # COMMAND ----------
 
 # Pin every table read/write to one catalog + schema so bare table names resolve the same way in
-# every notebook (catalog `bank_poc` was created in the UI, since Default Storage blocks CREATE CATALOG via SQL).
-spark.sql("USE CATALOG bank_poc")
+# every notebook (the workspace's existing catalog `dbw_bankx_treasury_poc`; Default Storage blocks CREATE CATALOG via SQL).
+spark.sql("USE CATALOG dbw_bankx_treasury_poc")
 spark.sql("CREATE SCHEMA IF NOT EXISTS raw")
 spark.sql("USE SCHEMA raw")
 
@@ -44,7 +44,7 @@ from pyspark.sql import functions as F
 
 # Unity Catalog volume paths are /Volumes/<catalog>/<schema>/<volume>[/<subdir>] — the volume
 # segment is required, otherwise the file name gets parsed as the volume name.
-dbutils.widgets.text("input_dir", "/Volumes/bank_poc/raw/landing", "Input directory")
+dbutils.widgets.text("input_dir", "/Volumes/dbw_bankx_treasury_poc/raw/landing", "Input directory")
 
 INPUT_DIR = dbutils.widgets.get("input_dir")
 
