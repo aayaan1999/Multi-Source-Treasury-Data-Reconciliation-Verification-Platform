@@ -10,6 +10,7 @@ class Settings:
     jwt_expire_minutes: int
     cors_origins: list
     db_pool_max: int
+    bank_name: str
 
 
 def _required(name: str) -> str:
@@ -28,4 +29,5 @@ def get_settings() -> Settings:
         jwt_expire_minutes=int(os.environ.get("JWT_EXPIRE_MINUTES", "480")),
         cors_origins=[o.strip() for o in origins.split(",") if o.strip()],
         db_pool_max=int(os.environ.get("DB_POOL_MAX", "5")),
+        bank_name=os.environ.get("BANK_NAME", "Bank X"),
     )

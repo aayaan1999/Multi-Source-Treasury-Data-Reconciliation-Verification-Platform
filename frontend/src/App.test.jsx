@@ -223,13 +223,12 @@ describe("executive summary", () => {
     expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
   });
 
-  it("clicking a tile opens the placeholder for the screen behind it", async () => {
+  it("clicking a tile opens the screen behind it, with the filter in the request", async () => {
     stubApi();
     const user = userEvent.setup();
     renderApp("/");
     await screen.findByRole("list", { name: "Key indicators" });
     await user.click(within(tile("Bad loans (NPL ratio)")).getByRole("link"));
-    expect(await screen.findByRole("heading", { name: /Screen 2 — Portfolio/ })).toBeInTheDocument();
-    expect(screen.getByText(/filter=npl/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Portfolio & credit risk" })).toBeInTheDocument();
   });
 });

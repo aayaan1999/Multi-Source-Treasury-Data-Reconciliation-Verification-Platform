@@ -45,11 +45,13 @@ build plan; `PLATFORM-BUILD-PLAN.md` remains the longer-term full-6-screen-platf
 is **not the plan currently being executed** — don't build against its Phase 1-6 without checking
 `3-WEEK-POC-PLAN.md` first for what's actually in scope right now.
 
-Application layer: the PostgreSQL schema (`db/schema.sql`, on Neon) and a FastAPI skeleton
-(`backend/`: login, health, read endpoints for Screens 1, 2, 4, 5 — see `specs/fastapi-backend.md`) are
-built and tested locally, and `frontend/` (React + Vite + Tailwind + Recharts) has login and **Screen 1**
-(Executive Summary — see `specs/screen-01-executive-summary.md`); the other five screens link to placeholders.
-Screens 3 and 6 endpoints and Camunda are not built. Hosting plan: Netlify (frontend) + Render (backend) + Neon (database), configured in `netlify.toml` / `render.yaml`
+Application layer: the PostgreSQL schema (`db/schema.sql`, on Neon, plus `db/migrations/001_screens_2_to_5.sql`
+which must be applied to Neon with `db/apply_migration.py`, then `backend/seed_reports.py` for the report calendar)
+and the FastAPI backend (`backend/`: login, health, read endpoints for Screens 1-5, report/PDF/Excel export, saved
+scenarios — see `specs/fastapi-backend.md`) are built and tested locally, and `frontend/` (React + Vite + Tailwind +
+Recharts) has login and **Screens 1-5** (see `specs/screen-0*.md`). Screens 2-5 have backend (pytest) and frontend
+(vitest) tests but are not yet verified in a browser against a bank-scale dataset. Screen 6 and Camunda are not built
+(`/workflow` is a placeholder). Hosting plan: Netlify (frontend) + Render (backend) + Neon (database), configured in `netlify.toml` / `render.yaml`
 and described in `DEPLOYMENT.md` (config verified locally; not yet deployed). Frontend commands: `cd frontend; npm run dev` / `npm test`
 (always `npm run`, never `npx vite` — the folder name contains an `&`, which breaks Windows `.cmd` shims).
 

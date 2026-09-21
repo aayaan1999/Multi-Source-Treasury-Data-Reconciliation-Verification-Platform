@@ -301,7 +301,9 @@ CREATE TABLE report_definitions (
     regulator      text,
     frequency      text NOT NULL,
     due_day_rule   text,
-    owner_role_id  integer REFERENCES roles (role_id)
+    owner_role_id  integer REFERENCES roles (role_id),
+    owner_department text,          -- shown as "Owner" on the report calendar (Finance, Treasury, Risk...)
+    template_format  text
 );
 
 -- INFERRED: "which report, which period, status, owner, dates, submitted timestamp".
@@ -326,6 +328,11 @@ CREATE TABLE report_line_items (
     value               numeric(24,4),
     prior_value         numeric(24,4),
     explanation         text,
+    section             text NOT NULL DEFAULT '',        -- 'A', 'B', 'C' on the Capital Adequacy return
+    display_order       integer NOT NULL DEFAULT 0,
+    line_kind           text NOT NULL DEFAULT 'input' CHECK (line_kind IN ('input', 'subtotal', 'total', 'ratio')),
+    unit                text NOT NULL DEFAULT 'currency' CHECK (unit IN ('currency', 'percent')),
+    is_demo_input       boolean NOT NULL DEFAULT false,  -- true where the figure is not derivable from the bank-wide schema
     PRIMARY KEY (report_instance_id, line_code)
 );
 
@@ -339,6 +346,7 @@ CREATE TABLE calculation_audit (
     filters_applied     text,
     record_count        bigint,
     calculated_at       timestamptz NOT NULL DEFAULT now(),
+    notes               text,
     FOREIGN KEY (report_instance_id, line_code) REFERENCES report_line_items (report_instance_id, line_code)
 );
 
@@ -357,8 +365,11 @@ CREATE TABLE validation_rules (
     name         text NOT NULL,
     expression   text NOT NULL,
     severity     text NOT NULL CHECK (severity IN ('PASS_REQUIRED', 'COMMENT_REQUIRED', 'BLOCKING')),
-    message      text
+    message      text,
+    rule_key     text                -- names the check in backend/app/reports/validation.py that evaluates this rule
 );
+
+CREATE UNIQUE INDEX validation_rules_key_idx ON validation_rules (report_id, rule_key);
 
 -- INFERRED: record of what was filed and in which regulator file format.
 CREATE TABLE submitted_files (
@@ -462,6 +473,17 @@ CREATE TRIGGER audit_log_no_update_delete
 CREATE TRIGGER audit_log_no_truncate
     BEFORE TRUNCATE ON audit_log
     FOR EACH STATEMENT EXECUTE FUNCTION audit_log_reject_change();
+
+-- Screen 4: scenarios the user chose to keep for the side-by-side comparison table.
+CREATE TABLE saved_scenarios (
+    scenario_id  serial PRIMARY KEY,
+    name         text NOT NULL,
+    inputs       jsonb NOT NULL,        -- the four slider values
+    assumptions  jsonb NOT NULL,        -- the editable assumptions in force when it was saved
+    outputs      jsonb NOT NULL,        -- the computed results, stored as shown
+    created_by   integer REFERENCES users (user_id),
+    created_at   timestamptz NOT NULL DEFAULT now()
+);
 
 -- ---------------------------------------------------------------------------------------------
 -- 5. Sync and mapping tables

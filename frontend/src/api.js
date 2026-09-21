@@ -53,7 +53,7 @@ export function setUnauthorizedHandler(fn) {
   onUnauthorized = fn;
 }
 
-async function request(path, { method = "GET", body } = {}) {
+async function send(path, { method = "GET", body } = {}) {
   const headers = { Accept: "application/json" };
   const token = session.token();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -77,11 +77,74 @@ async function request(path, { method = "GET", body } = {}) {
     }
     throw new ApiError(response.status, detail);
   }
-  return response.json();
+  return response;
+}
+
+async function request(path, options) {
+  return (await send(path, options)).json();
+}
+
+function query(params = {}) {
+  const usp = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") usp.set(key, value);
+  }
+  const text = usp.toString();
+  return text ? `?${text}` : "";
+}
+
+/**
+ * Downloads a file the API generates (Excel, PDF): fetch with the login token, then hand the browser a temporary
+ * link. A plain <a href> can't be used because it wouldn't carry the Authorization header.
+ */
+export async function download(path, { method = "GET", fallbackName = "download" } = {}) {
+  const response = await send(path, { method });
+  const blob = await response.blob();
+  const match = /filename="?([^";]+)"?/i.exec(response.headers.get("Content-Disposition") || "");
+  const name = match ? match[1] : fallbackName;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return name;
 }
 
 export const api = {
   login: (email, password) => request("/auth/login", { method: "POST", body: { email, password } }),
+
+  // Screen 1
   kpiLatest: () => request("/kpi-summary/latest"),
   kpiHistory: (days = 730) => request(`/kpi-summary/history?days=${days}`),
+
+  // Screen 2 and the drill-downs from Screen 5
+  breakdown: (dimension) => request(`/portfolio/breakdown${query({ dimension })}`),
+  stageSummary: () => request("/portfolio/stage-summary"),
+  topExposures: () => request("/portfolio/top-exposures"),
+  ageing: () => request("/portfolio/ageing"),
+  ltvDistribution: () => request("/portfolio/ltv-distribution"),
+  loans: (params) => request(`/portfolio/loans${query(params)}`),
+  customers: (params) => request(`/portfolio/customers${query(params)}`),
+  exportPortfolio: () => download("/portfolio/export.xlsx", { fallbackName: "portfolio_credit_risk.xlsx" }),
+
+  // Screen 4
+  scenarioSnapshot: () => request("/scenario/snapshot"),
+  savedScenarios: () => request("/scenario/saved"),
+  saveScenario: (body) => request("/scenario/save", { method: "POST", body }),
+
+  // Screen 5
+  branches: () => request("/performance/branches"),
+  segments: () => request("/performance/segments"),
+  products: () => request("/performance/products"),
+  channels: () => request("/performance/channels"),
+  exportPerformance: () => download("/performance/export.xlsx", { fallbackName: "branch_segment_performance.xlsx" }),
+
+  // Screen 3
+  reports: () => request("/reports"),
+  report: (id) => request(`/reports/${id}`),
+  drill: (id, lineCode) => request(`/reports/${id}/drill/${encodeURIComponent(lineCode)}`),
+  exportReport: (id, kind) => download(`/reports/${id}/export/${kind}`, { method: "POST", fallbackName: `report.${kind === "pdf" ? "pdf" : "xlsx"}` }),
 };

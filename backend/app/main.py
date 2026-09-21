@@ -1,13 +1,14 @@
 from contextlib import asynccontextmanager
 
 import psycopg2
+import psycopg2.errors
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import db
 from .config import get_settings
-from .routers import auth, health, kpi, performance, portfolio, scenario
+from .routers import auth, health, kpi, performance, portfolio, reports, scenario
 
 
 @asynccontextmanager
@@ -27,10 +28,20 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(psycopg2.errors.UndefinedTable)
+@app.exception_handler(psycopg2.errors.UndefinedColumn)
+async def database_needs_migration(_: Request, __: Exception):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "The database is missing tables or columns this screen needs. Run: "
+                           "python db/apply_migration.py db/migrations/001_screens_2_to_5.sql"},
+    )
+
+
 @app.exception_handler(psycopg2.OperationalError)
 async def database_unavailable(_: Request, __: psycopg2.OperationalError):
     return JSONResponse(status_code=503, content={"detail": "Database unavailable - try again shortly"})
 
 
-for module in (health, auth, kpi, portfolio, scenario, performance):
+for module in (health, auth, kpi, portfolio, scenario, performance, reports):
     app.include_router(module.router, prefix="/api/v1")

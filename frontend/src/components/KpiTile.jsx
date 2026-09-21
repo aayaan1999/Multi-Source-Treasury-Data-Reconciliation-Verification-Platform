@@ -1,52 +1,11 @@
-import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { formatDayShort, formatValue } from "../kpi/format";
 import { computeDelta, statusOf, STATUS_META } from "../kpi/status";
-import { ArrowIcon, CheckIcon, CrossIcon, DashIcon, InfoIcon, WarningIcon } from "./icons";
+import AssumptionBadge from "./AssumptionBadge";
+import { ArrowIcon, CheckIcon, CrossIcon, DashIcon, WarningIcon } from "./icons";
 
 const STATUS_ICON = { good: CheckIcon, watch: WarningIcon, action: CrossIcon, none: DashIcon, unknown: DashIcon };
 const TONE_COLOR = { good: "var(--good)", bad: "var(--critical)", neutral: "var(--muted)" };
-
-// The 3 placeholder-assumption KPIs must be visibly different from the directly computed ones
-// (specs/screen-01-executive-summary.md section 3): a labelled marker that opens the specific assumption.
-function AssumptionMarker({ assumptions }) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  return (
-    <span className="relative z-10 shrink-0">
-      <button
-        type="button"
-        aria-describedby={open ? id : undefined}
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
-        className="inline-flex items-center gap-1 rounded-full border border-hair px-2 py-0.5 text-xs text-ink2 hover:bg-page"
-      >
-        <InfoIcon />
-        Assumption
-      </button>
-      {open && (
-        <span
-          id={id}
-          role="tooltip"
-          className="absolute right-0 top-full z-20 mt-1 w-64 rounded-lg border border-hair bg-surface p-3 text-left text-xs leading-relaxed text-ink shadow-lg"
-        >
-          <strong className="block text-ink">Based on a demo assumption</strong>
-          <ul className="mt-1 list-disc pl-4 text-ink2">
-            {assumptions.map((a) => (
-              <li key={a}>{a}</li>
-            ))}
-          </ul>
-          <span className="mt-1 block text-ink2">A placeholder pending confirmation — not verified accounting.</span>
-        </span>
-      )}
-    </span>
-  );
-}
 
 export default function KpiTile({ kpi, value, previous, previousDate, assumptions = [] }) {
   const status = statusOf(kpi, value);
@@ -65,7 +24,7 @@ export default function KpiTile({ kpi, value, previous, previousDate, assumption
         >
           {kpi.label}
         </Link>
-        {assumptions.length > 0 && <AssumptionMarker assumptions={assumptions} />}
+        {assumptions.length > 0 && <AssumptionBadge items={assumptions} />}
       </div>
 
       <div className="mt-3 text-4xl font-semibold tracking-tight text-ink">{formatValue(kpi, value)}</div>

@@ -50,6 +50,31 @@ def query(sql: str, params: tuple = ()) -> list:
             raise
 
 
+def write(sql: str, params: tuple = (), returning: bool = True):
+    """Runs one INSERT/UPDATE (optionally with RETURNING) in its own committed transaction.
+
+    Same dead-connection handling as query(). The retry is safe here because a connection that dies
+    before the statement completes never committed anything.
+    """
+    for attempt in (1, 2):
+        conn = _pool.getconn()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql, params or None)
+                row = cur.fetchone() if returning else None
+            conn.commit()
+            _pool.putconn(conn)
+            return row
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            _pool.putconn(conn, close=True)
+            if attempt == 2:
+                raise
+        except Exception:
+            conn.rollback()
+            _pool.putconn(conn)
+            raise
+
+
 def query_one(sql: str, params: tuple = ()):
     rows = query(sql, params)
     return rows[0] if rows else None

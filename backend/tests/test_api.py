@@ -157,20 +157,27 @@ def test_scenario_snapshot_returns_json_maps_as_objects(client, auth):
 
 
 def test_performance_endpoints_sorted_by_profit(client, auth):
-    assert [r["branch_id"] for r in client.get(f"{API}/performance/branches", headers=auth).json()] == ["B2", "B1"]
+    branches = client.get(f"{API}/performance/branches", headers=auth).json()
+    assert [r["branch_id"] for r in branches] == ["B1", "B2"]   # league table: worst profit first
+    assert [r["branch_name"] for r in branches] == ["Beirut", "Riyadh"]
     assert [r["segment"] for r in client.get(f"{API}/performance/segments", headers=auth).json()] == ["SME", "Retail"]
     assert [r["product"] for r in client.get(f"{API}/performance/products", headers=auth).json()] == ["SME Loan", "Mortgage"]
 
 
 # ---- empty and failure states ---------------------------------------------------------------
 def test_empty_gold_tables_give_404_or_empty_list_not_500(client, auth, db):
-    db.execute("DELETE FROM scenario_snapshot")
-    db.execute("DELETE FROM kpi_daily_summary")
-    db.execute("DELETE FROM branch_performance_summary")
-    assert client.get(f"{API}/scenario/snapshot", headers=auth).status_code == 404
-    assert client.get(f"{API}/kpi-summary/latest", headers=auth).status_code == 404
-    assert client.get(f"{API}/kpi-summary/history", headers=auth).json() == []
-    assert client.get(f"{API}/performance/branches", headers=auth).json() == []
+    tables = ("scenario_snapshot", "kpi_daily_summary", "branch_performance_summary")
+    for t in tables:                       # park the rows, and put them back afterwards so later tests still see them
+        db.execute(f"CREATE TEMP TABLE _park_{t} AS SELECT * FROM {t}")
+        db.execute(f"DELETE FROM {t}")
+    try:
+        assert client.get(f"{API}/scenario/snapshot", headers=auth).status_code == 404
+        assert client.get(f"{API}/kpi-summary/latest", headers=auth).status_code == 404
+        assert client.get(f"{API}/kpi-summary/history", headers=auth).json() == []
+        assert client.get(f"{API}/performance/branches", headers=auth).json() == []
+    finally:
+        for t in tables:
+            db.execute(f"INSERT INTO {t} SELECT * FROM _park_{t}")
 
 
 def test_database_outage_returns_503_and_health_degrades(client, auth, monkeypatch):

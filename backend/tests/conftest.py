@@ -13,6 +13,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PASSWORD = "demo-pass-123"
 D1, D2 = date(2026, 9, 20), date(2026, 9, 21)
+TODAY = D2   # the "current date" the demo report calendar is seeded against
 
 
 def _load_data(cur):
@@ -53,6 +54,16 @@ def _load_data(cur):
          [(D2, "Retail", 10.0), (D2, "SME", 30.0)])
     many("product_performance_summary", ["calculation_date", "product", "net_contribution_usd"],
          [(D2, "Mortgage", 5.0), (D2, "SME Loan", 8.0)])
+    many("accounts", ["account_id", "customer_id", "type", "currency", "balance"],
+         [("A1", "C1", "Savings", "USD", 100), ("A2", "C2", "Current", "SAR", 200), ("A3", "C3", "Current", "USD", 300)])
+    many("transactions", ["transaction_id", "account_id", "date", "amount", "currency", "type", "channel"],
+         [("T1", "A1", D1, 10, "USD", "Deposit", "ATM"), ("T2", "A1", D1, 20, "USD", "Deposit", "ATM"),
+          ("T3", "A2", D1, 30, "SAR", "Withdrawal", "ATM"), ("T4", "A2", D2, 40, "SAR", "Deposit", "Branch"),
+          ("T5", "A3", D2, 50, "USD", "Deposit", "Branch"), ("T6", "A3", D2, 60, "USD", "Deposit", "Mobile")])
+    # 2026-08 has no usable RWA (0), so the report must use 2026-07: the totals in the source document's worked example
+    many("capital_positions", ["month", "tier1_capital", "tier2_capital", "risk_weighted_assets"],
+         [("2026-06", 205000000, 37000000, 1950000000), ("2026-07", 207000000, 39000000, 1985000000),
+          ("2026-08", 210000000, 40000000, 0)])
     cur.execute(
         """INSERT INTO scenario_snapshot (calculation_date, loans_by_currency, tier1_capital_usd, current_npl_pct)
            VALUES (%s, %s, %s, %s)""",
@@ -73,6 +84,9 @@ def db():
     from seed_demo_users import seed
     seed(cur, PASSWORD)
     _load_data(cur)
+
+    from seed_reports import seed as seed_reports
+    seed_reports(conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor), today=TODAY)
     yield cur
     conn.close()
 

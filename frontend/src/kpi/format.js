@@ -6,6 +6,25 @@ export function isNum(v) {
   return typeof v === "number" && Number.isFinite(v);
 }
 
+// Whole dollars with thousands separators, for tables and tooltips. Compact form ($1.6M) for tiles and axes.
+const usdFull = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+export function formatUsd(v) {
+  return isNum(v) ? usdFull.format(v) : "—";
+}
+
+export function formatUsdCompact(v) {
+  return isNum(v) ? usdCompact.format(v) : "—";
+}
+
+export function formatNumber(v, digits = 0) {
+  return isNum(v) ? v.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) : "—";
+}
+
+export function formatPercentValue(v, digits = 1) {
+  return isNum(v) ? `${v.toFixed(digits)}%` : "—";
+}
+
 export function formatValue(kpi, v) {
   if (!isNum(v)) return "—";
   return kpi.unit === "usd" ? usdCompact.format(v) : `${v.toFixed(1)}%`;

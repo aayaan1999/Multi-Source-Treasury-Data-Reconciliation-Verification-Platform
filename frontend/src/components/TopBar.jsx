@@ -1,8 +1,17 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../auth";
 import { formatDay } from "../kpi/format";
 import { THEME_ORDER, getTheme, setTheme } from "../theme";
+
+const NAV = [
+  ["/", "Executive summary", true],
+  ["/portfolio", "Portfolio & credit risk"],
+  ["/performance", "Branch & segment"],
+  ["/scenario", "Scenario modelling"],
+  ["/reports", "Regulatory reporting"],
+  ["/workflow", "Report workflow"],
+];
 
 const BANK_NAME = import.meta.env.VITE_BANK_NAME || "Bank X";
 
@@ -75,6 +84,20 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
           )}
         </div>
       </div>
+      <nav aria-label="Screens" className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 pb-2">
+        {NAV.map(([to, label, end]) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            className={({ isActive }) =>
+              `whitespace-nowrap rounded-md px-3 py-1.5 text-sm ${isActive ? "bg-page font-medium text-ink" : "text-ink2 hover:bg-page"}`
+            }
+          >
+            {label}
+          </NavLink>
+        ))}
+      </nav>
     </header>
   );
 }
