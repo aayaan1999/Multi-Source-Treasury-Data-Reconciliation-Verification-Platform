@@ -1,6 +1,9 @@
 # Spec: FastAPI Backend
 
-**Status:** Spec only — not yet implemented
+**Status:** Skeleton built in `backend/` (health, auth, and read endpoints for Screens 1, 2, 4, 5); 44 tests pass
+against a real PostgreSQL 16.2 with `db/schema.sql`. **Not yet run against Neon or the deployed pipeline's data.**
+Not built: Screen 3 (reports, drill-down, PDF/Excel export), Screen 6 (exceptions, comments), scenario save,
+and the upload / pipeline-status endpoints.
 **Plan reference:** `PLATFORM-BUILD-PLAN.md` Phase 1, `3-WEEK-POC-PLAN.md` Track A/C
 **Depends on:** `specs/postgres-schema.md`
 **Consumed by:** React frontend (all 6 screens), the Camunda bridge worker (indirectly, via
@@ -84,15 +87,46 @@ Four seeded users, per `CLAUDE.md`. Simple JWT or session-based auth is sufficie
 - No direct Camunda process manipulation beyond what's explicitly listed (task actions go
   React→Tasklist directly)
 
+## 4a. Running it locally
+
+Needs Python 3.10+ (the default 3.8 is too old for current FastAPI). From the project root, in PowerShell:
+
+```
+cd backend
+& "C:\Users\Ayan\AppData\Local\Programs\Python\Python311\python.exe" -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env          # then fill in DATABASE_URL (Neon) and JWT_SECRET
+$env:DATABASE_URL = "postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require"
+python seed_demo_users.py       # adds users.password_hash if missing, creates the 4 demo users
+uvicorn app.main:app --reload --env-file .env
+```
+
+Interactive docs at http://127.0.0.1:8000/docs (click **Authorize**, paste the `access_token` from `/api/v1/auth/login`).
+Tests: `pip install -r requirements-dev.txt`, then `pytest` from `backend/`.
+
+Design notes: sync endpoints over a `psycopg2` connection pool (no ORM — every screen is a read of a precomputed table);
+a pooled connection that Neon has dropped is discarded and the query retried once; a database outage returns 503, not
+500; Gold endpoints return the rows of each table's latest `calculation_date`; every data endpoint requires a login
+token, but **role-based restrictions are not implemented** (blocked on the RLS role model in
+`specs/postgres-schema.md` section 3). Passwords are PBKDF2-SHA256; logins for unknown emails and wrong passwords
+take the same time and return the same message.
+
 ## 5. Acceptance Criteria
 
-- [ ] Every screen's read endpoints return data matching their source table's spec exactly (same
-      "don't drift from the Databricks/Postgres schema" principle as `specs/postgres-schema.md`)
+- [x] Screen 1, 2, 4 and 5 read endpoints return their table's rows with the schema's column names, latest
+      `calculation_date` only, in business order (ageing/LTV buckets, stages, largest-first) — tested on hand-built
+      rows. [ ] Not yet checked against the real pipeline output in Neon
+- [x] Auth: four demo users log in, bad credentials give a uniform 401, every data endpoint rejects a missing/invalid
+      token, CORS allows the frontend origin
+- [x] Filters and paging on `/portfolio/loans` work and are parameterised (an injection attempt returns nothing and
+      leaves the table intact); bad values return 422
+- [x] Empty Gold tables give 404 or `[]`, a database outage gives 503 (tested by simulating the failure)
 - [ ] `GET /api/v1/scenario/snapshot` responds fast enough that the frontend's subsequent
       slider interactions genuinely never call the backend again
 - [ ] `POST /api/v1/reports/{id}/export/pdf` produces a file matching the source doc's worked
       Capital Adequacy example layout
-- [ ] Not yet implemented
+- [ ] Screens 3 and 6 endpoints, scenario save, upload and pipeline-status: not implemented
 
 ## 6. Non-Goals
 

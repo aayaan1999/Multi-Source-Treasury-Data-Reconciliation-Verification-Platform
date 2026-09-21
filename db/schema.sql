@@ -289,7 +289,9 @@ CREATE TABLE users (
     name        text NOT NULL,
     email       text NOT NULL UNIQUE,
     role_id     integer NOT NULL REFERENCES roles (role_id),
-    department  text
+    department  text,
+    -- Demo login only (specs/fastapi-backend.md section 3); set by backend/seed_demo_users.py.
+    password_hash text
 );
 
 -- INFERRED: source doc lists purpose only ("name, frequency, due-day rule, owner").

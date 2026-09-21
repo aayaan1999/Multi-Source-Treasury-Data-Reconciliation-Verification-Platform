@@ -45,8 +45,10 @@ build plan; `PLATFORM-BUILD-PLAN.md` remains the longer-term full-6-screen-platf
 is **not the plan currently being executed** — don't build against its Phase 1-6 without checking
 `3-WEEK-POC-PLAN.md` first for what's actually in scope right now.
 
-The entire application layer (PostgreSQL schema, FastAPI backend, React frontend) is not yet
-built; specs for each exist in `specs/` (`postgres-schema.md`, `fastapi-backend.md`, `screen-0*.md`).
+Application layer: the PostgreSQL schema (`db/schema.sql`, on Neon) and a FastAPI skeleton
+(`backend/`: login, health, read endpoints for Screens 1, 2, 4, 5 — see `specs/fastapi-backend.md`) are
+built and tested locally. Screens 3 and 6 endpoints, Camunda, and the whole React frontend are not
+built; specs exist in `specs/` (`screen-0*.md`).
 
 ## What This Project Is
 

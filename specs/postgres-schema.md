@@ -64,7 +64,8 @@ authoritative for "is this task still open" — ask Zeebe/Tasklist for that.
   `record_key`, `outcome`, `corrected_value` (JSON), `reviewed_by`, `reviewed_at`, `synced_at`
   (added per the watermark update in that spec)
 
-**Deviations recorded while writing `db/schema.sql`:** (a) `fx_rates` keeps the `(date, currency_pair, rate)`
+**Deviations recorded while writing `db/schema.sql`:** (0) `users.password_hash` added for the demo login
+(`backend/seed_demo_users.py` also adds it to a database created before it existed); (a) `fx_rates` keeps the `(date, currency_pair, rate)`
 shape and a new `fx_rate_usage_log` table is added, because `specs/fx-realtime-ingestion.md` removed
 `fx_rates_live`; (b) every Gold table carries `calculation_date` (notebooks 4 and 6 write it though
 their spec column tables omit it); (c) `data_quality_exceptions` gains an app-side `exception_id`;
