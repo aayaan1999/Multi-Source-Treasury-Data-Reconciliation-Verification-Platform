@@ -1,0 +1,13 @@
+# Installed packages and build output: recreated by `npm install` / `npm run build`, never committed.
+node_modules/
+dist/
+
+# Environment-specific files (only .env.example is committed)
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs
+*.log
+npm-debug.log*
