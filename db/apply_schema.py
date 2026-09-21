@@ -11,7 +11,15 @@ import os
 import pathlib
 import sys
 
-import psycopg2
+try:
+    import psycopg2
+except ModuleNotFoundError:
+    sys.exit(
+        "psycopg2 is not installed for the Python running this script:\n"
+        f"  {sys.executable}\n"
+        "Install it into exactly that Python, then run this script again:\n"
+        f'  "{sys.executable}" -m pip install psycopg2-binary'
+    )
 
 url = os.environ.get("DATABASE_URL")
 if not url:
