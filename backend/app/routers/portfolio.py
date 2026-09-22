@@ -74,7 +74,9 @@ def overview():
             for d in ("product", "segment", "branch", "currency")
         },
     }
-    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+    # Capped rather than one worker per job: Neon's compute has a real ceiling on concurrent query execution,
+    # and firing all 9 at once let them queue server-side and land *slower* than a smaller, steady batch does.
+    with ThreadPoolExecutor(max_workers=4) as pool:
         results = {key: future.result() for key, future in
                   {key: pool.submit(job) for key, job in jobs.items()}.items()}
 
