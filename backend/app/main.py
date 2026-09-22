@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 import psycopg2
@@ -14,6 +15,8 @@ from .routers import auth, health, kpi, performance, portfolio, reports, scenari
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.init_pool()
+    # Runs in the background so a slow/asleep Neon never delays the app answering /health.
+    asyncio.get_running_loop().run_in_executor(None, db.warm_pool, 5)
     yield
     db.close_pool()
 

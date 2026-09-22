@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -5,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from ..db import latest_rows, query, query_one
 from ..exports import portfolio_workbook
 from ..security import current_user
+from .performance import _branches
 
 router = APIRouter(prefix="/portfolio", tags=["screen 2 - portfolio & credit risk"], dependencies=[Depends(current_user)])
 
@@ -51,6 +53,39 @@ def ageing():
 @router.get("/ltv-distribution")
 def ltv_distribution():
     return _in_bucket_order(latest_rows("ltv_distribution", "bucket"), LTV_ORDER)
+
+
+@router.get("/overview")
+def overview():
+    """Everything Screen 2 needs on first paint, in one round trip instead of nine: the loan-book summary, all
+    four breakdown dimensions, and the branch names used to label the branch breakdown. One HTTP round trip avoids
+    the browser's per-origin connection queueing, but the 9 underlying queries still run concurrently (not one
+    after another) - Neon's per-connection setup cost is real, and paying it 9 times in series would undo the win.
+    """
+    jobs = {
+        "stages": lambda: latest_rows("loan_stage_summary", "stage"),
+        "top_exposures": lambda: latest_rows("top_exposures", "outstanding_usd DESC NULLS LAST"),
+        "ageing": lambda: _in_bucket_order(latest_rows("loan_ageing_summary", "bucket"), AGEING_ORDER),
+        "ltv": lambda: _in_bucket_order(latest_rows("ltv_distribution", "bucket"), LTV_ORDER),
+        "branches": _branches,
+        **{
+            f"breakdown_{d}": (lambda d=d: latest_rows(
+                "loan_breakdown_by_dimension", "total_outstanding_usd DESC NULLS LAST", "dimension_type = %s", (d,)))
+            for d in ("product", "segment", "branch", "currency")
+        },
+    }
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        results = {key: future.result() for key, future in
+                  {key: pool.submit(job) for key, job in jobs.items()}.items()}
+
+    return {
+        "stages": results["stages"],
+        "top_exposures": results["top_exposures"],
+        "ageing": results["ageing"],
+        "ltv": results["ltv"],
+        "branches": results["branches"],
+        "breakdown": {d: results[f"breakdown_{d}"] for d in ("product", "segment", "branch", "currency")},
+    }
 
 
 @router.get("/loans")

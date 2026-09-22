@@ -24,6 +24,21 @@ def close_pool() -> None:
         _pool = None
 
 
+def warm_pool(n: int) -> None:
+    """Best-effort: opens a few connections ahead of the first request so a burst of concurrent requests (e.g. the
+    Portfolio screen's initial load) isn't paying a fresh TLS handshake to Neon on every one of them. Never raises:
+    if Neon is unreachable or asleep, this just gives up and the pool stays cold; /health still reports the outage.
+    """
+    opened = []
+    for _ in range(n):
+        try:
+            opened.append(_pool.getconn())
+        except Exception:
+            break
+    for conn in opened:
+        _pool.putconn(conn)
+
+
 def query(sql: str, params: tuple = ()) -> list:
     """Runs a read-only query and returns rows as dicts.
 

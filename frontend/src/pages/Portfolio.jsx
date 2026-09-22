@@ -29,13 +29,10 @@ const DIMENSIONS = [
 ];
 
 async function loadAll() {
-  const [stages, topExposures, ageing, ltv, product, segment, branch, currency, branches] = await Promise.all([
-    api.stageSummary(), api.topExposures(), api.ageing(), api.ltvDistribution(),
-    api.breakdown("product"), api.breakdown("segment"), api.breakdown("branch"), api.breakdown("currency"),
-    api.branches().catch(() => []), // only used to show branch names instead of codes
-  ]);
-  const names = Object.fromEntries(branches.map((b) => [b.branch_id, b.branch_name || b.branch_id]));
-  return { stages, topExposures, ageing, ltv, breakdown: { product, segment, branch, currency }, branchNames: names };
+  // One round trip instead of nine: /portfolio/overview bundles everything this screen needs on first paint.
+  const { stages, top_exposures: topExposures, ageing, ltv, breakdown, branches } = await api.portfolioOverview();
+  const names = Object.fromEntries((branches ?? []).map((b) => [b.branch_id, b.branch_name || b.branch_id]));
+  return { stages, topExposures, ageing, ltv, breakdown, branchNames: names };
 }
 
 function BreakdownTable({ rows, selected, onSelect }) {
