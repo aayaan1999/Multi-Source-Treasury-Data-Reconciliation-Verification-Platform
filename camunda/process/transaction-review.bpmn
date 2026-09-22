@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  specs/camunda-bpmn-process-design.md section 3. Hand-authored (no Camunda Modeler in this
+  environment) — validate visually in Modeler or web.camunda.io before relying on the diagram
+  layout; the process logic itself is what the bridge/outcome workers and acceptance criteria
+  depend on, not the DI coordinates.
+-->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+                   xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   id="Definitions_transaction-review"
+                   targetNamespace="http://bankx.example/camunda"
+                   exporter="hand-authored" exporterVersion="1.0">
+
+  <bpmn:process id="transaction-review" name="Transaction Review" isExecutable="true">
+
+    <bpmn:startEvent id="StartEvent_RecordFlagged" name="Record Flagged">
+      <bpmn:outgoing>Flow_ToCategoryGateway</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:exclusiveGateway id="Gateway_FlagCategory" name="flagCategory?" default="Flow_ToOperations">
+      <bpmn:incoming>Flow_ToCategoryGateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToFraud</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ToCompliance</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ToOperations</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_ToCategoryGateway" sourceRef="StartEvent_RecordFlagged" targetRef="Gateway_FlagCategory" />
+
+    <bpmn:sequenceFlow id="Flow_ToFraud" sourceRef="Gateway_FlagCategory" targetRef="UserTask_FraudInvestigation">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=flagCategory = "FRAUD"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_ToCompliance" sourceRef="Gateway_FlagCategory" targetRef="UserTask_ComplianceReview">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=flagCategory = "COMPLIANCE"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <!-- default flow: also covers flagCategory = "OPERATIONS" and any value the bridge worker's
+         derivation didn't anticipate, so a bad/unexpected flagCategory never leaves the instance
+         stuck at the gateway (an "OPERATIONS" review can always re-route manually if needed). -->
+    <bpmn:sequenceFlow id="Flow_ToOperations" sourceRef="Gateway_FlagCategory" targetRef="UserTask_OperationsReview" />
+
+    <bpmn:userTask id="UserTask_FraudInvestigation" name="Fraud Investigation">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="fraud-investigation" />
+        <zeebe:formDefinition formId="review-outcome-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToFraud</bpmn:incoming>
+      <bpmn:outgoing>Flow_FraudToWriteback</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="UserTask_ComplianceReview" name="Compliance Review">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="compliance" />
+        <zeebe:formDefinition formId="review-outcome-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToCompliance</bpmn:incoming>
+      <bpmn:outgoing>Flow_ComplianceToWriteback</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="UserTask_OperationsReview" name="Operations Review">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="operations" />
+        <zeebe:formDefinition formId="review-outcome-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToOperations</bpmn:incoming>
+      <bpmn:outgoing>Flow_OperationsToWriteback</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Implicit exclusive (XOR) join: exactly one of the three user tasks ever fires per
+         instance (the gateway above is exclusive), so three plain sequence flows converging
+         directly on the service task is valid BPMN and needs no join gateway. This also
+         collapses the spec's separate "outcome?" gateway (section 3's diagram) — outcome
+         (Approved/Rejected/Corrected) doesn't change routing, only what the write-back service
+         task persists, so it's read as a task variable rather than modeled as a second gateway. -->
+    <bpmn:sequenceFlow id="Flow_FraudToWriteback" sourceRef="UserTask_FraudInvestigation" targetRef="ServiceTask_WriteOutcome" />
+    <bpmn:sequenceFlow id="Flow_ComplianceToWriteback" sourceRef="UserTask_ComplianceReview" targetRef="ServiceTask_WriteOutcome" />
+    <bpmn:sequenceFlow id="Flow_OperationsToWriteback" sourceRef="UserTask_OperationsReview" targetRef="ServiceTask_WriteOutcome" />
+
+    <bpmn:serviceTask id="ServiceTask_WriteOutcome" name="Write outcome back to Postgres">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="write-review-outcome" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_FraudToWriteback</bpmn:incoming>
+      <bpmn:incoming>Flow_ComplianceToWriteback</bpmn:incoming>
+      <bpmn:incoming>Flow_OperationsToWriteback</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToEnd</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_ReviewComplete" name="Review Complete">
+      <bpmn:incoming>Flow_ToEnd</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="Flow_ToEnd" sourceRef="ServiceTask_WriteOutcome" targetRef="EndEvent_ReviewComplete" />
+
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="transaction-review">
+      <bpmndi:BPMNShape id="StartEvent_RecordFlagged_di" bpmnElement="StartEvent_RecordFlagged">
+        <omgdc:Bounds x="152" y="212" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_FlagCategory_di" bpmnElement="Gateway_FlagCategory" isMarkerVisible="true">
+        <omgdc:Bounds x="245" y="205" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_FraudInvestigation_di" bpmnElement="UserTask_FraudInvestigation">
+        <omgdc:Bounds x="380" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_ComplianceReview_di" bpmnElement="UserTask_ComplianceReview">
+        <omgdc:Bounds x="380" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_OperationsReview_di" bpmnElement="UserTask_OperationsReview">
+        <omgdc:Bounds x="380" y="300" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_WriteOutcome_di" bpmnElement="ServiceTask_WriteOutcome">
+        <omgdc:Bounds x="560" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_ReviewComplete_di" bpmnElement="EndEvent_ReviewComplete">
+        <omgdc:Bounds x="732" y="212" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_ToCategoryGateway_di" bpmnElement="Flow_ToCategoryGateway">
+        <omgdi:waypoint x="188" y="230" />
+        <omgdi:waypoint x="245" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToFraud_di" bpmnElement="Flow_ToFraud">
+        <omgdi:waypoint x="270" y="205" />
+        <omgdi:waypoint x="270" y="120" />
+        <omgdi:waypoint x="380" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToCompliance_di" bpmnElement="Flow_ToCompliance">
+        <omgdi:waypoint x="295" y="230" />
+        <omgdi:waypoint x="380" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToOperations_di" bpmnElement="Flow_ToOperations">
+        <omgdi:waypoint x="270" y="255" />
+        <omgdi:waypoint x="270" y="340" />
+        <omgdi:waypoint x="380" y="340" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FraudToWriteback_di" bpmnElement="Flow_FraudToWriteback">
+        <omgdi:waypoint x="480" y="120" />
+        <omgdi:waypoint x="610" y="120" />
+        <omgdi:waypoint x="610" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ComplianceToWriteback_di" bpmnElement="Flow_ComplianceToWriteback">
+        <omgdi:waypoint x="480" y="230" />
+        <omgdi:waypoint x="560" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_OperationsToWriteback_di" bpmnElement="Flow_OperationsToWriteback">
+        <omgdi:waypoint x="480" y="340" />
+        <omgdi:waypoint x="610" y="340" />
+        <omgdi:waypoint x="610" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToEnd_di" bpmnElement="Flow_ToEnd">
+        <omgdi:waypoint x="660" y="230" />
+        <omgdi:waypoint x="732" y="230" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

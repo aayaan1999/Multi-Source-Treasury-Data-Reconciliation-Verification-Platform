@@ -1,0 +1,41 @@
+{
+  "components": [
+    {
+      "text": "## Reviewing {{flagLabel}} on {{sourceTable}} ({{recordKey}})\n\n{{description}}",
+      "type": "text",
+      "id": "TaskContext"
+    },
+    {
+      "label": "Outcome",
+      "type": "radio",
+      "id": "outcome",
+      "key": "outcome",
+      "validate": { "required": true },
+      "values": [
+        { "label": "Approved", "value": "APPROVED" },
+        { "label": "Rejected", "value": "REJECTED" },
+        { "label": "Corrected", "value": "CORRECTED" }
+      ]
+    },
+    {
+      "label": "Corrected value (JSON, only for 'Corrected' outcomes — e.g. {\"risk_rating\": \"B\"})",
+      "type": "textfield",
+      "id": "correctedValue",
+      "key": "correctedValue"
+    },
+    {
+      "label": "Reviewer (seeded demo user ID — CLAUDE.md's four-seeded-user POC pattern; no Identity/Keycloak login wired to Tasklist yet, see specs/camunda-bpmn-process-design.md section 7 item 2)",
+      "type": "number",
+      "id": "reviewedByUserId",
+      "key": "reviewedByUserId",
+      "validate": { "required": true }
+    }
+  ],
+  "schemaVersion": 17,
+  "exporter": {
+    "name": "hand-authored",
+    "version": "1.0"
+  },
+  "id": "review-outcome-form",
+  "type": "default"
+}

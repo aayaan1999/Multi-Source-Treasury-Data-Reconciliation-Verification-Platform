@@ -45,30 +45,36 @@ services:
     depends_on:
       - elasticsearch
 
-  operate: # https://docs.camunda.io/docs/self-managed/platform-deployment/docker/#operate
-    image: camunda/operate:${CAMUNDA_OPERATE_VERSION}
-    container_name: operate
-    ports:
-      - "8081:8080"
-    environment: # https://docs.camunda.io/docs/self-managed/operate-deployment/configuration/
-      - CAMUNDA_OPERATE_ZEEBE_GATEWAYADDRESS=zeebe:26500
-      - CAMUNDA_OPERATE_ELASTICSEARCH_URL=http://elasticsearch:9200
-      - CAMUNDA_OPERATE_ZEEBEELASTICSEARCH_URL=http://elasticsearch:9200
-      - CAMUNDA_OPERATE_CSRFPREVENTIONENABLED=false
-      - CAMUNDA_DATABASE_URL=http://elasticsearch:9200
-      - management.endpoints.web.exposure.include=health
-      - management.endpoint.health.probes.enabled=true
-    healthcheck:
-      test: [ "CMD-SHELL", "wget -O - -q 'http://localhost:9600/actuator/health/readiness'" ]
-      interval: 30s
-      timeout: 1s
-      retries: 5
-      start_period: 30s
-    networks:
-      - camunda-platform
-    depends_on:
-      - zeebe
-      - elasticsearch
+  # operate: dropped for now to cut this 4-JVM stack down to 3 on resource-constrained dev
+  # machines - all four services bootstrapping at once was starving Elasticsearch of CPU and it
+  # never reached healthy (see camunda/README.md). Operate isn't required for anything this
+  # project demos (spec section 2: "useful for debugging during the build, not necessarily
+  # demoed") - only Zeebe (engine) and Tasklist (Screen 6's REST API) are load-bearing. Re-add by
+  # uncommenting this block if process/incident debugging in the Operate UI is needed later.
+  # operate: # https://docs.camunda.io/docs/self-managed/platform-deployment/docker/#operate
+  #   image: camunda/operate:${CAMUNDA_OPERATE_VERSION}
+  #   container_name: operate
+  #   ports:
+  #     - "8081:8080"
+  #   environment: # https://docs.camunda.io/docs/self-managed/operate-deployment/configuration/
+  #     - CAMUNDA_OPERATE_ZEEBE_GATEWAYADDRESS=zeebe:26500
+  #     - CAMUNDA_OPERATE_ELASTICSEARCH_URL=http://elasticsearch:9200
+  #     - CAMUNDA_OPERATE_ZEEBEELASTICSEARCH_URL=http://elasticsearch:9200
+  #     - CAMUNDA_OPERATE_CSRFPREVENTIONENABLED=false
+  #     - CAMUNDA_DATABASE_URL=http://elasticsearch:9200
+  #     - management.endpoints.web.exposure.include=health
+  #     - management.endpoint.health.probes.enabled=true
+  #   healthcheck:
+  #     test: [ "CMD-SHELL", "wget -O - -q 'http://localhost:9600/actuator/health/readiness'" ]
+  #     interval: 30s
+  #     timeout: 1s
+  #     retries: 5
+  #     start_period: 30s
+  #   networks:
+  #     - camunda-platform
+  #   depends_on:
+  #     - zeebe
+  #     - elasticsearch
 
   tasklist: # https://docs.camunda.io/docs/self-managed/platform-deployment/docker/#tasklist
     image: camunda/tasklist:${CAMUNDA_TASKLIST_VERSION}

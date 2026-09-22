@@ -197,10 +197,14 @@ extension, that's overridden**: Screen 6's approval chain is now built on **Camu
 self-hosted** (Zeebe + Elasticsearch + Operate + Tasklist via Docker Compose), not a Postgres
 status column. React's Screen 6 calls Camunda Tasklist's REST API rather than a custom FastAPI
 workflow endpoint. **The Docker Compose stack itself is built and runnable** (`camunda/`,
-`docker compose up -d` from that folder — needs Docker Desktop running); the actual
-`transaction-review` BPMN process, the Postgres→Zeebe bridge worker, and Screen 6's Tasklist
-integration are not built yet. See `specs/camunda-bpmn-process-design.md` for the process design and
-`3-WEEK-POC-PLAN.md` for why. If a future session is *not* working under that 3-week Camunda
+`docker compose up -d` from that folder — needs Docker Desktop running). The `transaction-review`
+BPMN process, its review-outcome form, and the Postgres↔Zeebe bridge workers are now written too
+(`camunda/process/`, `camunda/bridge/` — `deploy.py`, `poll_worker.py`, `outcome_worker.py`,
+`test_instance.py`) but **not yet verified against a live Zeebe/Tasklist deployment** — treat
+`specs/camunda-bpmn-process-design.md` section 6's checkboxes as unchecked until a real
+`docker compose up` + deploy + poll→Tasklist→outcome round trip has been run. Screen 6's React
+Tasklist integration is still not built. See `specs/camunda-bpmn-process-design.md` for the
+process design and `3-WEEK-POC-PLAN.md` for why. If a future session is *not* working under that 3-week Camunda
 scope, the original status-column guidance still applies — this override is specific to that
 timeline decision, not a permanent architecture change to the source doc's own recommendation.
 

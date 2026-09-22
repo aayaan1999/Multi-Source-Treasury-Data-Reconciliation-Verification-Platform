@@ -527,6 +527,20 @@ CREATE TABLE review_outcomes (
 
 CREATE INDEX review_outcomes_reviewed_at_idx ON review_outcomes (reviewed_at);
 
+-- specs/camunda-bpmn-process-design.md section 4: lets the polling bridge worker tell which
+-- flagged rows already have a transaction-review process instance, without writing a tracking
+-- column onto data_quality_exceptions (owned/overwritten by the Databricks import job) or
+-- overloading flagged_transactions.status (the review outcome, not "was a process started").
+CREATE TABLE camunda_process_tracking (
+    record_type           text NOT NULL CHECK (record_type IN ('data_quality', 'fraud')),
+    source_table          text NOT NULL,
+    record_key            text NOT NULL,
+    flag_label            text NOT NULL,
+    process_instance_key  bigint NOT NULL,
+    started_at            timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (record_type, source_table, record_key, flag_label)
+);
+
 -- specs/multi-source-ingestion-adf.md section 8: shape defined now, population blocked on real
 -- source-system code lists.
 CREATE TABLE transaction_code_mapping (

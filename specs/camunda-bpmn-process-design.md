@@ -1,6 +1,9 @@
 # Spec: Camunda 8 Process Design — Transaction Review Workflow
 
-**Status:** Spec only — not yet implemented (no BPMN file, no Camunda deployment yet)
+**Status:** Written, not yet verified live — BPMN process, form, bridge worker and write-back
+worker exist (`camunda/process/`, `camunda/bridge/`) but have not been run against a deployed
+Zeebe/Tasklist. Docker Compose stack (`camunda/docker-compose.yaml`) is separately confirmed
+runnable — see `CLAUDE.md`.
 **New for:** the 3-week Camunda-based POC extension — see `3-WEEK-POC-PLAN.md`
 **Decision context:** Camunda 8, **self-hosted**, confirmed by the user over the source doc's
 original "don't use a workflow engine for the POC" guidance — that guidance is explicitly
@@ -128,15 +131,17 @@ auto-remediation or severity-based filtering instead (this is exactly what `vali
 
 ## 6. Acceptance Criteria
 
-- [ ] BPMN diagram/XML modeled (e.g. in Camunda Modeler) implementing section 3's flow, all three
-      candidate groups reachable
-- [ ] Local Camunda 8 stack deployable via one `docker compose up`
-- [ ] A test process instance, started manually with sample variables, routes to the correct
-      candidate group based on `flagCategory` (test all three: FRAUD, COMPLIANCE, OPERATIONS)
+- [x] BPMN diagram/XML modeled (`camunda/process/transaction-review.bpmn`, hand-authored)
+      implementing section 3's flow, all three candidate groups reachable
+- [x] Local Camunda 8 stack deployable via one `docker compose up` (confirmed live — see
+      `CLAUDE.md`)
+- [ ] A test process instance, started manually with sample variables (`camunda/bridge/test_instance.py`),
+      routes to the correct candidate group based on `flagCategory` (test all three: FRAUD,
+      COMPLIANCE, OPERATIONS) — script written, not yet run against a live deployment
 - [ ] Completing a task (Approved/Rejected/Corrected) triggers the write-back service task
-- [ ] Bridge worker successfully creates a process instance from a real `data_quality_exceptions`
-      row without manual intervention
-- [ ] Not yet implemented — no BPMN file, no Docker Compose file, no bridge worker code exist yet
+      (`camunda/bridge/outcome_worker.py` written, not yet run)
+- [ ] Bridge worker (`camunda/bridge/poll_worker.py`) successfully creates a process instance from
+      a real `data_quality_exceptions` row without manual intervention — written, not yet run
 
 ## 7. Open Items
 
