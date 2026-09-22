@@ -26,13 +26,13 @@ function DemoBadge() {
 function DrillPanel({ reportId, line, onClose }) {
   const { status, data, error, reload } = useAsync(() => api.drill(reportId, line.line_code), [reportId, line.line_code]);
   return (
-    <aside aria-label={`How ${line.line_code} was calculated`} className="rounded-xl border border-hair bg-surface p-4">
+    <aside aria-label={`How ${line.line_code} was calculated`} className="card sticky top-24 rounded-xl border border-accent/30 bg-surface p-4">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-medium text-ink">{line.line_code} · {line.label}</h3>
-          <p className="text-2xl font-semibold text-ink">{formatLine(line.unit, line.value)}</p>
+          <h3 className="text-sm font-medium text-ink2">{line.line_code} · {line.label}</h3>
+          <p className="text-2xl font-semibold tracking-tight text-ink tabular-nums">{formatLine(line.unit, line.value)}</p>
         </div>
-        <button type="button" onClick={onClose} className="rounded-md border border-hair px-2 py-1 text-sm text-ink hover:bg-page">Close</button>
+        <button type="button" onClick={onClose} className="rounded-md border border-hair px-2 py-1 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page">Close</button>
       </div>
       {status === "loading" && <p role="status" className="mt-3 text-sm text-ink2">Loading the calculation…</p>}
       {status === "error" && (
@@ -79,7 +79,7 @@ function FormSection({ section, selected, onPick }) {
                 onClick={() => onPick(l)}
                 aria-pressed={selected === l.line_code}
                 aria-label={`${l.line_code} ${l.label}: ${formatLine(l.unit, l.value)}. Show how it was calculated`}
-                className={`min-h-[28px] rounded-md px-2 tabular-nums text-ink underline decoration-dotted underline-offset-4 hover:bg-page ${selected === l.line_code ? "bg-page" : ""}`}
+                className={`min-h-[28px] rounded-md px-2 tabular-nums text-ink underline decoration-dotted underline-offset-4 transition-colors hover:bg-page ${selected === l.line_code ? "bg-accent/15 font-medium no-underline" : ""}`}
               >
                 {formatLine(l.unit, l.value)}
               </button>
@@ -123,13 +123,13 @@ export default function ReportView() {
   return (
     <PageShell title={title} subtitle={`${report.frequency} return · ${statusLabel(report.status)} · due ${report.due_date}`} actions={<div className="flex flex-col items-end gap-2">{back}{exports}</div>}>
       {data.blocked && (
-        <div role="alert" className="mt-4 rounded-xl border p-3 text-sm text-ink" style={{ borderColor: "var(--critical)" }}>
+        <div role="alert" className="card mt-4 rounded-xl border p-3 text-sm text-ink" style={{ borderColor: "var(--critical)", background: "color-mix(in srgb, var(--critical) 8%, transparent)" }}>
           <CrossIcon color="var(--critical)" /> <strong>This return cannot be approved or submitted</strong> until the failed checks below are fixed.
         </div>
       )}
 
       <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
-        <section aria-label="Return" className="rounded-xl border border-hair bg-surface p-4">
+        <section aria-label="Return" className="card rounded-xl border border-hair bg-surface p-4">
           <p className="mb-3 text-xs text-ink2">Click any figure to see its formula, source tables and record count.</p>
           {data.sections.map((s) => <FormSection key={s.section} section={s} selected={picked?.line_code} onPick={setPicked} />)}
         </section>
@@ -141,7 +141,7 @@ export default function ReportView() {
           {data.validation.map((v) => {
             const m = LEVEL[v.level] ?? LEVEL.warn;
             return (
-              <li key={v.rule_key} className="flex items-start gap-2 rounded-xl border border-hair bg-surface p-3 text-sm">
+              <li key={v.rule_key} className="card flex items-start gap-2 rounded-xl border border-hair bg-surface p-3 text-sm">
                 <m.Icon color={m.color} />
                 <span className="text-ink"><strong>{v.name}</strong> · <span className="text-ink2">{m.word}</span><br />{v.message}</span>
               </li>

@@ -73,7 +73,7 @@ describe("sign in", () => {
     const user = userEvent.setup();
     renderApp("/");
     await user.type(await screen.findByLabelText(/email/i), "analyst@bankx.demo");
-    await user.type(screen.getByLabelText(/password/i), "secret");
+    await user.type(screen.getByLabelText("Password"), "secret");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(await screen.findByRole("list", { name: "Key indicators" })).toBeInTheDocument();
@@ -87,7 +87,7 @@ describe("sign in", () => {
     const user = userEvent.setup();
     renderApp("/login");
     await user.type(await screen.findByLabelText(/email/i), "analyst@bankx.demo");
-    await user.type(screen.getByLabelText(/password/i), "wrong");
+    await user.type(screen.getByLabelText("Password"), "wrong");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Incorrect email or password");
     expect(localStorage.getItem("bdp_token")).toBeNull();

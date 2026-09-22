@@ -6,11 +6,11 @@ export default function PageShell({ title, subtitle, asOf, actions, children }) 
   return (
     <>
       <TopBar asOf={asOf} />
-      <main className="mx-auto max-w-7xl px-4 pb-16 pt-6">
+      <main className="mx-auto max-w-7xl px-4 pb-16 pt-7">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-ink">{title}</h1>
-            {subtitle && <p className="mt-0.5 max-w-3xl text-sm text-ink2">{subtitle}</p>}
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
+            {subtitle && <p className="mt-1 max-w-3xl text-sm text-ink2">{subtitle}</p>}
           </div>
           {actions}
         </div>
@@ -26,7 +26,7 @@ export function Loading({ what = "the numbers" }) {
 
 export function Notice({ title, children, action }) {
   return (
-    <div className="mx-auto mt-16 max-w-md rounded-xl border border-hair bg-surface p-6 text-center">
+    <div className="card mx-auto mt-16 max-w-md rounded-xl border border-hair bg-surface p-6 text-center">
       <h2 className="text-lg font-semibold text-ink">{title}</h2>
       <p className="mt-2 text-sm text-ink2">{children}</p>
       {action}
@@ -42,7 +42,7 @@ export function LoadError({ error, onRetry, emptyTitle = "No numbers yet" }) {
   return (
     <Notice
       title="Couldn't load this screen"
-      action={<button type="button" onClick={onRetry} className="mt-4 rounded-md border border-hair px-3 py-1.5 text-sm text-ink hover:bg-page">Try again</button>}
+      action={<button type="button" onClick={onRetry} className="mt-4 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110">Try again</button>}
     >
       {error?.message}
     </Notice>
@@ -66,7 +66,7 @@ export function ExportButton({ label, onExport }) {
             setState({ busy: false, error: e.message });
           }
         }}
-        className="rounded-md border border-hair px-3 py-1.5 text-sm text-ink hover:bg-page disabled:opacity-60"
+        className="rounded-md border border-hair px-3 py-1.5 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page disabled:opacity-60"
       >
         {state.busy ? "Preparing…" : label}
       </button>

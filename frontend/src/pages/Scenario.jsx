@@ -24,19 +24,24 @@ function ResultBox({ label, before, after, change, status, statusWord, footnote 
   const meta = STATUS_META[status] ?? STATUS_META.unknown;
   const Icon = ICON[status] ?? DashIcon;
   return (
-    <li className="relative flex flex-col rounded-xl border border-hair bg-surface p-4 pb-5">
+    <li className="card relative flex flex-col overflow-hidden rounded-xl border border-hair bg-surface p-4 pb-5">
+      <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: meta.color }} />
       <span className="text-sm font-medium text-ink2">{label}</span>
-      <span className="mt-2 text-3xl font-semibold tracking-tight text-ink" aria-label={`${label} after stress`}>{after}</span>
+      <span className="mt-2 text-3xl font-semibold tracking-tight text-ink tabular-nums" aria-label={`${label} after stress`}>{after}</span>
       <span className="mt-1 text-sm text-ink2">
         {before !== null && <>Before {before} · </>}
         {change}
       </span>
       {footnote && <span className="mt-1 text-xs text-ink2">{footnote}</span>}
-      <span className="mt-auto flex items-center gap-1.5 pt-3 text-sm text-ink2">
-        <Icon color={meta.color} />
-        {statusWord ?? meta.label}
-      </span>
-      <span aria-hidden className="absolute inset-x-0 bottom-0 h-1 rounded-b-xl" style={{ background: meta.color }} />
+      <div className="mt-auto pt-3">
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+          style={{ background: `color-mix(in srgb, ${meta.color} 14%, transparent)`, color: meta.color }}
+        >
+          <Icon color={meta.color} />
+          {statusWord ?? meta.label}
+        </span>
+      </div>
     </li>
   );
 }
@@ -64,7 +69,7 @@ function Slider({ def, value, onChange }) {
 
 function AssumptionsPanel({ assumptions, defaults, onChange, onReset, snapshot, open }) {
   return (
-    <details id="assumptions" open={open} className="rounded-xl border border-hair bg-surface p-4">
+    <details id="assumptions" open={open} className="card rounded-xl border border-hair bg-surface p-4">
       <summary className="cursor-pointer text-sm font-medium text-ink">
         Assumptions behind this model <span className="text-ink2">({ASSUMPTION_DEFS.length} editable, {PIPELINE_ASSUMPTIONS.length} from the pipeline)</span>
       </summary>
@@ -106,7 +111,7 @@ function AssumptionsPanel({ assumptions, defaults, onChange, onReset, snapshot, 
       <ul className="mt-2 list-disc pl-5 text-sm text-ink2">
         {NOT_MODELLED.map((n) => <li key={n}>{n}</li>)}
       </ul>
-      <button type="button" onClick={onReset} className="mt-4 rounded-md border border-hair px-3 py-1.5 text-sm text-ink hover:bg-page">
+      <button type="button" onClick={onReset} className="mt-4 rounded-md border border-hair px-3 py-1.5 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page">
         Reset assumptions to defaults
       </button>
     </details>
@@ -173,7 +178,7 @@ function ScenarioBody({ snapshot }) {
   return (
     <>
       {share !== null && share < 10 && (
-        <div role="note" className="mt-4 rounded-xl border border-hair bg-surface p-3 text-sm text-ink">
+        <div role="note" className="card mt-4 rounded-xl border border-hair bg-surface p-3 text-sm text-ink">
           <WarningIcon color="var(--warning)" /> <strong>Read this first.</strong> The loan book in today's snapshot is {formatUsdCompact(result.detail.grossLoans)},
           only {share.toFixed(2)}% of risk-weighted assets ({formatUsdCompact(before.rwa)}). A stress on loans can therefore barely move the
           capital ratio, whatever the sliders say. The model is working; the sample data behind it is far smaller than the capital it is measured against.
@@ -182,12 +187,12 @@ function ScenarioBody({ snapshot }) {
 
       <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
         <div>
-          <section aria-label="Stress controls" className="rounded-xl border border-hair bg-surface p-4">
-            <h2 className="text-base font-semibold text-ink">Stress controls</h2>
+          <section aria-label="Stress controls" className="card rounded-xl border border-hair bg-surface p-4">
+            <h2 className="text-base font-semibold tracking-tight text-ink">Stress controls</h2>
             <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Preset scenarios">
               {Object.entries(PRESETS).map(([key, p]) => (
                 <button key={key} type="button" aria-pressed={activePreset === key} onClick={() => setInputs(p.inputs)}
-                  className={`rounded-md border px-3 py-1.5 text-sm ${activePreset === key ? "border-accent bg-page font-medium text-ink" : "border-hair text-ink2 hover:bg-page"}`}>
+                  className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${activePreset === key ? "border-accent bg-accent font-medium text-white shadow-sm" : "border-hair text-ink2 hover:border-accent/40 hover:bg-page hover:text-ink"}`}>
                   {p.label}
                 </button>
               ))}
@@ -200,13 +205,13 @@ function ScenarioBody({ snapshot }) {
             </div>
           </section>
 
-          <div className="mt-4 rounded-xl border border-hair bg-surface p-4">
+          <div className="card mt-4 rounded-xl border border-hair bg-surface p-4">
             <label className="text-sm font-medium text-ink" htmlFor="scenario-name">Save this scenario</label>
             <div className="mt-2 flex gap-2">
               <input id="scenario-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="e.g. Board stress test"
-                className="min-w-0 flex-1 rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink" />
+                className="min-w-0 flex-1 rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink outline-none transition focus:border-transparent focus:ring-2 focus:ring-accent/60" />
               <button type="button" onClick={save} disabled={!name.trim() || saveState.busy}
-                className="rounded-md border border-hair px-3 py-1.5 text-sm text-ink hover:bg-page disabled:opacity-50">
+                className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50">
                 {saveState.busy ? "Saving…" : "Save"}
               </button>
             </div>
@@ -217,12 +222,12 @@ function ScenarioBody({ snapshot }) {
 
         <div>
           {result.hqlaExhausted && (
-            <div role="alert" className="mb-4 rounded-xl border p-3 text-sm text-ink" style={{ borderColor: "var(--critical)" }}>
+            <div role="alert" className="card mb-4 rounded-xl border p-3 text-sm text-ink" style={{ borderColor: "var(--critical)", background: "color-mix(in srgb, var(--critical) 8%, transparent)" }}>
               <CrossIcon color="var(--critical)" /> <strong>Liquid assets run out before the outflow is covered.</strong> This is the scenario where a bank fails
               while still technically solvent.
             </div>
           )}
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2" aria-label="Results after stress">
+          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2" aria-label="Results after stress">
             <ResultBox label="Capital ratio" before={formatPercentValue(before.car, 2)} after={formatPercentValue(after.car, 2)}
               change={signed(after.car - before.car, 2, " pts")} status={carStatus} footnote={`Minimum ${a.minimumCarPct}%`} />
             <ResultBox label="Liquidity ratio" before={formatPercentValue(before.lcr, 1)} after={formatPercentValue(after.lcr, 1)}

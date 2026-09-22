@@ -7,11 +7,18 @@ export default function Placeholder({ screen }) {
   return (
     <>
       <TopBar />
-      <main className="mx-auto mt-16 max-w-md rounded-xl border border-hair bg-surface p-6 text-center">
-        <h1 className="text-lg font-semibold text-ink">{screen}</h1>
+      <main className="card mx-auto mt-16 max-w-md rounded-xl border border-hair bg-surface p-6 text-center">
+        <span
+          aria-hidden
+          className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full text-lg"
+          style={{ background: "color-mix(in srgb, var(--series-1) 14%, transparent)", color: "var(--series-1)" }}
+        >
+          ⚑
+        </span>
+        <h1 className="text-lg font-semibold tracking-tight text-ink">{screen}</h1>
         <p className="mt-2 text-sm text-ink2">This screen isn't built yet.</p>
         {search && <p className="mt-2 text-sm text-muted">Requested view: {search}</p>}
-        <Link to="/" className="mt-4 inline-block rounded-md border border-hair px-3 py-1.5 text-sm text-ink hover:bg-page">
+        <Link to="/" className="mt-4 inline-block rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110">
           Back to the executive summary
         </Link>
       </main>

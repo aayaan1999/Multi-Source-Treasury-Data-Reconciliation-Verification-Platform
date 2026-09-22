@@ -10,12 +10,15 @@ const TONE = {
 export default function AlertStrip({ alerts }) {
   if (alerts.length === 0) return <p className="text-sm text-ink2">No KPI data to assess yet.</p>;
   return (
-    <ul className="divide-y divide-[color:var(--border)] rounded-xl border border-hair bg-surface">
+    <ul className="card divide-y divide-[color:var(--border)] overflow-hidden rounded-xl border border-hair bg-surface">
       {alerts.map(({ key, tone, text, to }) => {
         const { Icon, color, word } = TONE[tone];
         const body = (
           <>
-            <span className="mt-0.5 shrink-0">
+            <span
+              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+              style={{ background: `color-mix(in srgb, ${color} 14%, transparent)` }}
+            >
               <Icon color={color} />
             </span>
             <span className="text-sm text-ink">
@@ -25,13 +28,13 @@ export default function AlertStrip({ alerts }) {
           </>
         );
         return (
-          <li key={key}>
+          <li key={key} className="border-l-[3px]" style={{ borderColor: color }}>
             {to ? (
-              <Link to={to} className="flex gap-3 px-4 py-3 hover:bg-page">
+              <Link to={to} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-page">
                 {body}
               </Link>
             ) : (
-              <div className="flex gap-3 px-4 py-3">{body}</div>
+              <div className="flex items-center gap-3 px-4 py-3">{body}</div>
             )}
           </li>
         );

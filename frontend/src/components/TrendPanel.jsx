@@ -33,10 +33,10 @@ export default function TrendPanel({ kpi, data }) {
   const domain = yDomain([...points.map((p) => p.value), ...(kpi.limit != null ? [kpi.limit] : [])]);
 
   return (
-    <li className="rounded-xl border border-hair bg-surface p-4">
+    <li className="card rounded-xl border border-hair bg-surface p-4 transition-shadow hover:shadow-[var(--shadow-hover)]">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-medium text-ink2">{kpi.short}</h3>
-        <span className="text-lg font-semibold text-ink">{formatValue(kpi, current?.value)}</span>
+        <span className="text-lg font-semibold tracking-tight text-ink tabular-nums">{formatValue(kpi, current?.value)}</span>
       </div>
       {/* The limit is explained here, not labelled on the plot: an in-chart label lands on top of the data line. */}
       <p className="mt-0.5 flex min-h-4 items-center gap-1.5 text-xs text-muted">

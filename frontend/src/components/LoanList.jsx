@@ -61,9 +61,9 @@ export default function LoanList({ params, emptyText = "No loans match these fil
         </span>
         <span className="flex gap-2">
           <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}
-            className="rounded-md border border-hair px-2.5 py-1 hover:bg-page disabled:opacity-40">Previous</button>
+            className="rounded-md border border-hair px-2.5 py-1 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink disabled:opacity-40 disabled:hover:border-hair disabled:hover:bg-transparent">Previous</button>
           <button type="button" disabled={offset + PAGE >= data.total} onClick={() => setOffset(offset + PAGE)}
-            className="rounded-md border border-hair px-2.5 py-1 hover:bg-page disabled:opacity-40">Next</button>
+            className="rounded-md border border-hair px-2.5 py-1 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink disabled:opacity-40 disabled:hover:border-hair disabled:hover:bg-transparent">Next</button>
         </span>
       </div>
     </div>

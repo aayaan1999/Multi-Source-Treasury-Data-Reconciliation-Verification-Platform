@@ -59,10 +59,10 @@ function NplReference({ nplRatio }) {
   const scaleMax = Math.max(NPL_REFERENCE_LIMIT_PCT * 2, (nplRatio ?? 0) * 1.2);
   const pct = (v) => `${Math.min(100, (v / scaleMax) * 100)}%`;
   return (
-    <div className="rounded-xl border border-hair bg-surface p-4">
+    <div className="card rounded-xl border border-hair bg-surface p-4">
       <div className="flex flex-wrap items-baseline gap-x-3">
         <span className="text-sm font-medium text-ink2">NPL ratio today</span>
-        <span className="text-2xl font-semibold text-ink">{formatPercentValue(nplRatio)}</span>
+        <span className="text-2xl font-semibold tracking-tight text-ink tabular-nums">{formatPercentValue(nplRatio)}</span>
         <span className="text-sm text-ink2">internal limit {NPL_REFERENCE_LIMIT_PCT.toFixed(1)}%</span>
       </div>
       <div className="relative mt-3 h-2 rounded-full" style={{ background: "var(--grid)" }} role="img"
@@ -120,7 +120,7 @@ export default function Portfolio() {
       label: dimension === "branch" ? branchNames[r.dimension_value] ?? r.dimension_value : r.dimension_value,
     }));
   const options = (dimension) => breakdown[dimension].map((r) => r.dimension_value);
-  const select = "rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink";
+  const select = "rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40";
 
   return (
     <PageShell
@@ -129,7 +129,7 @@ export default function Portfolio() {
       asOf={asOf}
       actions={<ExportButton label="Export to Excel" onExport={api.exportPortfolio} />}
     >
-      <ul className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5" aria-label="Portfolio summary">
+      <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5" aria-label="Portfolio summary">
         <StatBox label="Gross loans" value={formatUsdCompact(strip.grossLoans)} hint="Total lent out (USD)" />
         <StatBox label="NPL amount" value={formatUsdCompact(strip.nplAmount)} hint="Loans 90+ days late" />
         <StatBox label="NPL ratio" value={formatPercentValue(strip.nplRatio)} hint={`Internal limit ${NPL_REFERENCE_LIMIT_PCT.toFixed(1)}%`} status={nplStatus} />
@@ -142,7 +142,7 @@ export default function Portfolio() {
         title="Filters"
         description="The charts always show the whole loan book. These filters narrow the loan list at the bottom of the page and highlight the matching bars. Clicking a bar or a table row sets the same filter."
       >
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-hair bg-surface p-3">
+        <div className="card flex flex-wrap items-center gap-3 rounded-xl border border-hair bg-surface p-3.5">
           {[["product", "Product"], ["segment", "Segment"], ["branch", "Branch"], ["currency", "Currency"]].map(([key, label]) => (
             <label key={key} className="flex items-center gap-2 text-sm text-ink2">
               {label}
@@ -155,11 +155,11 @@ export default function Portfolio() {
             </label>
           ))}
           <label className="flex items-center gap-2 text-sm text-ink2">
-            <input type="checkbox" checked={Boolean(filters.bad)} onChange={(e) => setFilter("bad", e.target.checked ? "1" : "")} />
+            <input type="checkbox" className="accent-accent" checked={Boolean(filters.bad)} onChange={(e) => setFilter("bad", e.target.checked ? "1" : "")} />
             Bad loans only
           </label>
           {chips.length > 0 && (
-            <button type="button" onClick={clearAll} className="ml-auto rounded-md border border-hair px-2.5 py-1.5 text-sm text-ink2 hover:bg-page">
+            <button type="button" onClick={clearAll} className="ml-auto rounded-md border border-hair px-2.5 py-1.5 text-sm text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink">
               Clear all filters
             </button>
           )}
@@ -284,7 +284,7 @@ export default function Portfolio() {
           <ul className="mb-3 flex flex-wrap gap-2" aria-label="Active filters">
             {chips.map(([key, text]) => (
               <li key={key}>
-                <button type="button" onClick={() => setFilter(key, "")} className="inline-flex items-center gap-1.5 rounded-full border border-hair bg-surface px-2.5 py-1 text-sm text-ink hover:bg-page" aria-label={`Remove filter ${text}`}>
+                <button type="button" onClick={() => setFilter(key, "")} className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-sm text-ink transition-colors hover:bg-accent/20" aria-label={`Remove filter ${text}`}>
                   {text} <span aria-hidden className="text-ink2">×</span>
                 </button>
               </li>

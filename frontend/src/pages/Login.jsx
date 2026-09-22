@@ -108,7 +108,7 @@ export default function Login() {
             <span className="text-base font-semibold tracking-tight text-ink">Bank Data Platform</span>
           </div>
 
-          <h2 className="text-2xl font-semibold tracking-tight text-ink">Welcome back</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-ink">Sign in</h2>
           <p className="mt-1.5 text-sm text-ink2">
             Sign in with a demo account — analyst, reviewer, approver or admin.
           </p>

@@ -40,7 +40,7 @@ export default function Reports() {
 
   return (
     <PageShell title={title} subtitle={subtitle}>
-      <ul className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="Reporting summary">
+      <ul className="mt-6 grid grid-cols-2 gap-5 lg:grid-cols-4" aria-label="Reporting summary">
         <StatBox label="Due this month" value={counts.dueThisMonth} hint="Reports with a due date this month" />
         <StatBox label="Submitted" value={counts.submitted} hint="Sent to the regulator" />
         <StatBox label="Pending approval" value={counts.pendingApproval} hint="Draft, under review or approved, not yet sent" />

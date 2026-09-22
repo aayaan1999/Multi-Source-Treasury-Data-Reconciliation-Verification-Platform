@@ -36,7 +36,7 @@ function DrillPanel({ kind, id, title, onClose }) {
     <Section
       id="drill"
       title={`Customers and loans: ${title}`}
-      action={<button type="button" onClick={onClose} className="rounded-md border border-hair px-2.5 py-1.5 text-sm text-ink2 hover:bg-page">Close</button>}
+      action={<button type="button" onClick={onClose} className="rounded-md border border-hair px-2.5 py-1.5 text-sm text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink">Close</button>}
     >
       <h3 className="mb-2 text-sm font-medium text-ink2">Customers</h3>
       {status === "error" && !data ? (
@@ -113,7 +113,7 @@ export default function Performance() {
       asOf={asOf}
       actions={<ExportButton label="Export to Excel" onExport={api.exportPerformance} />}
     >
-      <ul className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Performance summary">
+      <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Performance summary">
         <StatBox label="Total revenue" value={formatUsdCompact(totals.revenue)} hint="Interest income + fee income" />
         <StatBox label="Total cost" value={formatUsdCompact(totals.cost)} hint="Direct branch operating cost" badge={costBadge} />
         <StatBox label="Profit" value={formatUsdCompact(totals.profit)} hint="Revenue minus cost" status={totals.profit < 0 ? "action" : "good"} />
@@ -126,10 +126,10 @@ export default function Performance() {
       </ul>
 
       <Section id="filters" title="Filters" description="Region scopes the boxes, the branch table, the regional rollup and the scatter. The segment, product and channel figures cover the whole bank.">
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-hair bg-surface p-3">
+        <div className="card flex flex-wrap items-center gap-3 rounded-xl border border-hair bg-surface p-3.5">
           <label className="flex items-center gap-2 text-sm text-ink2">
             Region
-            <select className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink" value={region} onChange={(e) => setParam("region", e.target.value)}>
+            <select className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40" value={region} onChange={(e) => setParam("region", e.target.value)}>
               <option value="">All regions</option>
               {regions.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
@@ -196,7 +196,7 @@ export default function Performance() {
       </Section>
 
       <Section id="segments" title="Customer segments" description="Retail, SME and Corporate.">
-        <div role="note" className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-hair bg-surface p-3 text-sm text-ink">
+        <div role="note" className="card mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-hair bg-surface p-3 text-sm text-ink">
           <AssumptionBadge items={SEGMENT_ASSUMPTION} label="Allocated, not measured" align="left" heading="How segment profit is worked out" footer="Confirm the allocation method with the bank's finance team." />
           <span>
             <strong>Segment profit is not measured.</strong> Nothing in the data attributes branch cost to a segment, so cost is

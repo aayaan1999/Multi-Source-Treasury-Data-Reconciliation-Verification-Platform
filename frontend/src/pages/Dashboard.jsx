@@ -10,9 +10,9 @@ import { KPIS, KPI_BY_KEY, TREND_KEYS } from "../kpi/kpiConfig";
 
 function Section({ title, children, action }) {
   return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-ink">{title}</h2>
+    <section className="mt-10">
+      <div className="mb-3.5 flex items-center justify-between gap-3 border-l-2 border-accent pl-3">
+        <h2 className="text-base font-semibold tracking-tight text-ink">{title}</h2>
         {action}
       </div>
       {children}
@@ -22,7 +22,7 @@ function Section({ title, children, action }) {
 
 function Message({ title, children, action }) {
   return (
-    <div className="mx-auto mt-16 max-w-md rounded-xl border border-hair bg-surface p-6 text-center">
+    <div className="card mx-auto mt-16 max-w-md rounded-xl border border-hair bg-surface p-6 text-center">
       <h2 className="text-lg font-semibold text-ink">{title}</h2>
       <p className="mt-2 text-sm text-ink2">{children}</p>
       {action}
@@ -33,19 +33,19 @@ function Message({ title, children, action }) {
 // Table twin of the trend panels: every value the charts show, reachable without hovering.
 function TrendTable({ rows }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-hair bg-surface">
+    <div className="card overflow-x-auto rounded-xl border border-hair bg-surface">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-hair text-ink2">
-            <th className="px-4 py-2 font-medium">Date</th>
+          <tr className="border-b border-hair bg-page/60 text-ink2">
+            <th className="px-4 py-2.5 font-medium">Date</th>
             {TREND_KEYS.map((k) => (
-              <th key={k} className="px-4 py-2 font-medium">{KPI_BY_KEY[k].short}</th>
+              <th key={k} className="px-4 py-2.5 font-medium">{KPI_BY_KEY[k].short}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {[...rows].reverse().map((r) => (
-            <tr key={r.calculation_date} className="border-b border-hair last:border-0">
+            <tr key={r.calculation_date} className="border-b border-hair transition-colors last:border-0 hover:bg-page">
               <td className="px-4 py-2 text-ink">{formatDay(r.calculation_date)}</td>
               {TREND_KEYS.map((k) => (
                 <td key={k} className="px-4 py-2 tabular-nums text-ink">{formatValue(KPI_BY_KEY[k], r[k])}</td>
@@ -123,7 +123,7 @@ export default function Dashboard() {
         <TopBar />
         <Message
           title="Couldn't load the dashboard"
-          action={<button type="button" onClick={load} className="mt-4 rounded-md border border-hair px-3 py-1.5 text-sm text-ink hover:bg-page">Try again</button>}
+          action={<button type="button" onClick={load} className="mt-4 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110">Try again</button>}
         >
           {data.message}
         </Message>
@@ -140,7 +140,7 @@ export default function Dashboard() {
       <main className="mx-auto max-w-7xl px-4 pb-16 pt-6">
         <h1 className="sr-only">Executive summary</h1>
 
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Key indicators">
+        <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Key indicators">
           {KPIS.map((kpi) => (
             <KpiTile
               key={kpi.key}
@@ -164,7 +164,7 @@ export default function Dashboard() {
               type="button"
               onClick={() => setTableView((v) => !v)}
               aria-pressed={tableView}
-              className="rounded-md border border-hair px-2.5 py-1.5 text-sm text-ink2 hover:bg-page"
+              className="rounded-md border border-hair px-2.5 py-1.5 text-sm text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink"
             >
               {tableView ? "Show charts" : "Show as table"}
             </button>
@@ -173,7 +173,7 @@ export default function Dashboard() {
           {tableView ? (
             <TrendTable rows={upTo} />
           ) : (
-            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
               {TREND_KEYS.map((key) => (
                 <TrendPanel
                   key={key}

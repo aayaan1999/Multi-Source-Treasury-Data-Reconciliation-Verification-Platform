@@ -23,10 +23,10 @@ export function Legend({ items }) {
 export default function ChartCard({ title, subtitle, legend = [], table, note, children }) {
   const [asTable, setAsTable] = useState(false);
   return (
-    <li className="rounded-xl border border-hair bg-surface p-4">
+    <li className="card rounded-xl border border-hair bg-surface p-4 transition-shadow hover:shadow-[var(--shadow-hover)]">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-medium text-ink">{title}</h3>
+          <h3 className="text-sm font-semibold text-ink">{title}</h3>
           {subtitle && <p className="text-xs text-ink2">{subtitle}</p>}
         </div>
         {table && (
@@ -34,7 +34,7 @@ export default function ChartCard({ title, subtitle, legend = [], table, note, c
             type="button"
             aria-pressed={asTable}
             onClick={() => setAsTable((v) => !v)}
-            className="shrink-0 rounded-md border border-hair px-2 py-1 text-xs text-ink2 hover:bg-page"
+            className="shrink-0 rounded-md border border-hair px-2 py-1 text-xs text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink"
           >
             {asTable ? "Show chart" : "Show as table"}
           </button>

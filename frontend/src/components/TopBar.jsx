@@ -25,12 +25,21 @@ function ThemeToggle() {
         setTheme(next);
         setLocal(next);
       }}
-      className="rounded-md border border-hair px-2.5 py-1.5 text-sm text-ink2 hover:bg-page"
+      className="rounded-md border border-hair px-2.5 py-1.5 text-sm text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink"
       title={`Theme: ${theme}. Click for ${next}.`}
     >
       Theme: {theme}
     </button>
   );
+}
+
+function initials(name) {
+  return (name || "")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase())
+    .join("");
 }
 
 /**
@@ -42,15 +51,25 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   return (
-    <header className="border-b border-hair bg-surface">
+    <header className="sticky top-0 z-20 border-b border-hair bg-surface/90 backdrop-blur supports-[backdrop-filter]:bg-surface/75">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3">
-        <div>
-          <Link to="/" className="text-lg font-semibold text-ink">
-            {BANK_NAME}
-          </Link>
-          <div className="text-sm text-ink2">
-            {today}
-            {asOf && <span> · Data as of {formatDay(asOf)}</span>}
+        <div className="flex items-center gap-3">
+          <svg viewBox="0 0 32 32" className="h-8 w-8 shrink-0" aria-hidden>
+            <rect width="32" height="32" rx="7" fill="var(--series-1)" />
+            <path d="M16 6 L27 11.5 V13.5 H5 V11.5 Z" fill="white" />
+            <rect x="7" y="15" width="3" height="10" fill="white" />
+            <rect x="14.5" y="15" width="3" height="10" fill="white" />
+            <rect x="22" y="15" width="3" height="10" fill="white" />
+            <rect x="5" y="26" width="22" height="2.5" fill="white" />
+          </svg>
+          <div>
+            <Link to="/" className="text-lg font-semibold leading-tight tracking-tight text-ink">
+              {BANK_NAME}
+            </Link>
+            <div className="text-sm text-ink2">
+              {today}
+              {asOf && <span> · Data as of {formatDay(asOf)}</span>}
+            </div>
           </div>
         </div>
 
@@ -61,7 +80,7 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
               <select
                 value={selected}
                 onChange={(e) => onSelect(e.target.value)}
-                className="rounded-md border border-hair bg-surface px-2 py-1.5 text-ink"
+                className="rounded-md border border-hair bg-surface px-2 py-1.5 text-ink transition-colors hover:border-accent/40"
               >
                 {dates.map((d) => (
                   <option key={d} value={d}>
@@ -73,25 +92,34 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
           )}
           <ThemeToggle />
           {user && (
-            <div className="flex items-center gap-2 text-sm text-ink2">
-              <span>
+            <div className="flex items-center gap-2.5 border-l border-hair pl-3 text-sm text-ink2">
+              <span
+                aria-hidden
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                style={{ background: "var(--series-1)" }}
+              >
+                {initials(user.name) || "?"}
+              </span>
+              <span className="hidden sm:inline">
                 {user.name} <span className="text-muted">({user.role})</span>
               </span>
-              <button type="button" onClick={logout} className="rounded-md border border-hair px-2.5 py-1.5 hover:bg-page">
+              <button type="button" onClick={logout} className="rounded-md border border-hair px-2.5 py-1.5 transition-colors hover:border-accent/40 hover:bg-page">
                 Sign out
               </button>
             </div>
           )}
         </div>
       </div>
-      <nav aria-label="Screens" className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 pb-2">
+      <nav aria-label="Screens" className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 pb-2.5">
         {NAV.map(([to, label, end]) => (
           <NavLink
             key={to}
             to={to}
             end={end}
             className={({ isActive }) =>
-              `whitespace-nowrap rounded-md px-3 py-1.5 text-sm ${isActive ? "bg-page font-medium text-ink" : "text-ink2 hover:bg-page"}`
+              `whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-colors ${
+                isActive ? "bg-accent font-medium text-white shadow-sm" : "text-ink2 hover:bg-page hover:text-ink"
+              }`
             }
           >
             {label}

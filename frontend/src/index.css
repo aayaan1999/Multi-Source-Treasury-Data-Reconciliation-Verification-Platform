@@ -20,6 +20,10 @@
   --serious: #ec835a;
   --critical: #d03b3b;
   --neutral-bar: #c3c2b7;
+  --shadow-color: 220 20% 60%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.08);
+  --shadow-card: 0 1px 3px hsl(var(--shadow-color) / 0.08), 0 1px 2px hsl(var(--shadow-color) / 0.06);
+  --shadow-hover: 0 8px 20px hsl(var(--shadow-color) / 0.12), 0 2px 6px hsl(var(--shadow-color) / 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -37,6 +41,9 @@
     --series-2: #d95926;
     --negative: #e66767;
     --neutral-bar: #383835;
+    --shadow-color: 220 40% 2%;
+    --shadow-card: 0 1px 3px hsl(var(--shadow-color) / 0.5), 0 1px 2px hsl(var(--shadow-color) / 0.4);
+    --shadow-hover: 0 10px 24px hsl(var(--shadow-color) / 0.55), 0 2px 6px hsl(var(--shadow-color) / 0.4);
   }
 }
 
@@ -54,6 +61,9 @@
   --series-2: #d95926;
   --negative: #e66767;
   --neutral-bar: #383835;
+  --shadow-color: 220 40% 2%;
+  --shadow-card: 0 1px 3px hsl(var(--shadow-color) / 0.5), 0 1px 2px hsl(var(--shadow-color) / 0.4);
+  --shadow-hover: 0 10px 24px hsl(var(--shadow-color) / 0.55), 0 2px 6px hsl(var(--shadow-color) / 0.4);
 }
 
 @theme inline {
@@ -83,4 +93,15 @@ body {
 :focus-visible {
   outline: 2px solid var(--series-1);
   outline-offset: 2px;
+}
+
+.card {
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+}
+
+.card-interactive:hover,
+.card-interactive:focus-within {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
 }

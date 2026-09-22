@@ -12,15 +12,15 @@ const FLAG_COLOR = { loss: "var(--critical)", watch: "var(--warning)" };
  *  selectedKey : highlights the row whose rowKey equals it
  */
 export default function DataTable({ columns, rows, rowKey, rowFlag, onRowClick, selectedKey, caption, emptyText = "Nothing to show yet." }) {
-  if (!rows.length) return <p className="rounded-xl border border-hair bg-surface p-4 text-sm text-ink2">{emptyText}</p>;
+  if (!rows.length) return <p className="card rounded-xl border border-hair bg-surface p-4 text-sm text-ink2">{emptyText}</p>;
   return (
-    <div className="overflow-x-auto rounded-xl border border-hair bg-surface">
+    <div className="card overflow-x-auto rounded-xl border border-hair bg-surface">
       <table className="w-full text-sm">
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead>
-          <tr className="border-b border-hair text-ink2">
+          <tr className="border-b border-hair bg-page/60 text-ink2">
             {columns.map((c) => (
-              <th key={c.key} scope="col" title={c.title} className={`px-3 py-2 font-medium ${ALIGN[c.align || "left"]}`}>
+              <th key={c.key} scope="col" title={c.title} className={`px-3 py-2.5 font-medium ${ALIGN[c.align || "left"]}`}>
                 <span className="inline-flex items-center gap-1.5">{c.header}{c.headerExtra}</span>
               </th>
             ))}
@@ -36,7 +36,7 @@ export default function DataTable({ columns, rows, rowKey, rowFlag, onRowClick, 
                 key={id}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 aria-selected={selectedKey !== undefined ? id === selectedKey : undefined}
-                className={`border-b border-hair last:border-0 ${onRowClick ? "cursor-pointer hover:bg-page" : ""} ${
+                className={`border-b border-hair transition-colors last:border-0 ${onRowClick ? "cursor-pointer hover:bg-page" : ""} ${
                   id === selectedKey ? "bg-page" : ""
                 }`}
                 style={flag ? { background: `color-mix(in srgb, ${FLAG_COLOR[flag.kind]} 9%, transparent)` } : undefined}
