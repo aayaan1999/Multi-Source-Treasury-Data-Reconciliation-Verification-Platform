@@ -13,7 +13,9 @@ this back over JDBC on Notebook 3's next run). For fraud records, also updates
 flagged_transactions.status so the record stops showing as PENDING_REVIEW immediately in the
 application layer, without waiting for the next Databricks sync - CLAUDE.md's Databricks/Postgres
 split has flagged_transactions.status as the one notebook output the app layer, not Databricks,
-owns.
+owns. For breach records (camunda/bridge/breach_check.py), updates the breaches row instead -
+Approved/Rejected/Corrected map onto ACKNOWLEDGED/DISMISSED/ACTION_PLANNED, since the review form
+is the same three-button vocabulary shared across every flagCategory, not breach-specific.
 """
 import asyncio
 import json
@@ -25,9 +27,13 @@ from pyzeebe import ZeebeWorker, Job, create_insecure_channel
 from _env import database_url, zeebe_address
 
 
+BREACH_STATUS = {"APPROVED": "ACKNOWLEDGED", "REJECTED": "DISMISSED", "CORRECTED": "ACTION_PLANNED"}
+
+
 async def write_review_outcome(job: Job) -> dict:
     v = job.variables
-    corrected_value = v.get("correctedValue") or None
+    raw_corrected = v.get("correctedValue") or None  # plain text, for breaches.action_plan
+    corrected_value = raw_corrected
     if corrected_value:
         try:
             corrected_value = json.dumps(json.loads(corrected_value))
@@ -52,6 +58,12 @@ async def write_review_outcome(job: Job) -> dict:
                     """UPDATE flagged_transactions SET status = %s
                        WHERE transaction_id = %s AND flag_label = %s""",
                     (v["outcome"], v["recordKey"], v["flagLabel"]),
+                )
+            elif v["recordType"] == "breach":
+                cur.execute(
+                    """UPDATE breaches SET status = %s, resolved_at = now(), action_plan = %s
+                       WHERE breach_id = %s""",
+                    (BREACH_STATUS[v["outcome"]], raw_corrected, int(v["recordKey"])),
                 )
         conn.commit()
     finally:

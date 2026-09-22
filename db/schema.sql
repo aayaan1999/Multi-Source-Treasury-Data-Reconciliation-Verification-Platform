@@ -546,7 +546,7 @@ CREATE INDEX review_outcomes_reviewed_at_idx ON review_outcomes (reviewed_at);
 -- column onto data_quality_exceptions (owned/overwritten by the Databricks import job) or
 -- overloading flagged_transactions.status (the review outcome, not "was a process started").
 CREATE TABLE camunda_process_tracking (
-    record_type           text NOT NULL CHECK (record_type IN ('data_quality', 'fraud')),
+    record_type           text NOT NULL CHECK (record_type IN ('data_quality', 'fraud', 'breach')),
     source_table          text NOT NULL,
     record_key            text NOT NULL,
     flag_label            text NOT NULL,

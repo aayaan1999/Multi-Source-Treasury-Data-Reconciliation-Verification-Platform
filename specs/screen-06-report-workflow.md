@@ -32,9 +32,17 @@ comment — the difference between a dashboard and a system people actually use,
    **Approve / Reject / Corrected-with-mandatory-comment** — submitted directly to **Camunda's
    Tasklist API** to complete the task, per `CLAUDE.md`'s Workflow Engine Decision (not a FastAPI
    endpoint)
-4. **Breach alerts**: auto-created from Phase 1's `limits`/`breaches` tables — a nightly job
-   compares calculated metrics against thresholds and creates a task automatically; this becomes
-   another `flagCategory`-routed Camunda process instance, not a separate alert system
+4. **Breach alerts**: auto-created from Phase 1's `limits`/`breaches` tables — `camunda/bridge/breach_check.py`
+   compares the latest `kpi_daily_summary` row against `limits`' thresholds and creates a task
+   automatically; reuses the existing `compliance` candidate group (`flagCategory` always
+   `COMPLIANCE` — documented assumption, same rationale as the data-quality COMPLIANCE tables in
+   `specs/camunda-bpmn-process-design.md` section 3), not a separate alert system or new BPMN
+   branch. Verified live 2026-09-22: a synthetic threshold breach flowed through to a real
+   "Compliance Review" task and, on completion, updated `breaches.status`
+   (Approved/Rejected/Corrected → ACKNOWLEDGED/DISMISSED/ACTION_PLANNED). Found and documented,
+   not fixed: a client-side gRPC timeout on `CreateProcessInstance` doesn't guarantee the command
+   failed on the broker - a retry in that case can create a duplicate task (see the docstring on
+   `breach_check.py`'s `untracked_breaches()`).
 5. **Audit trail**: `audit_log`, insert-only (DB grants enforce this — no `UPDATE`/`DELETE`
    permission on the table, per `CLAUDE.md`), filterable by date/entity/user/action type. Every
    comment and every task completion writes a row here, mirroring what Camunda/Zeebe already

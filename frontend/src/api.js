@@ -157,6 +157,7 @@ export const api = {
   auditLog: (params) => request(`/workflow/audit-log${query(params)}`),
   breaches: (params) => request(`/workflow/breaches${query(params)}`),
   workflowStats: () => request("/workflow/stats"),
+  lookupAccountIds: (transactionIds) => request(`/workflow/lookup/account-ids${query({ transaction_ids: transactionIds.join(",") })}`),
 
   // Reconciliation tab (specs/multi-source-reconciliation.md) - standalone from Screen 6/Camunda
   reconciliationExceptions: (params) => request(`/reconciliation${query(params)}`),

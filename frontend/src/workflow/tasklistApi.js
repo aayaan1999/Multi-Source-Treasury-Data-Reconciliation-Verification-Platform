@@ -85,8 +85,26 @@ export const CANDIDATE_GROUPS = ["fraud-investigation", "compliance", "operation
  * logged-in user can see and act on all three groups' tasks rather than being scoped to one -
  * flagged in the UI with an AssumptionBadge rather than silently narrowing access.
  */
-export function searchTasks({ state = "CREATED", candidateGroups = CANDIDATE_GROUPS } = {}) {
-  return call("/tasks/search", { method: "POST", body: { state, candidateGroups } });
+// Requested inline via includeVariables rather than a separate getVariables call per row - one
+// Tasklist round trip for the whole list instead of N+1.
+const LIST_VARIABLES = ["recordType", "sourceTable", "recordKey", "flagLabel"];
+
+export async function searchTasks({ state = "CREATED", candidateGroups = CANDIDATE_GROUPS } = {}) {
+  const tasks = await call("/tasks/search", {
+    method: "POST",
+    body: { state, candidateGroups, includeVariables: LIST_VARIABLES.map((name) => ({ name })) },
+  });
+  return tasks.map((t) => {
+    const vars = {};
+    for (const v of t.variables || []) {
+      try {
+        vars[v.name] = JSON.parse(v.value);
+      } catch {
+        vars[v.name] = v.value;
+      }
+    }
+    return { ...t, vars };
+  });
 }
 
 export function getTask(taskId) {

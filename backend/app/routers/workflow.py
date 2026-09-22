@@ -16,6 +16,18 @@ from ..security import current_user
 
 router = APIRouter(prefix="/workflow", tags=["screen 6 - report workflow"], dependencies=[Depends(current_user)])
 
+
+@router.get("/lookup/account-ids")
+def lookup_account_ids(transaction_ids: str = Query(..., description="Comma-separated transaction_id list")):
+    """account_id for a batch of transaction_ids - not a Camunda process variable (only
+    transaction_id is, via flagged_transactions.transaction_id), so the My Tasks list resolves it
+    here in one round trip instead of N Tasklist/Postgres calls per row."""
+    ids = [t for t in transaction_ids.split(",") if t]
+    if not ids:
+        return {}
+    rows = query("SELECT transaction_id, account_id FROM transactions WHERE transaction_id = ANY(%s)", (ids,))
+    return {r["transaction_id"]: r["account_id"] for r in rows}
+
 # source_table -> single-column primary key, for joining a flagged record back to its full row.
 # fx_rates has no single-column PK (see below) so it isn't in this map.
 ENTITY_PK = {
@@ -44,7 +56,7 @@ def _source_row(source_table: str, record_key: str) -> Optional[dict]:
 
 @router.get("/exceptions/detail")
 def exception_detail(
-    record_type: Literal["data_quality", "fraud"] = Query(...),
+    record_type: Literal["data_quality", "fraud", "breach"] = Query(...),
     source_table: str = Query(...),
     record_key: str = Query(...),
     flag_label: str = Query(...),
@@ -53,18 +65,33 @@ def exception_detail(
     Tasklist already carries the flag's own fields as process variables, but not the source row -
     that only lives in this app's Postgres, so the frontend still needs this endpoint even though
     task state and task actions come from Tasklist directly."""
+    source_row = None
     if record_type == "data_quality":
         flag = query_one(
             "SELECT source_table, record_key, flag_label, description FROM data_quality_exceptions "
             "WHERE source_table = %s AND record_key = %s AND flag_label = %s",
             (source_table, record_key, flag_label),
         )
-    else:
+        if flag:
+            source_row = _source_row(source_table, record_key)
+    elif record_type == "fraud":
         flag = query_one(
             "SELECT transaction_id AS record_key, flag_label, flag_type, description, status, detected_at "
             "FROM flagged_transactions WHERE transaction_id = %s AND flag_label = %s",
             (record_key, flag_label),
         )
+        if flag:
+            source_row = _source_row(source_table, record_key)
+    else:  # breach (camunda/bridge/breach_check.py) - a KPI threshold, not an entity row, so the
+           # breach+limit detail itself is what's worth showing, not a lookup by ENTITY_PK
+        flag = query_one(
+            """SELECT b.breach_id, l.metric_name, l.threshold_value, l.direction, b.detected_at,
+                      b.actual_value, b.status, b.action_plan, b.resolved_at
+               FROM breaches b JOIN limits l ON l.limit_id = b.limit_id
+               WHERE b.breach_id = %s""",
+            (record_key,),
+        )
+        source_row = flag
     if flag is None:
         raise HTTPException(404, "No such flagged record")
     tracking = query_one(
@@ -72,7 +99,7 @@ def exception_detail(
         "WHERE record_type = %s AND source_table = %s AND record_key = %s AND flag_label = %s",
         (record_type, source_table, record_key, flag_label),
     )
-    return {"flag": flag, "source_row": _source_row(source_table, record_key), "process": tracking}
+    return {"flag": flag, "source_row": source_row, "process": tracking}
 
 
 @router.get("/exceptions/comments")

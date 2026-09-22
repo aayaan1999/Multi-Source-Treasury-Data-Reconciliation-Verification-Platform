@@ -2,13 +2,14 @@ import { useMemo, useState } from "react";
 import { api } from "../api";
 import AssumptionBadge from "../components/AssumptionBadge";
 import DataTable from "../components/DataTable";
+import Modal from "../components/Modal";
 import PageShell, { Loading, LoadError, Notice } from "../components/PageShell";
 import Section from "../components/Section";
 import StatBox from "../components/StatBox";
 import { useAuth } from "../auth";
 import useAsync from "../hooks/useAsync";
 import ApprovalChain from "../workflow/ApprovalChain";
-import { CANDIDATE_GROUPS, claimTask, completeTask, getTask, getVariables, searchTasks } from "../workflow/tasklistApi";
+import { CANDIDATE_GROUPS, claimTask, completeTask, getVariables, searchTasks } from "../workflow/tasklistApi";
 
 const GROUP_ASSUMPTION = [
   "This POC has no Identity/Keycloak login, so Tasklist tasks are only routed to candidate groups, never to individual users.",
@@ -109,13 +110,13 @@ function ReviewPanel({ task, user, onDone }) {
   }
 
   return (
-    <Section
-      id="review"
-      title={`Reviewing ${variables.flagLabel} on ${variables.sourceTable} (${variables.recordKey})`}
-      description={variables.description}
-      action={<button type="button" onClick={onDone} className="rounded-md border border-hair px-2.5 py-1.5 text-sm text-ink2 hover:border-accent/40 hover:bg-page hover:text-ink">Back to my tasks</button>}
-    >
-      <div className="card mb-4 rounded-xl border border-hair bg-surface p-4">
+    <>
+      <h3 className="text-sm font-semibold tracking-tight text-ink">
+        {variables.flagLabel} on {variables.sourceTable} ({variables.recordKey})
+      </h3>
+      {variables.description && <p className="mt-0.5 text-sm text-ink2">{variables.description}</p>}
+
+      <div className="card mb-4 mt-4 rounded-xl border border-hair bg-surface p-4">
         <ApprovalChain candidateGroup={task.candidateGroups?.[0]} taskState={task.taskState} />
       </div>
 
@@ -186,29 +187,73 @@ function ReviewPanel({ task, user, onDone }) {
           {busy ? "Submitting…" : "Submit decision"}
         </button>
       </div>
-    </Section>
+    </>
   );
 }
 
+const RECORD_TYPE_LABEL = { data_quality: "Data quality", fraud: "Fraud", breach: "Breach" };
+
+async function loadTasks() {
+  const tasks = await searchTasks({ state: "CREATED" });
+  // account_id isn't a Camunda variable (only recordKey=transaction_id is, for fraud tasks) - one
+  // batched Postgres lookup for the whole list instead of a call per row.
+  const txnIds = [...new Set(tasks.filter((t) => t.vars.sourceTable === "transactions").map((t) => t.vars.recordKey))];
+  const accountIds = txnIds.length ? await api.lookupAccountIds(txnIds) : {};
+  return tasks.map((t) => ({ ...t, accountId: accountIds[t.vars.recordKey] }));
+}
+
 function TasksSection({ onSelect, selectedTaskId }) {
-  const { status, data, error, reload } = useAsync(() => searchTasks({ state: "CREATED" }), []);
+  const { status, data, error, reload } = useAsync(loadTasks, []);
+  const [typeFilter, setTypeFilter] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!data) return [];
+    return data.filter((t) => {
+      if (typeFilter && t.vars.recordType !== typeFilter) return false;
+      if (nameFilter && !t.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
+      return true;
+    });
+  }, [data, typeFilter, nameFilter]);
+
   if (status === "loading") return <Loading what="your tasks" />;
   if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
   return (
-    <DataTable
-      caption="My tasks"
-      columns={[
-        { key: "name", header: "Task" },
-        { key: "group", header: "Group", render: (t) => (t.candidateGroups || []).join(", ") },
-        { key: "creationDate", header: "Created", render: (t) => fmtDateTime(t.creationDate) },
-        { key: "processInstanceKey", header: "Process instance" },
-      ]}
-      rows={data}
-      rowKey={(t) => t.id}
-      selectedKey={selectedTaskId}
-      onRowClick={(t) => onSelect(t)}
-      emptyText="Nothing waiting for review. New exceptions appear here once the bridge worker (camunda/bridge/poll_worker.py) starts a process instance for them."
-    />
+    <>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <input
+          type="text"
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          placeholder="Filter by name"
+          className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink"
+        />
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40"
+        >
+          <option value="">All types</option>
+          {Object.entries(RECORD_TYPE_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </div>
+      <DataTable
+        caption="My tasks"
+        columns={[
+          { key: "transactionId", header: "Transaction ID", render: (t) => (t.vars.sourceTable === "transactions" ? t.vars.recordKey : "—") },
+          { key: "accountId", header: "Account ID", render: (t) => t.accountId || "—" },
+          { key: "name", header: "Name" },
+          { key: "group", header: "Group", render: (t) => (t.candidateGroups || []).join(", ") },
+          { key: "completionDate", header: "Modified At", title: "Tasklist only records a change once the task is completed - open tasks show —", render: (t) => fmtDateTime(t.completionDate) },
+          { key: "type", header: "Type", render: (t) => RECORD_TYPE_LABEL[t.vars.recordType] || t.vars.recordType },
+        ]}
+        rows={filtered}
+        rowKey={(t) => t.id}
+        selectedKey={selectedTaskId}
+        onRowClick={(t) => onSelect(t)}
+        emptyText="Nothing waiting for review. New exceptions appear here once the bridge worker (camunda/bridge/poll_worker.py) starts a process instance for them."
+      />
+    </>
   );
 }
 
@@ -315,7 +360,11 @@ export default function Workflow() {
         <TasksSection onSelect={selectTask} selectedTaskId={selectedTask?.id} />
       </Section>
 
-      {selectedTask && <ReviewPanel task={selectedTask} user={user} onDone={() => setSelectedTask(null)} />}
+      {selectedTask && (
+        <Modal title="Review task" onClose={() => setSelectedTask(null)}>
+          <ReviewPanel task={selectedTask} user={user} onDone={() => setSelectedTask(null)} />
+        </Modal>
+      )}
 
       <Section id="breaches" title="Breach alerts" description="Open limit breaches from limits/breaches (specs/screen-06-report-workflow.md section 2.4). Auto-creating a Camunda task per new breach is not yet built - this lists what's already in Postgres.">
         <BreachAlerts />
