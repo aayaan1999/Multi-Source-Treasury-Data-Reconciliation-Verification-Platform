@@ -3,6 +3,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, Response
 
+from ..cache import cached
 from ..db import latest_rows, query, query_one
 from ..exports import portfolio_workbook
 from ..security import current_user
@@ -57,10 +58,18 @@ def ltv_distribution():
 
 @router.get("/overview")
 def overview():
-    """Everything Screen 2 needs on first paint, in one round trip instead of nine: the loan-book summary, all
-    four breakdown dimensions, and the branch names used to label the branch breakdown. One HTTP round trip avoids
-    the browser's per-origin connection queueing, but the 9 underlying queries still run concurrently (not one
-    after another) - Neon's per-connection setup cost is real, and paying it 9 times in series would undo the win.
+    """Everything Screen 2 needs on first paint, in one round trip instead of nine. Cached in memory against the
+    loan book's watermark: once built, a request costs one cheap query instead of the nine-query fan-out, and a
+    fresh pipeline run (new calculation_date) is picked up automatically on the next request - no TTL, no manual
+    invalidation to wire up.
+    """
+    return cached("portfolio_overview", "SELECT max(calculation_date) AS wm FROM loan_stage_summary", _build_overview)
+
+
+def _build_overview():
+    """Everything Screen 2 needs on first paint: the loan-book summary, all four breakdown dimensions, and the
+    branch names used to label the branch breakdown. Nine underlying queries, run concurrently (not one after
+    another) - Neon's per-connection setup cost is real, and paying it nine times in series would undo the win.
     """
     jobs = {
         "stages": lambda: latest_rows("loan_stage_summary", "stage"),
