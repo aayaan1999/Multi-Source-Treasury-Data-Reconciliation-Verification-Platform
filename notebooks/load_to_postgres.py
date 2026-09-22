@@ -147,6 +147,15 @@ def run_merge(cur):
             cur, "flagged_transactions", "ON CONFLICT (transaction_id, flag_label) DO NOTHING"
         )
 
+    # 4b. Reconciliation exceptions (specs/multi-source-reconciliation.md): same insert-only
+    #     discipline as flagged_transactions - status/resolved_* are owned by the application
+    #     after first load, never reset by a rerun.
+    if "reconciliation_exceptions" in staged:
+        written["reconciliation_exceptions"] = _insert_from_staging(
+            cur, "reconciliation_exceptions",
+            "ON CONFLICT (source_system, entity_type, entity_id, mismatch_type, field_name) DO NOTHING",
+        )
+
     # 5. FX usage log: the Delta table is the append-only source of truth, so mirror it in full.
     if "fx_rate_usage_log" in staged:
         cur.execute("DELETE FROM public.fx_rate_usage_log")
@@ -211,6 +220,7 @@ STAGE_JOBS = (
     + [(t, t) for t in SNAPSHOT_TABLES]
     + [("data_quality_exceptions", "data_quality_exceptions"),
        ("flagged_transactions", "flagged_transactions"),
+       ("reconciliation_exceptions", "reconciliation_exceptions"),
        ("fx_rate_usage_log", "fx_rate_usage_log")]
 )
 
@@ -268,14 +278,17 @@ conn.close()
 # MAGIC %md
 # MAGIC ## Verify
 # MAGIC
-# MAGIC Rows merged must equal rows staged. `flagged_transactions` is exempt: it is insert-only, so
-# MAGIC rows already in Postgres are deliberately not re-inserted.
+# MAGIC Rows merged must equal rows staged. `flagged_transactions` and `reconciliation_exceptions`
+# MAGIC are exempt: both are insert-only, so rows already in Postgres are deliberately not
+# MAGIC re-inserted.
 
 # COMMAND ----------
 
+INSERT_ONLY_TABLES = {"flagged_transactions", "reconciliation_exceptions"}
+
 problems = []
 for pg_name, n in expected_rows.items():
-    if pg_name == "flagged_transactions":
+    if pg_name in INSERT_ONLY_TABLES:
         print(f"{pg_name}: {written.get(pg_name, 0)} new of {n} staged")
         continue
     ok = written.get(pg_name) == n

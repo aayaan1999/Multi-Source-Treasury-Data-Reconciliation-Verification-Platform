@@ -294,6 +294,28 @@ CREATE TABLE users (
     password_hash text
 );
 
+-- specs/multi-source-reconciliation.md. Field-level disagreements between a bronze_* multi-source
+-- extract and this platform's own canonical *_clean record for the same entity. status is mutable
+-- (set by manual review); everything else is written once by notebooks/multi_source_reconciliation.py.
+CREATE TABLE reconciliation_exceptions (
+    exception_id      bigserial PRIMARY KEY,
+    source_system     text NOT NULL,
+    entity_type       text NOT NULL,
+    entity_id         text NOT NULL,
+    field_name        text,
+    source_value      text,
+    canonical_value   text,
+    mismatch_type     text NOT NULL CHECK (mismatch_type IN
+                          ('VALUE_MISMATCH', 'MISSING_IN_CANONICAL', 'MISSING_IN_SOURCE')),
+    status            text NOT NULL DEFAULT 'OPEN' CHECK (status IN
+                          ('OPEN', 'ACCEPTED', 'CORRECTED', 'DISMISSED')),
+    detected_at       timestamptz NOT NULL,
+    resolved_by       integer REFERENCES users (user_id),
+    resolved_at       timestamptz,
+    resolution_note   text,
+    UNIQUE (source_system, entity_type, entity_id, mismatch_type, field_name)
+);
+
 -- INFERRED: source doc lists purpose only ("name, frequency, due-day rule, owner").
 CREATE TABLE report_definitions (
     report_id      serial PRIMARY KEY,

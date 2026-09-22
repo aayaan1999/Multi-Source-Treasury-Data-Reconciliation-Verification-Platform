@@ -1,0 +1,201 @@
+customer_id,name,segment,branch_id,onboard_date,risk_rating,country
+CN0001,Aoun Industries SAL,SME,BN12,2016-09-04,B,Lebanon
+CN0002,Aoun Capital LLC,Corporate,BN09,2025-12-29,A,Qatar
+CN0003,Yasmine Daher,Retail,BN05,2026-09-02,A,Lebanon
+CN0004,Nassar Ventures SAL,Corporate,BN02,2017-04-15,A,Lebanon
+CN0005,Abed Haddad,Retail,BN02,2024-06-06,A,Lebanon
+CN0006,Reem Haddad,Retail,BN12,2022-09-27,B,Lebanon
+CN0007,Layla Rahal,Retail,BN03,2016-09-05,B,Lebanon
+CN0008,Haddad Contracting LLC,Corporate,BN10,2024-02-08,C,Saudi Arabia
+CN0009,Daher Group SAL,SME,BN02,2025-09-11,B,Lebanon
+CN0010,Dina Fares,Retail,BN06,2026-07-25,B,Lebanon
+CN0011,Sarkis Motors SAL,SME,BN04,2024-11-06,B,Lebanon
+CN0012,Salma Ghosn,Retail,BN12,2025-10-25,B,Lebanon
+CN0013,Ghosn Traders SAL,Corporate,BN04,2017-01-17,A,Lebanon
+CN0014,Rana Hage,Retail,BN01,2022-08-16,C,Lebanon
+CN0015,Daher Textiles LLC,Corporate,BN10,2021-09-28,B,Saudi Arabia
+CN0016,Bilal Rahal,Retail,BN02,2024-05-23,B,Lebanon
+CN0017,Rami Abboud,Retail,BN06,2019-11-25,A,Lebanon
+CN0018,Rahal Trading SAL,SME,BN11,2017-02-15,A,Lebanon
+CN0019,Lina Mansour,Retail,BN08,2016-11-25,C,Saudi Arabia
+CN0020,Abed Mansour,Retail,BN11,2021-03-18,A,Lebanon
+CN0021,Yazbek Freight SAL,SME,BN06,2019-11-23,A,Lebanon
+CN0022,Sarkis Foods LLC,Corporate,BN09,2025-07-02,A,Qatar
+CN0023,Reem Nassar,Retail,BN07,2018-08-29,A,Saudi Arabia
+CN0024,Reem Khoury,Retail,BN06,2021-01-14,C,Lebanon
+CN0025,Baz Contracting SAL,SME,BN04,2016-08-07,A,Lebanon
+CN0026,Salma Ghosn,Retail,BN04,2020-04-12,B,Lebanon
+CN0027,Mansour Capital LLC,SME,BN07,2018-12-17,A,Saudi Arabia
+CN0028,Rahal Industries SAL,SME,BN11,2019-03-20,C,Lebanon
+CN0029,Walid Ghosn,Retail,BN08,2019-06-16,B,Saudi Arabia
+CN0030,Ghosn Ventures SAL,SME,BN05,2022-02-25,B,Lebanon
+CN0031,Mona Mansour,Retail,BN03,2021-10-10,B,Lebanon
+CN0032,Karim Aoun,Retail,BN06,2019-05-28,B,Lebanon
+CN0033,Dana Abboud,Retail,BN11,2021-08-16,A,Lebanon
+CN0034,Hage Pharma LLC,Corporate,BN08,2019-11-12,B,Saudi Arabia
+CN0035,Hala Yazbek,Retail,BN05,2025-02-12,A,Lebanon
+CN0036,Dana Baz,Retail,BN11,2018-11-26,A,Lebanon
+CN0037,Rahal Foods LLC,SME,BN09,2022-02-07,A,Qatar
+CN0038,Haddad Ventures SAL,Corporate,BN04,2020-06-07,C,Lebanon
+CN0039,Hala Nassar,Retail,BN09,2018-09-01,B,Qatar
+CN0040,Tarek Haddad,Retail,BN08,2017-05-26,B,Saudi Arabia
+CN0041,Sabbagh Traders LLC,Corporate,BN07,2026-01-01,B,Saudi Arabia
+CN0042,Dana Mansour,Retail,BN04,2019-10-01,A,Lebanon
+CN0043,Mona Haddad,Retail,BN06,2024-08-04,A,Lebanon
+CN0044,Fadi Chami,Retail,BN05,2016-07-02,B,Lebanon
+CN0045,Ziad Sabbagh,Retail,BN03,2021-01-20,C,Lebanon
+CN0046,Reem Chami,Retail,BN12,2025-09-10,C,Lebanon
+CN0047,Nassar Capital LLC,SME,BN07,2020-12-05,B,Saudi Arabia
+CN0048,Rima Nassar,Retail,BN08,2023-06-21,B,Saudi Arabia
+CN0049,Jad Sarkis,Retail,BN02,2018-12-31,B,Lebanon
+CN0050,Aoun Ventures SAL,SME,BN03,2018-09-11,A,Lebanon
+CN0051,Samir Abboud,Retail,BN12,2017-09-02,B,Lebanon
+CN0052,Nour Saad,Retail,BN06,2022-07-03,C,Lebanon
+CN0053,Yazbek Pharma SAL,SME,BN03,2024-01-03,A,Lebanon
+CN0054,Reem Chami,Retail,BN01,2020-04-16,A,Lebanon
+CN0055,Khalil Rahal,Retail,BN10,2018-04-05,B,Saudi Arabia
+CN0056,Khalil Hage,Retail,BN11,2016-10-06,B,Lebanon
+CN0057,Haddad Motors SAL,Corporate,BN12,2020-03-15,B,Lebanon
+CN0058,Karim Abboud,Retail,BN11,2025-10-13,C,Lebanon
+CN0059,Ziad Abboud,Retail,BN06,2021-08-05,A,Lebanon
+CN0060,Tarek Aoun,Retail,BN11,2020-11-06,B,Lebanon
+CN0061,Chami Traders SAL,SME,BN12,2026-06-23,A,Lebanon
+CN0062,Reem Sarkis,Retail,BN09,2022-07-09,B,Qatar
+CN0063,Yasmine Baz,Retail,BN04,2018-05-18,A,Lebanon
+CN0064,Rima Nassar,Retail,BN02,2024-01-29,B,Lebanon
+CN0065,Rahal Ventures SAL,SME,BN05,2025-12-20,B,Lebanon
+CN0066,Reem Tannous,Retail,BN05,2016-10-07,B,Lebanon
+CN0067,Nadia Nassar,Retail,BN06,2025-12-28,B,Lebanon
+CN0068,Hassan Mansour,Retail,BN04,2016-04-13,B,Lebanon
+CN0069,Hassan Karam,Retail,BN06,2025-02-05,A,Lebanon
+CN0070,Dina Ghosn,Retail,BN01,2017-05-08,A,Lebanon
+CN0071,Fares Group SAL,SME,BN02,2022-07-01,C,Lebanon
+CN0072,Reem Chami,Retail,BN04,2018-11-15,B,Lebanon
+CN0073,Lina Nassar,Retail,BN08,2024-03-06,A,Saudi Arabia
+CN0074,Rami Karam,Retail,BN07,2018-03-09,B,Saudi Arabia
+CN0075,Khalil Mansour,Retail,BN08,2020-04-09,A,Saudi Arabia
+CN0076,Nakhle Contracting SAL,SME,BN03,2018-06-24,B,Lebanon
+CN0077,Saad Traders LLC,SME,BN08,2022-06-04,A,Saudi Arabia
+CN0078,Aoun Logistics SAL,SME,BN06,2017-09-07,C,Lebanon
+CN0079,Lina Rahal,Retail,BN07,2019-10-20,C,Saudi Arabia
+CN0080,Marwan Chami,Retail,BN06,2021-06-24,C,Lebanon
+CN0081,Karim Nakhle,Retail,BN08,2019-09-21,A,Saudi Arabia
+CN0082,Abboud Textiles SAL,Corporate,BN05,2016-10-14,A,Lebanon
+CN0083,Mona Sabbagh,Retail,BN06,2016-02-29,A,Lebanon
+CN0084,Jad Sarkis,Retail,BN06,2022-07-23,B,Lebanon
+CN0085,Karam Ventures SAL,SME,BN05,2017-08-28,B,Lebanon
+CN0086,Rima Karam,Retail,BN12,2025-11-19,A,Lebanon
+CN0087,Baz Contracting SAL,SME,BN12,2020-11-17,A,Lebanon
+CN0088,Abboud Retail SAL,Corporate,BN02,2025-09-27,C,Lebanon
+CN0089,Sabbagh Contracting SAL,Corporate,BN12,2016-07-12,B,Lebanon
+CN0090,Fadi Rahal,Retail,BN07,2025-09-22,A,Saudi Arabia
+CN0091,Fadi Khoury,Retail,BN01,2017-04-30,A,Lebanon
+CN0092,Rana Tannous,Retail,BN06,2019-01-04,B,Lebanon
+CN0093,Lina Nakhle,Retail,BN04,2024-05-31,C,Lebanon
+CN0094,Fadi Yazbek,Retail,BN04,2020-03-13,C,Lebanon
+CN0095,Tannous Retail LLC,SME,BN09,2020-07-16,C,Qatar
+CN0096,Khoury Holdings LLC,SME,BN08,2020-08-21,B,Saudi Arabia
+CN0097,Hage Traders SAL,SME,BN04,2016-04-03,A,Lebanon
+CN0098,Reem Sarkis,Retail,BN04,2020-01-05,A,Lebanon
+CN0099,Dina Rahal,Retail,BN10,2018-08-10,B,Saudi Arabia
+CN0100,Hala Chami,Retail,BN11,2016-08-06,A,Lebanon
+CN0101,Samir Daher,Retail,BN12,2020-05-20,A,Lebanon
+CN0102,Sabbagh Ventures SAL,Corporate,BN02,2024-12-11,B,Lebanon
+CN0103,Dana Nassar,Retail,BN02,2025-03-22,B,Lebanon
+CN0104,Marwan Fares,Retail,BN05,2021-08-28,A,Lebanon
+CN0105,Jad Nassar,Retail,BN11,2023-03-25,C,Lebanon
+CN0106,Sami Aoun,Retail,BN04,2016-06-09,C,Lebanon
+CN0107,Aoun Group SAL,SME,BN11,2023-12-27,C,Lebanon
+CN0108,Yasmine Daher,Retail,BN12,2026-01-25,C,Lebanon
+CN0109,Walid Karam,Retail,BN11,2020-08-28,B,Lebanon
+CN0110,Aoun Capital SAL,SME,BN06,2017-01-09,A,Lebanon
+CN0111,Tannous Holdings LLC,SME,BN08,2022-10-16,B,Saudi Arabia
+CN0112,Ghosn Traders SAL,SME,BN05,2019-03-02,B,Lebanon
+CN0113,Rima Nakhle,Retail,BN01,2025-08-31,A,Lebanon
+CN0114,Walid Nassar,Retail,BN10,2020-10-20,A,Saudi Arabia
+CN0115,Maya Haddad,Retail,BN02,2023-03-25,A,Lebanon
+CN0116,Aoun Motors SAL,SME,BN03,2025-09-14,B,Lebanon
+CN0117,Khoury Pharma SAL,Corporate,BN11,2022-01-14,B,Lebanon
+CN0118,Dana Mansour,Retail,BN08,2017-04-06,A,Saudi Arabia
+CN0119,Reem Sarkis,Retail,BN01,2023-10-10,C,Lebanon
+CN0120,Hala Daher,Retail,BN08,2022-05-23,A,Saudi Arabia
+CN0121,Khalil Nakhle,Retail,BN03,2024-08-22,A,Lebanon
+CN0122,Hala Nassar,Retail,BN06,2022-09-25,B,Lebanon
+CN0123,Sarkis Group LLC,SME,BN09,2026-03-29,C,Qatar
+CN0124,Khoury Industries LLC,SME,BN07,2023-10-14,B,Saudi Arabia
+CN0125,Reem Nakhle,Retail,BN07,2017-03-26,B,Saudi Arabia
+CN0126,Nakhle Ventures SAL,SME,BN05,2023-10-24,A,Lebanon
+CN0127,Karim Nassar,Retail,BN03,2020-12-22,C,Lebanon
+CN0128,Mona Nakhle,Retail,BN03,2026-03-18,C,Lebanon
+CN0129,Mansour Foods SAL,SME,BN04,2019-06-06,B,Lebanon
+CN0130,Abed Karam,Retail,BN03,2018-09-08,A,Lebanon
+CN0131,Chami Group LLC,SME,BN10,2024-09-24,B,Saudi Arabia
+CN0132,Lina Nassar,Retail,BN01,2022-03-22,B,Lebanon
+CN0133,Ghosn Retail SAL,Corporate,BN11,2023-01-15,A,Lebanon
+CN0134,Hala Haddad,Retail,BN11,2026-06-01,A,Lebanon
+CN0135,Rima Chami,Retail,BN09,2024-12-07,A,Qatar
+CN0136,Yazbek Traders SAL,SME,BN02,2022-10-31,B,Lebanon
+CN0137,Lina Sarkis,Retail,BN09,2017-04-01,B,Qatar
+CN0138,Abboud Trading SAL,Corporate,BN11,2020-02-18,C,Lebanon
+CN0139,Dana Sabbagh,Retail,BN11,2020-08-08,B,Lebanon
+CN0140,Jad Ghosn,Retail,BN12,2016-02-27,C,Lebanon
+CN0141,Haddad Foods SAL,Corporate,BN03,2024-04-27,A,Lebanon
+CN0142,Daher Ventures LLC,Corporate,BN08,2022-06-06,C,Saudi Arabia
+CN0143,Ghosn Logistics SAL,SME,BN04,2016-02-23,A,Lebanon
+CN0144,Marwan Daher,Retail,BN03,2026-08-11,A,Lebanon
+CN0145,Rima Khoury,Retail,BN06,2017-03-04,B,Lebanon
+CN0146,Aoun Capital SAL,SME,BN02,2025-01-25,A,Lebanon
+CN0147,Tannous Freight SAL,SME,BN12,2025-11-04,A,Lebanon
+CN0148,Layla Fares,Retail,BN09,2026-04-22,B,Qatar
+CN0149,Reem Mansour,Retail,BN06,2025-10-12,A,Lebanon
+CN0150,Daher Contracting SAL,SME,BN05,2023-12-26,A,Lebanon
+CN0151,Abed Rahal,Retail,BN06,2020-01-12,A,Lebanon
+CN0152,Tarek Fares,Retail,BN04,2024-02-13,B,Lebanon
+CN0153,Farah Karam,Retail,BN02,2017-12-18,C,Lebanon
+CN0154,Rahal Contracting SAL,Corporate,BN01,2022-06-19,B,Lebanon
+CN0155,Walid Sarkis,Retail,BN10,2025-07-06,C,Saudi Arabia
+CN0156,Yasmine Fares,Retail,BN10,2016-02-07,B,Saudi Arabia
+CN0157,Daher Ventures LLC,SME,BN07,2023-07-18,C,Saudi Arabia
+CN0158,Sami Haddad,Retail,BN07,2026-06-12,B,Saudi Arabia
+CN0159,Walid Sarkis,Retail,BN03,2016-11-02,B,Lebanon
+CN0160,Haddad Textiles LLC,Corporate,BN09,2016-08-20,C,Qatar
+CN0161,Nour Sarkis,Retail,BN01,2019-04-01,A,Lebanon
+CN0162,Jad Nassar,Retail,BN01,2017-06-02,B,Lebanon
+CN0163,Nakhle Pharma LLC,SME,BN09,2018-12-31,C,Qatar
+CN0164,Mansour Trading SAL,Corporate,BN04,2020-06-12,A,Lebanon
+CN0165,Nour Abboud,Retail,BN09,2021-03-17,B,Qatar
+CN0166,Nour Ghosn,Retail,BN12,2026-09-14,B,Lebanon
+CN0167,Khalil Khoury,Retail,BN06,2018-06-01,C,Lebanon
+CN0168,Rima Sabbagh,Retail,BN11,2016-01-04,B,Lebanon
+CN0169,Mona Hage,Retail,BN12,2024-08-16,B,Lebanon
+CN0170,Lina Chami,Retail,BN06,2017-04-08,C,Lebanon
+CN0171,Fadi Daher,Retail,BN08,2025-05-18,A,Saudi Arabia
+CN0172,Jad Khoury,Retail,BN11,2020-11-21,A,Lebanon
+CN0173,Salma Fares,Retail,BN06,2024-10-22,A,Lebanon
+CN0174,Sami Abboud,Retail,BN02,2019-02-12,B,Lebanon
+CN0175,Karim Saad,Retail,BN05,2023-03-04,A,Lebanon
+CN0176,Lina Chami,Retail,BN09,2016-10-04,A,Qatar
+CN0177,Rana Saad,Retail,BN02,2019-08-26,A,Lebanon
+CN0178,Ziad Khoury,Retail,BN12,2020-04-10,C,Lebanon
+CN0179,Abed Sarkis,Retail,BN02,2018-10-23,A,Lebanon
+CN0180,Marwan Baz,Retail,BN05,2019-02-21,A,Lebanon
+CN0181,Omar Chami,Retail,BN07,2016-12-19,B,Saudi Arabia
+CN0182,Chami Pharma SAL,Corporate,BN02,2023-01-22,A,Lebanon
+CN0183,Rana Hage,Retail,BN10,2020-08-08,A,Saudi Arabia
+CN0184,Hage Pharma SAL,SME,BN02,2020-10-10,B,Lebanon
+CN0185,Ziad Daher,Retail,BN03,2018-06-08,C,Lebanon
+CN0186,Marwan Aoun,Retail,BN08,2017-08-04,A,Saudi Arabia
+CN0187,Abed Abboud,Retail,BN10,2019-07-08,C,Saudi Arabia
+CN0188,Maya Khoury,Retail,BN01,2026-05-17,A,Lebanon
+CN0189,Ziad Mansour,Retail,BN12,2016-12-05,A,Lebanon
+CN0190,Farah Daher,Retail,BN06,2020-10-15,C,Lebanon
+CN0191,Rami Khoury,Retail,BN06,2023-09-20,C,Lebanon
+CN0192,Jad Tannous,Retail,BN05,2023-08-01,A,Lebanon
+CN0193,Fadi Sabbagh,Retail,BN08,2021-04-06,A,Saudi Arabia
+CN0194,Maya Nakhle,Retail,BN09,2016-08-01,B,Qatar
+CN0195,Yazbek Motors LLC,Corporate,BN09,2019-01-09,C,Qatar
+CN0196,Bilal Nakhle,Retail,BN09,2016-07-01,B,Qatar
+CN0197,Walid Khoury,Retail,BN08,2019-10-30,B,Saudi Arabia
+CN0198,Nour Baz,Retail,BN12,2018-07-13,B,Lebanon
+CN0199,Ghosn Retail SAL,SME,BN05,2022-11-08,C,Lebanon
+CN0200,Jad Hage,Retail,BN04,2016-02-27,B,Lebanon

@@ -1,0 +1,13 @@
+branch_id,name,region,staff_count,monthly_opex
+BN01,Beirut Central,Beirut,45,222255
+BN02,Beirut Hamra,Beirut,28,123452
+BN03,Tripoli North,North,16,83776
+BN04,Saida South,South,18,75870
+BN05,Zahle Bekaa,Bekaa,12,62964
+BN06,Jounieh Coast,Mount Lebanon,20,87080
+BN07,Riyadh Central,KSA,34,181254
+BN08,Jeddah West,KSA,22,115786
+BN09,Doha Main,Qatar,19,81301
+BN10,Dammam East,KSA,15,64995
+BN11,Byblos Branch,Mount Lebanon,11,56529
+BN12,Nabatieh South,South,9,45441
