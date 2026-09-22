@@ -48,7 +48,7 @@ function ResolvePanel({ row, onDone, onClose }) {
       <div className="card rounded-xl border border-hair bg-surface p-4">
         <dl className="mb-4 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
           <div><dt className="text-ink2">Source system value</dt><dd className="font-medium text-ink">{row.source_value ?? "—"}</dd></div>
-          <div><dt className="text-ink2">Our canonical value</dt><dd className="font-medium text-ink">{row.canonical_value ?? "—"}</dd></div>
+          <div><dt className="text-ink2">Our recorded value</dt><dd className="font-medium text-ink">{row.canonical_value ?? "—"}</dd></div>
           <div><dt className="text-ink2">Detected</dt><dd className="font-medium text-ink">{fmtDateTime(row.detected_at)}</dd></div>
         </dl>
 
@@ -105,7 +105,7 @@ export default function Reconciliation() {
   return (
     <PageShell
       title="Reconciliation"
-      subtitle="Discrepancies between this platform's canonical data and the second Neon project standing in for a Core Banking System (specs/multi-source-reconciliation.md). Data-layer verification, not a regulatory workflow — resolved here directly, not through Camunda."
+      subtitle="Differences found between our own records and the bank's core system feed. Review each one and decide whether to accept it, correct our data, or dismiss it."
     >
       <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Reconciliation summary">
         <StatBox label="Open exceptions" value={openCount} status={openCount > 0 ? "action" : "good"} />

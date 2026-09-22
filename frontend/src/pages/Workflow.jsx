@@ -12,8 +12,8 @@ import ApprovalChain from "../workflow/ApprovalChain";
 import { CANDIDATE_GROUPS, claimTask, completeTask, getVariables, searchTasks } from "../workflow/tasklistApi";
 
 const GROUP_ASSUMPTION = [
-  "This POC has no Identity/Keycloak login, so Tasklist tasks are only routed to candidate groups, never to individual users.",
-  "Every logged-in demo user can see and act on all three groups (fraud-investigation, compliance, operations) rather than being scoped to one.",
+  "This is a demo limitation: tasks are routed to a team (Fraud, Compliance, or Operations), not to a specific person's login yet.",
+  "Right now, every signed-in user can see and act on tasks for all three teams, rather than only their own.",
 ];
 
 function fmtDateTime(iso) {
@@ -178,14 +178,24 @@ function ReviewPanel({ task, user, onDone }) {
           />
         )}
         {formError && <p role="alert" className="mb-3 text-sm" style={{ color: "var(--critical)" }}>{formError}</p>}
-        <button
-          type="button"
-          onClick={submitOutcome}
-          disabled={busy}
-          className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
-        >
-          {busy ? "Submitting…" : "Submit decision"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onDone}
+            disabled={busy}
+            className="rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submitOutcome}
+            disabled={busy}
+            className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
+          >
+            {busy ? "Submitting…" : "Submit decision"}
+          </button>
+        </div>
       </div>
     </>
   );
@@ -251,7 +261,7 @@ function TasksSection({ onSelect, selectedTaskId }) {
         rowKey={(t) => t.id}
         selectedKey={selectedTaskId}
         onRowClick={(t) => onSelect(t)}
-        emptyText="Nothing waiting for review. New exceptions appear here once the bridge worker (camunda/bridge/poll_worker.py) starts a process instance for them."
+        emptyText="Nothing waiting for review right now. New items appear here automatically as they're flagged."
       />
     </>
   );
@@ -353,10 +363,10 @@ export default function Workflow() {
   return (
     <PageShell
       title="Report workflow"
-      subtitle="Task queue, review and approval for flagged exceptions - routed and tracked by Camunda 8, not this application."
-      actions={<AssumptionBadge items={GROUP_ASSUMPTION} label="Candidate-group assumption" heading="No per-user task routing in this POC" />}
+      subtitle="Review and act on everything the bank's checks have flagged — fraud alerts, data-quality issues, and risk-limit breaches all land here."
+      actions={<AssumptionBadge items={GROUP_ASSUMPTION} label="How access works today" heading="Demo limitation: team-level access only" />}
     >
-      <Section id="tasks" title="My tasks" description="Open tasks across all three candidate groups (see the assumption badge above).">
+      <Section id="tasks" title="My tasks" description="Everything currently waiting for review, across every team.">
         <TasksSection onSelect={selectTask} selectedTaskId={selectedTask?.id} />
       </Section>
 
@@ -366,15 +376,15 @@ export default function Workflow() {
         </Modal>
       )}
 
-      <Section id="breaches" title="Breach alerts" description="Open limit breaches from limits/breaches (specs/screen-06-report-workflow.md section 2.4). Auto-creating a Camunda task per new breach is not yet built - this lists what's already in Postgres.">
+      <Section id="breaches" title="Breach alerts" description="Regulatory and risk limits that have been crossed. Each new breach is detected automatically and becomes a task above; this section is the full history.">
         <BreachAlerts />
       </Section>
 
-      <Section id="audit" title="Audit trail" description="Insert-only log of every comment and task completion (audit_log).">
+      <Section id="audit" title="Audit trail" description="A permanent record of every comment and decision made on this screen. Nothing here can be edited or deleted.">
         <AuditTrail />
       </Section>
 
-      <Section id="stats" title="Management view" description="On-time vs late submissions, turnaround, open breaches by age.">
+      <Section id="stats" title="Management view" description="How review is going: on-time vs late, how long reviews take, and how old the open breaches are.">
         <ManagementStats />
       </Section>
     </PageShell>
