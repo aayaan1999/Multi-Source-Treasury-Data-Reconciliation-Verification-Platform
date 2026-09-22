@@ -20,6 +20,10 @@ resources/
 !.env.example
 *.local
 
+# Demo-source Neon connection string (specs/multi-source-reconciliation.md) — same secrecy as .env,
+# named differently since it's a second, separate database from backend/.env's DATABASE_URL.
+db/multi_source_demo.env
+
 # Python environments and caches
 .venv/
 venv/

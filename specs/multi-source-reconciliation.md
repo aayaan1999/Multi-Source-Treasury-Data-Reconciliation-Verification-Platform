@@ -1,12 +1,15 @@
 # Spec: Multi-Source Reconciliation
 
-**Status:** Neon slice written, not yet run against a live cluster — blocked on the same external
-setup `multi_source_neon_ingestion.py` needs (a demo Neon source project, deliberately seeded with
-matches/mismatches per section 4) which hasn't been done. `reconciliation_exceptions` exists in
-Neon (`db/schema.sql`, `db/migrations/002_reconciliation_exceptions.sql`, applied) and
-`load_to_postgres.py` merges it with the same insert-only discipline as `flagged_transactions`.
-Mockaroo and Salesforce (section 3) remain spec-only — starting with Neon only was a deliberate
-scope decision, not a partial failure.
+**Status:** Neon slice implemented and verified end-to-end on a live cluster (2026-09-22): a second
+Neon project was provisioned and seeded per section 4, `multi_source_neon_ingestion.py` ran for
+both `customers` and `accounts`, `multi_source_reconciliation.py` ran and produced the expected
+exceptions, and `load_to_postgres.py` merged all 479 rows into the app's real Neon
+`reconciliation_exceptions` table (confirmed by a direct query against it). See section 7 for the
+real (not hand-traced) traceability numbers. One real bug found and fixed along the way: the
+staging write in `load_to_postgres.py` used generic `format("jdbc")`, which this job's serverless
+compute rejects (`UNSUPPORTED_DATA_SOURCE_WRITE`); switched to Databricks' bundled `postgresql`
+Spark format, which serverless does support. Mockaroo and Salesforce (section 3) remain spec-only —
+starting with Neon only was a deliberate scope decision, not a partial failure.
 **New for:** closing the actual reconciliation gap in this project's own name. See "Are We Doing
 Reconciliation?" discussion in-session, 2026-09-22.
 **File:** `notebooks/multi_source_reconciliation.py` — written.
@@ -96,7 +99,7 @@ For each pair in section 3, per matched record:
 **Numeric tolerance** (amounts, balances): differences under $1.00 (or the row's own currency
 equivalent) don't flag — rounding noise, not a real mismatch. This mirrors the "within tolerance"
 language in the original brief's `RECONCILIATION_MISMATCH` rule. **Text fields** (name, segment):
-exact match only for this POC — no fuzzy/normalized comparison (see section 8).
+exact match only for this POC — no fuzzy/normalized comparison (see section 9).
 
 Compared fields per pair:
 
@@ -151,7 +154,39 @@ Surfacing this in the app is a UI follow-up, not part of this spec — it slots 
 the existing exception views (or Screen 6's task queue once that's built) rather than needing a
 new screen.
 
-## 8. Non-Goals
+## 8. Traceability (Live Run, 2026-09-22)
+
+Not hand-traced like every other spec in this repo — this is a **real run** against a real second
+Neon project, seeded from a 20-customer/30-account sample of the app's actual canonical data (12
+exact-match customers, 5 with a deliberately wrong `segment`, 5 accounts with a deliberately wrong
+`balance`, 3 customers that exist only in the source, 3 canonical customers picked to check
+`MISSING_IN_SOURCE`). Verified by querying `reconciliation_exceptions` directly in the app's Neon
+database after the full chain ran:
+
+| entity_type | mismatch_type | count | Matches prediction? |
+|---|---|---|---|
+| customer | `VALUE_MISMATCH` | 5 | Yes — exactly the 5 deliberately-changed segments |
+| account | `VALUE_MISMATCH` | 5 | Yes — exactly the 5 deliberately-changed balances |
+| customer | `MISSING_IN_CANONICAL` | 3 | Yes — exactly the 3 source-only customers |
+| customer | `MISSING_IN_SOURCE` | 183 | Larger than the "3" originally expected - see below |
+| account | `MISSING_IN_SOURCE` | 283 | Same cause as above |
+
+**Why `MISSING_IN_SOURCE` is much bigger than planned, and why that's correct, not a bug:** the
+source project was seeded with a small sample (~20 of the canonical table's ~200 customers), not a
+full mirror. Every canonical customer/account outside that sample correctly has no counterpart in
+the source, so it correctly flags as missing. This is a real, useful finding about the check's
+behavior at scale, not a defect — but it means the demo currently shows "the source is mostly
+incomplete" rather than "the source mostly agrees, with a few deliberate gaps." If a cleaner
+demo ratio is wanted, the source needs seeding with most/all of canonical, not a 20-row sample.
+
+**Bug found and fixed by this run, unrelated to the reconciliation logic itself:**
+`load_to_postgres.py`'s staging write used generic `format("jdbc")`, which Databricks serverless
+compute rejects (`UNSUPPORTED_DATA_SOURCE_WRITE` - confirmed by an actual failed run). Fixed by
+switching to Databricks' bundled `postgresql` Spark format. This affects the whole pipeline, not
+just reconciliation - worth noting since `databricks.yml`'s automatic job would have hit the same
+error the first time it actually ran the `load_postgres` task, reconciliation or not.
+
+## 9. Non-Goals
 
 - **No fuzzy/probabilistic matching.** Exact key match only. Real entity resolution (matching
   "Khalil Trading SAL" against "Khalil Trading S.A.L." as the same customer) is a materially
@@ -165,27 +200,29 @@ new screen.
 - **Not a general MDM (master data management) engine.** This is a POC-scale demonstration of the
   mechanism (compare → flag → review), not a production reconciliation platform.
 
-## 9. Acceptance Criteria
+## 10. Acceptance Criteria
 
 - [x] `notebooks/multi_source_reconciliation.py` written, reading `customers_clean`,
       `accounts_clean` and `bronze_neon_customers`/`bronze_neon_accounts` (the Neon slice only —
       Mockaroo/Salesforce/`loans_clean` are section 3's deferred scope, not yet written)
-- [ ] Each rule in section 5 produces the correct `mismatch_type` against deliberately-seeded
-      mock data (section 4) — blocked on provisioning the demo Neon source project
-      `multi_source_neon_ingestion.py` needs and seeding it with intentional matches, mismatches,
-      and missing records; not run against a live cluster yet
-- [x] Rerun-safe by construction: `DeltaTable.merge(...).whenNotMatchedInsertAll()` (same mechanism
+- [x] Each rule in section 5 produces the correct `mismatch_type` against deliberately-seeded
+      mock data (section 4) — run live 2026-09-22, see section 8 for the real numbers
+- [x] `reconciliation_exceptions` correctly lands in the app's real Neon database, not just the
+      Databricks Delta table — confirmed by a direct query against it (section 8)
+- [ ] Rerun-safe by construction: `DeltaTable.merge(...).whenNotMatchedInsertAll()` (same mechanism
       as `flagged_transactions`) — not yet exercised by an actual second run with a pre-existing
-      reviewed row
+      reviewed row (needs a status to be manually set first, which needs the review UI from
+      section 11's open question, or a manual `UPDATE` for testing)
 - [x] `db/schema.sql` has a `reconciliation_exceptions` table matching section 6; applied to Neon
       via `db/migrations/002_reconciliation_exceptions.sql` (confirmed idempotent — applied twice)
 - [x] `load_to_postgres.py` merges `reconciliation_exceptions` using the same insert-only,
-      status-preserving rule as `flagged_transactions` (`ON CONFLICT ... DO NOTHING`, exempted from
-      the rows-merged-must-equal-rows-staged check)
+      status-preserving rule as `flagged_transactions` — confirmed live: all 479 rows landed
+      correctly (section 8)
 
-Nothing above is implemented yet — this is a spec to review and scope, not a built feature.
+The Neon slice is implemented and verified end-to-end. Mockaroo/Salesforce (section 3) and the
+review UI (section 7) remain open.
 
-## 10. Open Questions for the Client / Project Owner
+## 11. Open Questions for the Client / Project Owner
 
 - Confirm the field-level tolerance in section 5 (the $1.00 numeric threshold is illustrative,
   same caveat as `specs/notebook-05-fraud-business-rules.md`'s $50,000 large-amount threshold).

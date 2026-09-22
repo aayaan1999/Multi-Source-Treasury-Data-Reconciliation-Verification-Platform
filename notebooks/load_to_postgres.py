@@ -181,7 +181,13 @@ def connect(host, dbname, user, password, retries=4):
 # MAGIC ## Connection
 # MAGIC
 # MAGIC Credentials come from the `neon` secret scope (values are redacted in notebook output).
-# MAGIC `sslmode=require` is mandatory on Neon. Use the **direct** (non-pooled) host if you have a choice.
+# MAGIC `sslmode=require` is mandatory on Neon; the merge (plain psycopg2, below) sets it explicitly.
+# MAGIC The staging write instead uses Databricks' bundled `postgresql` Spark format (not generic
+# MAGIC `format("jdbc")`, which this job's serverless compute rejects with
+# MAGIC `UNSUPPORTED_DATA_SOURCE_WRITE` - confirmed by an actual failed run, not a guess). That
+# MAGIC connector's supported options don't include `sslmode` - Neon requires TLS, but the connector
+# MAGIC negotiates it automatically; confirmed by an actual successful run against Neon with no
+# MAGIC `sslmode` option passed.
 
 # COMMAND ----------
 
@@ -189,9 +195,6 @@ PG_HOST = dbutils.secrets.get("neon", "host")
 PG_DB = dbutils.secrets.get("neon", "database")
 PG_USER = dbutils.secrets.get("neon", "user")
 PG_PASSWORD = dbutils.secrets.get("neon", "password")
-
-JDBC_URL = f"jdbc:postgresql://{PG_HOST}:5432/{PG_DB}?sslmode=require"
-JDBC_PROPS = {"user": PG_USER, "password": PG_PASSWORD, "driver": "org.postgresql.Driver"}
 
 conn = connect(PG_HOST, PG_DB, PG_USER, PG_PASSWORD)
 with conn.cursor() as cur:
@@ -250,7 +253,14 @@ for delta_name, pg_name in STAGE_JOBS:
         ).dropDuplicates(["source_table", "record_key", "flag_label"])
 
     expected_rows[pg_name] = df.count()
-    df.write.jdbc(JDBC_URL, f"staging.{pg_name}", mode="overwrite", properties=JDBC_PROPS)
+    (
+        df.write.format("postgresql")
+        .option("host", PG_HOST).option("port", "5432").option("database", PG_DB)
+        .option("dbtable", f"staging.{pg_name}")
+        .option("user", PG_USER).option("password", PG_PASSWORD)
+        .mode("overwrite")
+        .save()
+    )
     print(f"staged {pg_name}: {expected_rows[pg_name]} rows")
 
 # COMMAND ----------
