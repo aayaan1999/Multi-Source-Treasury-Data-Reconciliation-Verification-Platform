@@ -52,7 +52,8 @@ function ReviewPanel({ task, user, onDone }) {
 
   const [commentText, setCommentText] = useState("");
   const [outcome, setOutcome] = useState("");
-  const [correctedValue, setCorrectedValue] = useState("");
+  const [correctedField, setCorrectedField] = useState("");
+  const [correctedFieldValue, setCorrectedFieldValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -83,7 +84,9 @@ function ReviewPanel({ task, user, onDone }) {
     setFormError("");
     if (!outcome) return setFormError("Pick an outcome: Approved, Rejected or Corrected.");
     if (!commentText.trim()) return setFormError("A comment is required before taking this action.");
-    if (outcome === "CORRECTED" && !correctedValue.trim()) return setFormError("Enter the corrected value (JSON).");
+    if (outcome === "CORRECTED" && (!correctedField || !correctedFieldValue.trim())) {
+      return setFormError("Pick the field to correct and enter its new value.");
+    }
     setBusy(true);
     try {
       // Mandatory comment first (specs/screen-06-report-workflow.md section 2.3), then complete
@@ -94,9 +97,12 @@ function ReviewPanel({ task, user, onDone }) {
         source_table: variables.sourceTable, record_key: variables.recordKey, flag_label: variables.flagLabel,
         comment_text: commentText,
       });
-      await completeTask(task.id, {
-        outcome, correctedValue: outcome === "CORRECTED" ? correctedValue : "", reviewedByUserId: user.user_id,
-      });
+      // Built here, not typed by the reviewer: review_outcomes.corrected_value is jsonb, read
+      // back by Databricks to patch the real {table}_clean row (specs/bidirectional-sync.md).
+      // Field comes from a dropdown of the record's own columns, not free text, so it can't name
+      // a field that doesn't exist on the row.
+      const correctedValue = outcome === "CORRECTED" ? JSON.stringify({ [correctedField]: correctedFieldValue }) : "";
+      await completeTask(task.id, { outcome, correctedValue, reviewedByUserId: user.user_id });
       await api.logTaskCompletion({
         source_table: variables.sourceTable, record_key: variables.recordKey, flag_label: variables.flagLabel,
         outcome, camunda_task_id: task.id,
@@ -169,13 +175,23 @@ function ReviewPanel({ task, user, onDone }) {
           ))}
         </div>
         {outcome === "CORRECTED" && (
-          <input
-            type="text"
-            value={correctedValue}
-            onChange={(e) => setCorrectedValue(e.target.value)}
-            placeholder='Corrected value, JSON e.g. {"risk_rating": "B"}'
-            className="mb-3 w-full rounded-md border border-hair bg-surface px-3 py-1.5 text-sm text-ink"
-          />
+          <div className="mb-3 flex flex-wrap gap-2">
+            <select
+              value={correctedField}
+              onChange={(e) => setCorrectedField(e.target.value)}
+              className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40"
+            >
+              <option value="">Field to correct…</option>
+              {Object.keys(detail.source_row || {}).map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+            <input
+              type="text"
+              value={correctedFieldValue}
+              onChange={(e) => setCorrectedFieldValue(e.target.value)}
+              placeholder="New value"
+              className="min-w-[10rem] flex-1 rounded-md border border-hair bg-surface px-3 py-1.5 text-sm text-ink"
+            />
+          </div>
         )}
         {formError && <p role="alert" className="mb-3 text-sm" style={{ color: "var(--critical)" }}>{formError}</p>}
         <div className="flex items-center gap-2">
