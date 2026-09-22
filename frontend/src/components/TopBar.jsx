@@ -10,7 +10,8 @@ const NAV = [
   ["/performance", "Branch & segment"],
   ["/scenario", "Scenario modelling"],
   ["/reports", "Regulatory reporting"],
-  ["/workflow", "Report workflow"],
+  ["/tasks", "Tasks"],
+  ["/audit-oversight", "Audit & Oversight"],
   ["/reconciliation", "Reconciliation"],
 ];
 

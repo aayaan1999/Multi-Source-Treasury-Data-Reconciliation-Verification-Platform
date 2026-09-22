@@ -3,22 +3,18 @@ import { api } from "../api";
 import AssumptionBadge from "../components/AssumptionBadge";
 import DataTable from "../components/DataTable";
 import Modal from "../components/Modal";
-import PageShell, { Loading, LoadError, Notice } from "../components/PageShell";
+import PageShell, { Loading, LoadError } from "../components/PageShell";
 import Section from "../components/Section";
-import StatBox from "../components/StatBox";
 import { useAuth } from "../auth";
 import useAsync from "../hooks/useAsync";
+import { formatDateTime } from "../kpi/format";
 import ApprovalChain from "../workflow/ApprovalChain";
-import { CANDIDATE_GROUPS, claimTask, completeTask, getVariables, searchTasks } from "../workflow/tasklistApi";
+import { claimTask, completeTask, getVariables, searchTasks } from "../workflow/tasklistApi";
 
 const GROUP_ASSUMPTION = [
   "This is a demo limitation: tasks are routed to a team (Fraud, Compliance, or Operations), not to a specific person's login yet.",
   "Right now, every signed-in user can see and act on tasks for all three teams, rather than only their own.",
 ];
-
-function fmtDateTime(iso) {
-  return iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
-}
 
 function KeyValueTable({ row }) {
   if (!row) return <p className="text-sm text-ink2">No underlying source row found (it may have been removed since the flag was raised).</p>;
@@ -138,7 +134,7 @@ function ReviewPanel({ task, user, onDone }) {
           <li key={c.comment_id} className="card rounded-lg border border-hair bg-surface p-3 text-sm">
             <div className="mb-1 flex items-center justify-between text-xs text-ink2">
               <span className="font-medium text-ink">{c.author}</span>
-              <span>{fmtDateTime(c.created_at)}</span>
+              <span>{formatDateTime(c.created_at)}</span>
             </div>
             {c.comment_text}
           </li>
@@ -228,7 +224,7 @@ async function loadTasks() {
   return tasks.map((t) => ({ ...t, accountId: accountIds[t.vars.recordKey] }));
 }
 
-function TasksSection({ onSelect, selectedTaskId }) {
+function TasksTable({ onSelect, selectedTaskId }) {
   const { status, data, error, reload } = useAsync(loadTasks, []);
   const [typeFilter, setTypeFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
@@ -270,7 +266,7 @@ function TasksSection({ onSelect, selectedTaskId }) {
           { key: "accountId", header: "Account ID", render: (t) => t.accountId || "—" },
           { key: "name", header: "Name" },
           { key: "group", header: "Group", render: (t) => (t.candidateGroups || []).join(", ") },
-          { key: "completionDate", header: "Modified At", title: "Tasklist only records a change once the task is completed - open tasks show —", render: (t) => fmtDateTime(t.completionDate) },
+          { key: "completionDate", header: "Modified At", title: "Tasklist only records a change once the task is completed - open tasks show —", render: (t) => formatDateTime(t.completionDate) },
           { key: "type", header: "Type", render: (t) => RECORD_TYPE_LABEL[t.vars.recordType] || t.vars.recordType },
         ]}
         rows={filtered}
@@ -283,87 +279,7 @@ function TasksSection({ onSelect, selectedTaskId }) {
   );
 }
 
-function BreachAlerts() {
-  const { status, data, error, reload } = useAsync(() => api.breaches({ status: "OPEN" }), []);
-  if (status === "loading") return <Loading what="breach alerts" />;
-  if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
-  return (
-    <DataTable
-      caption="Open breaches"
-      columns={[
-        { key: "metric_name", header: "Metric" },
-        { key: "actual_value", header: "Actual", align: "right" },
-        { key: "threshold_value", header: "Threshold", align: "right" },
-        { key: "detected_at", header: "Detected", render: (b) => fmtDateTime(b.detected_at) },
-        { key: "assigned_to_name", header: "Assigned to", render: (b) => b.assigned_to_name || "Unassigned" },
-      ]}
-      rows={data}
-      rowKey={(b) => b.breach_id}
-      rowFlag={() => ({ kind: "watch", label: "Open" })}
-      emptyText="No open breaches."
-    />
-  );
-}
-
-function AuditTrail() {
-  const [objectId, setObjectId] = useState("");
-  const { status, data, error, reload } = useAsync(() => api.auditLog({ object_id: objectId || undefined, limit: 100 }), [objectId]);
-  return (
-    <>
-      <div className="mb-3">
-        <input
-          type="text"
-          value={objectId}
-          onChange={(e) => setObjectId(e.target.value)}
-          placeholder="Filter by object id (source_table:record_key:flag_label)"
-          className="w-full max-w-md rounded-md border border-hair bg-surface px-3 py-1.5 text-sm text-ink sm:w-auto"
-        />
-      </div>
-      {status === "loading" ? (
-        <Loading what="the audit trail" />
-      ) : status === "error" && !data ? (
-        <LoadError error={error} onRetry={reload} />
-      ) : (
-        <DataTable
-          caption="Audit trail"
-          columns={[
-            { key: "timestamp", header: "When", render: (a) => fmtDateTime(a.timestamp) },
-            { key: "user_name", header: "Who", render: (a) => a.user_name || "—" },
-            { key: "action", header: "Action" },
-            { key: "object_id", header: "Record" },
-            { key: "new_value", header: "New value" },
-          ]}
-          rows={data}
-          rowKey={(a) => a.log_id}
-          emptyText="No audit events yet."
-        />
-      )}
-    </>
-  );
-}
-
-function ManagementStats() {
-  const { status, data } = useAsync(() => api.workflowStats(), []);
-  if (status !== "ready") return null;
-  const { submissions, open_breaches_by_age, avg_turnaround_seconds } = data;
-  const total = (submissions.on_time || 0) + (submissions.late || 0);
-  const onTimePct = total ? Math.round((submissions.on_time / total) * 100) : null;
-  const turnaround = avg_turnaround_seconds != null ? `${(avg_turnaround_seconds / 3600).toFixed(1)}h` : "—";
-  return (
-    <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Workflow management summary">
-      <StatBox label="On-time submissions" value={onTimePct != null ? `${onTimePct}%` : "—"} hint={`${submissions.on_time || 0} on time, ${submissions.late || 0} late`} />
-      <StatBox label="Overdue, not submitted" value={submissions.overdue_open || 0} status={submissions.overdue_open > 0 ? "action" : "good"} />
-      <StatBox label="Avg. turnaround" value={turnaround} hint="First comment or event to decision" />
-      <StatBox
-        label="Open breaches"
-        value={Object.values(open_breaches_by_age).reduce((a, b) => a + b, 0)}
-        hint={Object.entries(open_breaches_by_age).map(([k, v]) => `${v} ${k}`).join(", ") || "None open"}
-      />
-    </ul>
-  );
-}
-
-export default function Workflow() {
+export default function Tasks() {
   const { user } = useAuth();
   const [selectedTask, setSelectedTask] = useState(null);
 
@@ -378,12 +294,12 @@ export default function Workflow() {
 
   return (
     <PageShell
-      title="Report workflow"
+      title="Tasks"
       subtitle="Review and act on everything the bank's checks have flagged — fraud alerts, data-quality issues, and risk-limit breaches all land here."
       actions={<AssumptionBadge items={GROUP_ASSUMPTION} label="How access works today" heading="Demo limitation: team-level access only" />}
     >
       <Section id="tasks" title="My tasks" description="Everything currently waiting for review, across every team.">
-        <TasksSection onSelect={selectTask} selectedTaskId={selectedTask?.id} />
+        <TasksTable onSelect={selectTask} selectedTaskId={selectedTask?.id} />
       </Section>
 
       {selectedTask && (
@@ -391,18 +307,6 @@ export default function Workflow() {
           <ReviewPanel task={selectedTask} user={user} onDone={() => setSelectedTask(null)} />
         </Modal>
       )}
-
-      <Section id="breaches" title="Breach alerts" description="Regulatory and risk limits that have been crossed. Each new breach is detected automatically and becomes a task above; this section is the full history.">
-        <BreachAlerts />
-      </Section>
-
-      <Section id="audit" title="Audit trail" description="A permanent record of every comment and decision made on this screen. Nothing here can be edited or deleted.">
-        <AuditTrail />
-      </Section>
-
-      <Section id="stats" title="Management view" description="How review is going: on-time vs late, how long reviews take, and how old the open breaches are.">
-        <ManagementStats />
-      </Section>
     </PageShell>
   );
 }

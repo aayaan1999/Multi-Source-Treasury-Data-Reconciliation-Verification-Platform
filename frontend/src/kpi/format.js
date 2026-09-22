@@ -55,6 +55,11 @@ export function formatDayShort(iso) {
   return shortFmt.format(parseDay(iso));
 }
 
+// Full timestamps (Tasklist/audit_log ISO datetimes), not the plain calendar dates above.
+export function formatDateTime(iso) {
+  return iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+}
+
 export function daysOld(iso, now = new Date()) {
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return Math.round((today - parseDay(iso).getTime()) / 86_400_000);
