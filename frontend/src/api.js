@@ -148,4 +148,13 @@ export const api = {
   report: (id) => request(`/reports/${id}`),
   drill: (id, lineCode) => request(`/reports/${id}/drill/${encodeURIComponent(lineCode)}`),
   exportReport: (id, kind) => download(`/reports/${id}/export/${kind}`, { method: "POST", fallbackName: `report.${kind === "pdf" ? "pdf" : "xlsx"}` }),
+
+  // Screen 6 - everything except task state/actions, which go straight to Tasklist (tasklistApi.js)
+  exceptionDetail: (params) => request(`/workflow/exceptions/detail${query(params)}`),
+  exceptionComments: (params) => request(`/workflow/exceptions/comments${query(params)}`),
+  addExceptionComment: (body) => request("/workflow/exceptions/comments", { method: "POST", body }),
+  logTaskCompletion: (body) => request("/workflow/exceptions/task-completions", { method: "POST", body }),
+  auditLog: (params) => request(`/workflow/audit-log${query(params)}`),
+  breaches: (params) => request(`/workflow/breaches${query(params)}`),
+  workflowStats: () => request("/workflow/stats"),
 };

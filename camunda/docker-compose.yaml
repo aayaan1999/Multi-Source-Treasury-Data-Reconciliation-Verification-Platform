@@ -30,7 +30,11 @@ services:
       - ZEEBE_BROKER_DATA_DISKUSAGECOMMANDWATERMARK=0.998
       - ZEEBE_BROKER_DATA_DISKUSAGEREPLICATIONWATERMARK=0.999
       - CAMUNDA_DATABASE_URL=http://elasticsearch:9200
-      - "JAVA_TOOL_OPTIONS=-Xms512m -Xmx512m"
+      # Xms lowered from 512m to 256m (POC data volume never needs to reserve the full heap up
+      # front); Xmx unchanged at 512m as a ceiling. mem_limit is a hard container cap so this JVM
+      # can't grow past what the other services on this machine need too.
+      - "JAVA_TOOL_OPTIONS=-Xms256m -Xmx512m"
+    mem_limit: 768m
     restart: unless-stopped
     healthcheck:
       test: [ "CMD-SHELL", "timeout 10s bash -c ':> /dev/tcp/127.0.0.1/9600' || exit 1" ]
@@ -90,6 +94,10 @@ services:
       - CAMUNDA_DATABASE_URL=http://elasticsearch:9200
       - management.endpoints.web.exposure.include=health
       - management.endpoint.health.probes.enabled=true
+      # Had no heap cap before, so the JVM auto-sized against the Docker VM's total memory rather
+      # than this service's fair share - the actual fix for this stack's RAM usage.
+      - "JAVA_TOOL_OPTIONS=-Xms256m -Xmx512m"
+    mem_limit: 768m
     healthcheck:
       test: [ "CMD-SHELL", "wget -O - -q 'http://localhost:9600/actuator/health/readiness'" ]
       interval: 30s
@@ -115,6 +123,7 @@ services:
       # allow running with low disk space
       - cluster.routing.allocation.disk.threshold_enabled=false
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    mem_limit: 1g   # heap (512m) + JVM/off-heap overhead + Lucene file-system cache headroom
     ulimits:
       memlock:
         soft: -1

@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from . import db
 from .config import get_settings
-from .routers import auth, health, kpi, performance, portfolio, reports, scenario
+from .routers import auth, health, kpi, performance, portfolio, reports, scenario, workflow
 
 
 @asynccontextmanager
@@ -46,5 +46,5 @@ async def database_unavailable(_: Request, __: psycopg2.OperationalError):
     return JSONResponse(status_code=503, content={"detail": "Database unavailable - try again shortly"})
 
 
-for module in (health, auth, kpi, portfolio, scenario, performance, reports):
+for module in (health, auth, kpi, portfolio, scenario, performance, reports, workflow):
     app.include_router(module.router, prefix="/api/v1")

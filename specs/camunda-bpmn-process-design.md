@@ -1,9 +1,12 @@
 # Spec: Camunda 8 Process Design — Transaction Review Workflow
 
-**Status:** Written, not yet verified live — BPMN process, form, bridge worker and write-back
-worker exist (`camunda/process/`, `camunda/bridge/`) but have not been run against a deployed
-Zeebe/Tasklist. Docker Compose stack (`camunda/docker-compose.yaml`) is separately confirmed
-runnable — see `CLAUDE.md`.
+**Status:** Verified live end-to-end (2026-09-22) — BPMN process and form deployed to a real
+Zeebe/Tasklist (`camunda/bridge/deploy.py`), all three `flagCategory` routes confirmed via
+`test_instance.py` + a real `/v1/tasks/search`, and all three outcomes (Approved/Rejected/Corrected,
+including a Corrected value round-tripping into `review_outcomes`) completed through Tasklist's
+REST API and picked up by `outcome_worker.py`. Not yet run: the Postgres-driven bridge worker
+(`poll_worker.py`) against a real `data_quality_exceptions` row (acceptance criteria below), and
+Screen 6's own UI end to end.
 **New for:** the 3-week Camunda-based POC extension — see `3-WEEK-POC-PLAN.md`
 **Decision context:** Camunda 8, **self-hosted**, confirmed by the user over the source doc's
 original "don't use a workflow engine for the POC" guidance — that guidance is explicitly
@@ -135,20 +138,39 @@ auto-remediation or severity-based filtering instead (this is exactly what `vali
       implementing section 3's flow, all three candidate groups reachable
 - [x] Local Camunda 8 stack deployable via one `docker compose up` (confirmed live — see
       `CLAUDE.md`)
-- [ ] A test process instance, started manually with sample variables (`camunda/bridge/test_instance.py`),
-      routes to the correct candidate group based on `flagCategory` (test all three: FRAUD,
-      COMPLIANCE, OPERATIONS) — script written, not yet run against a live deployment
-- [ ] Completing a task (Approved/Rejected/Corrected) triggers the write-back service task
-      (`camunda/bridge/outcome_worker.py` written, not yet run)
-- [ ] Bridge worker (`camunda/bridge/poll_worker.py`) successfully creates a process instance from
-      a real `data_quality_exceptions` row without manual intervention — written, not yet run
+- [x] A test process instance, started manually with sample variables (`camunda/bridge/test_instance.py`),
+      routes to the correct candidate group based on `flagCategory` — confirmed live 2026-09-22
+      against a deployed Zeebe/Tasklist: all three (FRAUD → `fraud-investigation`, COMPLIANCE →
+      `compliance`, OPERATIONS → `operations`) showed up correctly in a real
+      `POST /v1/tasks/search` response
+- [x] Completing a task (Approved/Rejected/Corrected) triggers the write-back service task —
+      confirmed live 2026-09-22: all three outcomes completed via Tasklist's REST API landed
+      correctly in `review_outcomes` (`camunda/bridge/outcome_worker.py`), including a Corrected
+      outcome's `{"risk_rating": "B"}` value round-tripping into `corrected_value`. Required two
+      fixes along the way, both applied: (1) Windows' default asyncio event-loop policy breaks
+      grpc.aio's streaming `ActivateJobs` call ("attached to a different loop") unless the
+      Zeebe channel/worker are constructed inside the running loop, not at module import time;
+      (2) Tasklist's real `/complete` request body is `{variables: [{name, value}]}` with each
+      `value` JSON-encoded, not a plain `{name: value}` object.
+- [x] Bridge worker (`camunda/bridge/poll_worker.py`) successfully creates a process instance from
+      a real flagged record without manual intervention — confirmed live 2026-09-22 against
+      Neon's real `flagged_transactions` (92 `VELOCITY_BREACH` rows, all real production data at
+      the time; `data_quality_exceptions` was empty, so only the fraud path was exercised here).
+      A second run started 0 new instances, confirming `camunda_process_tracking` makes this
+      idempotent as designed.
 
 ## 7. Open Items
 
 1. **Compliance routing rule** — resolved with a documented table-based assumption (section 3),
    not a verified business rule; confirm with whoever owns the process requirements
-2. **Auth model** — confirm seeded-user Tasklist access is acceptable for the POC demo, or if
-   client stakeholders expect to see their own login
+2. **Auth model** — **partially resolved by what the live stack actually requires, not a choice
+   made here**: `ZEEBE_AUTHENTICATION_MODE=none` only disables auth on the Zeebe gRPC gateway.
+   Tasklist's own webapp has a separate, always-on session-cookie login (Spring Security),
+   seeded with a default `demo`/`demo` user - there's no way to turn this off short of wiring up
+   Identity, which section 2 already ruled out for this POC. `frontend/src/workflow/tasklistApi.js`
+   logs in as `demo`/`demo` automatically. Confirm with client stakeholders whether showing every
+   reviewer the same generic `demo` identity (rather than their own login) is acceptable for the
+   demo.
 3. **"Corrected" outcome's data model** — what exactly can be corrected, and does the corrected
    value need its own validation before write-back (e.g. can't "correct" a `risk_rating` to an
    invalid value)?

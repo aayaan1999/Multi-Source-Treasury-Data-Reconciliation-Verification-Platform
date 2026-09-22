@@ -23,8 +23,11 @@ async def main() -> None:
         str(PROCESS_DIR / "transaction-review.bpmn"),
     )
     print(f"Deployed key {result.key}:")
-    for process in result.processes:
-        print(f"  process {process.bpmn_process_id} v{process.version} (key {process.process_definition_key})")
+    for resource in result.deployments:
+        if hasattr(resource, "bpmn_process_id"):
+            print(f"  process {resource.bpmn_process_id} v{resource.version} (key {resource.process_definition_key})")
+        elif hasattr(resource, "form_id"):
+            print(f"  form {resource.form_id} v{resource.version} (key {resource.form_key})")
 
 
 if __name__ == "__main__":

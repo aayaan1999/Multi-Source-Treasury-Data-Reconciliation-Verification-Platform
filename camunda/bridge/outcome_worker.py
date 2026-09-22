@@ -18,15 +18,13 @@ owns.
 import asyncio
 import json
 
+import _env  # sets the Windows event-loop policy - must be imported before pyzeebe/grpc.aio, see _env.py
 import psycopg2
 from pyzeebe import ZeebeWorker, Job, create_insecure_channel
 
 from _env import database_url, zeebe_address
 
-worker = ZeebeWorker(create_insecure_channel(grpc_address=zeebe_address()))
 
-
-@worker.task(task_type="write-review-outcome")
 async def write_review_outcome(job: Job) -> dict:
     v = job.variables
     corrected_value = v.get("correctedValue") or None
@@ -63,6 +61,13 @@ async def write_review_outcome(job: Job) -> dict:
 
 
 async def main() -> None:
+    # Built inside main(), not at module scope: a grpc.aio channel created before asyncio.run()
+    # starts its loop binds to a throwaway loop instance, distinct from the one main() actually
+    # runs in - causes "Task ... got Future ... attached to a different loop" the moment a
+    # streaming call (ActivateJobs, used by worker.work()) runs (confirmed live 2026-09-22).
+    channel = create_insecure_channel(grpc_address=zeebe_address())
+    worker = ZeebeWorker(channel)
+    worker.task(task_type="write-review-outcome")(write_review_outcome)
     print(f"write-review-outcome worker listening on {zeebe_address()}...")
     await worker.work()
 

@@ -3,11 +3,11 @@ import { useAuth } from "./auth";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Performance from "./pages/Performance";
-import Placeholder from "./pages/Placeholder";
 import Portfolio from "./pages/Portfolio";
 import ReportView from "./pages/ReportView";
 import Reports from "./pages/Reports";
 import Scenario from "./pages/Scenario";
+import Workflow from "./pages/Workflow";
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -26,7 +26,7 @@ export default function App() {
       <Route path="/performance" element={<RequireAuth><Performance /></RequireAuth>} />
       <Route path="/reports" element={<RequireAuth><Reports /></RequireAuth>} />
       <Route path="/reports/:id" element={<RequireAuth><ReportView /></RequireAuth>} />
-      <Route path="/workflow" element={<RequireAuth><Placeholder screen="Screen 6 — Report Workflow" /></RequireAuth>} />
+      <Route path="/workflow" element={<RequireAuth><Workflow /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

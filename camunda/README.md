@@ -15,6 +15,13 @@ was the simplest fix. Elasticsearch reached `healthy` within a couple of minutes
 competing with Operate for CPU. Re-enable it (uncomment the block) if you need the Operate UI and
 have the headroom, or bump Docker Desktop's CPU/memory allocation first.
 
+**Every remaining service now has an explicit JVM heap cap and a `mem_limit`** (Elasticsearch
+512m heap / 1g container cap, Zeebe and Tasklist 256m-512m heap / 768m container cap each — total
+~2.5GB against this machine's 3.77GB Docker VM). Tasklist previously had no heap flag at all, so
+its JVM was auto-sizing against the whole Docker VM's memory rather than a fair share of it - that
+was the main unnecessary RAM cost, not Elasticsearch. Lower further at your own risk: Elasticsearch
+below ~512m heap tends to fail its own bootstrap checks; the Zeebe/Tasklist floor is untested.
+
 ## Start it
 
 **Bring Elasticsearch up first and let it become healthy before starting Zeebe/Tasklist** — on a

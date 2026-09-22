@@ -434,15 +434,29 @@ CREATE TABLE tasks (
     completed_at         timestamptz
 );
 
+-- Comments on either a Screen 3 report_instance_id OR a Screen 6 exception record (source_table +
+-- record_key + flag_label - data_quality_exceptions/flagged_transactions don't share a single
+-- numeric id, so this uses the same natural key as camunda_process_tracking/review_outcomes).
+-- Exactly one target must be set (comments_target_check), per specs/screen-06-report-workflow.md
+-- section 2.3.
 CREATE TABLE comments (
     comment_id          serial PRIMARY KEY,
-    report_instance_id  integer NOT NULL REFERENCES report_instances (report_instance_id),
+    report_instance_id  integer REFERENCES report_instances (report_instance_id),
     line_code           text,
+    source_table        text,
+    record_key          text,
+    flag_label          text,
     user_id             integer NOT NULL REFERENCES users (user_id),
     comment_text        text NOT NULL,
     created_at          timestamptz NOT NULL DEFAULT now(),
-    parent_comment_id   integer REFERENCES comments (comment_id)
+    parent_comment_id   integer REFERENCES comments (comment_id),
+    CONSTRAINT comments_target_check CHECK (
+        (report_instance_id IS NOT NULL AND source_table IS NULL AND record_key IS NULL AND flag_label IS NULL)
+        OR (report_instance_id IS NULL AND source_table IS NOT NULL AND record_key IS NOT NULL AND flag_label IS NOT NULL)
+    )
 );
+
+CREATE INDEX comments_exception_idx ON comments (source_table, record_key, flag_label);
 
 CREATE TABLE limits (
     limit_id         serial PRIMARY KEY,

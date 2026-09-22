@@ -194,17 +194,27 @@ later required.
 originally said not to reach for a workflow engine like Camunda for a plain POC — a status column
 and a handful of endpoints were meant to cover the approval chain. **For the 3-week Camunda
 extension, that's overridden**: Screen 6's approval chain is now built on **Camunda 8,
-self-hosted** (Zeebe + Elasticsearch + Operate + Tasklist via Docker Compose), not a Postgres
-status column. React's Screen 6 calls Camunda Tasklist's REST API rather than a custom FastAPI
-workflow endpoint. **The Docker Compose stack itself is built and runnable** (`camunda/`,
-`docker compose up -d` from that folder — needs Docker Desktop running). The `transaction-review`
-BPMN process, its review-outcome form, and the Postgres↔Zeebe bridge workers are now written too
-(`camunda/process/`, `camunda/bridge/` — `deploy.py`, `poll_worker.py`, `outcome_worker.py`,
-`test_instance.py`) but **not yet verified against a live Zeebe/Tasklist deployment** — treat
-`specs/camunda-bpmn-process-design.md` section 6's checkboxes as unchecked until a real
-`docker compose up` + deploy + poll→Tasklist→outcome round trip has been run. Screen 6's React
-Tasklist integration is still not built. See `specs/camunda-bpmn-process-design.md` for the
-process design and `3-WEEK-POC-PLAN.md` for why. If a future session is *not* working under that 3-week Camunda
+self-hosted** (Zeebe + Elasticsearch + Tasklist via Docker Compose — **Operate is currently
+commented out**, dropped to cut CPU/RAM contention on constrained dev machines; see
+`camunda/README.md`), not a Postgres status column. React's Screen 6 calls Camunda Tasklist's
+REST API rather than a custom FastAPI workflow endpoint. **The full chain is now verified live
+end-to-end (2026-09-22)**: the Docker Compose stack runs (each service given an explicit JVM heap
+cap + container `mem_limit`, ~2.5GB total — Tasklist previously had no heap cap and was the real
+RAM cost, not Elasticsearch), the `transaction-review` BPMN process and its form deploy cleanly
+(`camunda/bridge/deploy.py`), all three `flagCategory` routes were confirmed against a real
+`POST /v1/tasks/search`, all three outcomes (Approved/Rejected/Corrected, including a Corrected
+value round-trip) were completed through Tasklist's REST API and landed correctly in
+`review_outcomes` (`outcome_worker.py`), and the polling bridge worker
+(`camunda/bridge/poll_worker.py`) started 92 real process instances from Neon's actual
+`flagged_transactions` table, confirmed idempotent on a second run. Two real bugs were found and
+fixed along the way (Windows' asyncio event-loop policy breaking grpc.aio's streaming calls
+unless the Zeebe channel is built inside the running loop; Tasklist's actual REST shapes
+differing from documented assumptions — `/assign` not `/claim`, variables as
+`[{name, value}]` not a plain object) — see `specs/camunda-bpmn-process-design.md` section 6 for
+detail. **Not yet built: Screen 6's own React UI calling Tasklist** (`frontend/src/pages/Workflow.jsx`
+exists and is wired into routing, but hasn't been exercised in a browser against the live stack).
+See `specs/camunda-bpmn-process-design.md` for the process design and `3-WEEK-POC-PLAN.md` for
+why. If a future session is *not* working under that 3-week Camunda
 scope, the original status-column guidance still applies — this override is specific to that
 timeline decision, not a permanent architecture change to the source doc's own recommendation.
 

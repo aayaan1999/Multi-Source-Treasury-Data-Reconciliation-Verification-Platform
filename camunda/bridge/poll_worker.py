@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import time
 
+import _env  # sets the Windows event-loop policy - must be imported before pyzeebe/grpc.aio, see _env.py
 import psycopg2
 import psycopg2.extras
 from pyzeebe import ZeebeClient, create_insecure_channel
