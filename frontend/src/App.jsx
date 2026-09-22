@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Performance from "./pages/Performance";
 import Portfolio from "./pages/Portfolio";
+import Reconciliation from "./pages/Reconciliation";
 import ReportView from "./pages/ReportView";
 import Reports from "./pages/Reports";
 import Scenario from "./pages/Scenario";
@@ -27,6 +28,7 @@ export default function App() {
       <Route path="/reports" element={<RequireAuth><Reports /></RequireAuth>} />
       <Route path="/reports/:id" element={<RequireAuth><ReportView /></RequireAuth>} />
       <Route path="/workflow" element={<RequireAuth><Workflow /></RequireAuth>} />
+      <Route path="/reconciliation" element={<RequireAuth><Reconciliation /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

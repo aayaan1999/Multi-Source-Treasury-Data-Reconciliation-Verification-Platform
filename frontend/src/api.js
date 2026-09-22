@@ -157,4 +157,9 @@ export const api = {
   auditLog: (params) => request(`/workflow/audit-log${query(params)}`),
   breaches: (params) => request(`/workflow/breaches${query(params)}`),
   workflowStats: () => request("/workflow/stats"),
+
+  // Reconciliation tab (specs/multi-source-reconciliation.md) - standalone from Screen 6/Camunda
+  reconciliationExceptions: (params) => request(`/reconciliation${query(params)}`),
+  reconciliationSummary: () => request("/reconciliation/summary"),
+  resolveReconciliation: (id, body) => request(`/reconciliation/${id}/resolve`, { method: "POST", body }),
 };
