@@ -25,6 +25,15 @@ Notebook 1-2 rewrite. `bank-x poc-brief.md` is historical reference only — see
   `specs/multi-source-ingestion-adf.md`): **Neon** (Postgres), **Mockaroo** (mock API),
   **IMF Data API** (free, no key), **Salesforce Developer Edition** (free CRM), **Google Sheets**
   (+ a Google service account for API access)
+- **This "Neon" above is a *second, separate* Neon project from the application database** — it
+  stands in for a Core Banking System, holding its own independent copy of customer/account data
+  to reconcile against. Don't reuse the app's Neon project for it, or reconciliation compares data
+  against itself and can never find anything (see `specs/multi-source-reconciliation.md` for why).
+  Its connection string lives in the git-ignored `db/multi_source_demo.env` (copy
+  `db/multi_source_demo.env.example`) and its credentials go in the Databricks secret scope
+  `multi-source-demo` (`neon_jdbc_url`/`neon_user`/`neon_password`) — separate from the app
+  database's `neon` secret scope. **Implemented so far**: the Neon slice only (customers/accounts);
+  Mockaroo/Salesforce reconciliation is still spec-only.
 
 ## Application Layer (replaces the original Appian scope)
 
@@ -51,6 +60,12 @@ Notebook 1-2 rewrite. `bank-x poc-brief.md` is historical reference only — see
 
 Overrides the source doc's original "don't use a workflow engine for the POC" guidance — see
 `CLAUDE.md`'s "Workflow Engine Decision" and `3-WEEK-POC-PLAN.md`.
+
+**Built so far:** `camunda/docker-compose.yaml` (Zeebe + Operate + Tasklist + Elasticsearch,
+trimmed from Camunda's official distribution). Start it with `docker compose up -d` from the
+`camunda/` folder (needs Docker Desktop running — see Dev Tooling below); see `camunda/README.md`
+for ports and details. **Not built yet:** the actual `transaction-review` BPMN process, the bridge
+worker, and Screen 6's Tasklist integration — see `specs/camunda-bpmn-process-design.md`.
 
 - **Zeebe** — the Camunda 8 process engine/broker
 - **Elasticsearch** — required dependency for Operate
@@ -83,6 +98,15 @@ Overrides the source doc's original "don't use a workflow engine for the POC" gu
 
 - **Git / GitHub** — this repo (`https://github.com/aayaan1999/Multi-Source-Treasury-Data-Reconciliation-Verification-Platform`), branch `main`
 - **Claude Code** — used to generate the PySpark notebooks and the FastAPI/React application code
+- **Databricks CLI (v0.200+/1.x, the unified CLI with `bundle` support — not the legacy
+  `pip install databricks-cli`)** — needed to deploy the pipeline job (`databricks bundle deploy`,
+  `databricks.yml`) and manage secrets. Install via `winget install Databricks.DatabricksCLI`
+  (Windows) or the official installer script (other OSes:
+  https://docs.databricks.com/aws/en/dev-tools/cli/install). Authenticate once per machine:
+  `databricks auth login --host <workspace-url>` (opens a browser for interactive login).
+- **Docker Desktop** — required to run the Camunda 8 stack (`camunda/docker-compose.yaml`, see
+  the Camunda section above). Windows/Mac: https://www.docker.com/products/docker-desktop/. Must
+  be **running** (not just installed) before `docker compose up` in `camunda/` will work.
 
 ## Open Questions Blocking Setup
 

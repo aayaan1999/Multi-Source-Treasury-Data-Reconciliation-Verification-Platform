@@ -86,8 +86,13 @@ data source; it's kept only as historical context for why this platform exists.
 Handoff between the two layers: a Databricks Job (`databricks.yml`) runs notebooks 1-6 and then
 `notebooks/load_to_postgres.py`, which merges the Silver/Gold Delta tables into PostgreSQL on
 **Neon** in one transaction. The job starts by itself when a file lands in the landing volume
-(file-arrival trigger), so results appear in the app minutes after an upload. Written and locally
-tested, **not yet deployed** — see `specs/pipeline-job-and-neon-load.md`.
+(file-arrival trigger, 10-minute quiet period before it fires — use **Run now** in the Workflows
+UI to skip the wait for a live demo). **Deployed and verified live** (2026-09-22, via
+`databricks bundle deploy` — needs the Databricks CLI, see `PREREQUISITES.md`): the job, trigger
+and full ingest→load chain were confirmed working end-to-end on a real run, including a fix to
+`load_to_postgres.py`'s Postgres write (generic `format("jdbc")` isn't supported on this
+workspace's serverless compute; switched to Databricks' bundled `postgresql` Spark format). See
+`specs/pipeline-job-and-neon-load.md`.
 
 ## Databricks Build Scope
 
@@ -156,6 +161,15 @@ Lake:
   integration. Still introduces the same real, currently-blocked schema gap
   (`transaction_code_mapping`, `source_system` column) needing actual source-system code lists —
   not resolvable with a placeholder assumption. Spec: `specs/multi-source-ingestion-adf.md`.
+- **Multi-source reconciliation — Neon slice only, verified live.** Rebuilds the actual
+  "reconciliation" this project is named after (dropped when the schema moved bank-wide):
+  compares `bronze_neon_customers`/`bronze_neon_accounts` against the canonical `*_clean` tables
+  and flags disagreements into `reconciliation_exceptions`, same insert-only/status-preserving
+  discipline as `flagged_transactions`. Needs its own, *separate* second Neon project (standing in
+  for Core Banking System — never the app's own database) and a `multi-source-demo` Databricks
+  secret scope, distinct from the app database's `neon` scope; see "Dev Tooling" in
+  `PREREQUISITES.md`. Mockaroo/Salesforce reconciliation remain spec-only. Spec:
+  `specs/multi-source-reconciliation.md`.
 
 Conventions when building these notebooks: PySpark + `.format("delta")` for every output table;
 inline comments explaining each transformation step (carried over from the original brief's
@@ -182,7 +196,10 @@ and a handful of endpoints were meant to cover the approval chain. **For the 3-w
 extension, that's overridden**: Screen 6's approval chain is now built on **Camunda 8,
 self-hosted** (Zeebe + Elasticsearch + Operate + Tasklist via Docker Compose), not a Postgres
 status column. React's Screen 6 calls Camunda Tasklist's REST API rather than a custom FastAPI
-workflow endpoint. See `specs/camunda-bpmn-process-design.md` for the process design and
+workflow endpoint. **The Docker Compose stack itself is built and runnable** (`camunda/`,
+`docker compose up -d` from that folder — needs Docker Desktop running); the actual
+`transaction-review` BPMN process, the Postgres→Zeebe bridge worker, and Screen 6's Tasklist
+integration are not built yet. See `specs/camunda-bpmn-process-design.md` for the process design and
 `3-WEEK-POC-PLAN.md` for why. If a future session is *not* working under that 3-week Camunda
 scope, the original status-column guidance still applies — this override is specific to that
 timeline decision, not a permanent architecture change to the source doc's own recommendation.

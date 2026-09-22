@@ -258,10 +258,38 @@ Full design and acceptance checks: `specs/pipeline-job-and-neon-load.md`. Steps:
    databricks secrets put-secret neon user --string-value <user>
    databricks secrets put-secret neon password --string-value <password>
    ```
-4. **Deploy the job:** `databricks bundle validate`, then `databricks bundle deploy` (needs the Databricks CLI
-   authenticated to the workspace: `databricks auth login --host <workspace url>`).
-5. **Trigger it:** upload the 8 CSVs to the landing folder. The job (Workflows → `bank-data-pipeline`) starts after
-   the folder has been quiet for 2 minutes. To run it manually, click **Run now**.
+4. **Install the Databricks CLI** if you haven't already — the unified CLI with `bundle` support
+   (v0.200+/1.x), **not** the legacy `pip install databricks-cli`, which doesn't have `bundle`
+   commands and will conflict if both are on `PATH`:
+   ```
+   winget install Databricks.DatabricksCLI          # Windows
+   ```
+   Other OSes: https://docs.databricks.com/aws/en/dev-tools/cli/install. Then authenticate once
+   per machine (opens a browser): `databricks auth login --host <workspace url>`.
+5. **Deploy the job:** `databricks bundle validate`, then `databricks bundle deploy` from the repo
+   root. Re-run `bundle deploy` any time a notebook changes — it's what syncs local files to the
+   workspace; the job only picks up what was last deployed, not what's on disk.
+6. **Trigger it:** upload the 8 CSVs to the landing folder. The job (Workflows → `bank-data-pipeline`)
+   starts on its own once the folder has been quiet for 10 minutes
+   (`wait_after_last_change_seconds` in `databricks.yml`) — for a live demo, click **Run now** in
+   the Workflows UI instead of waiting. It also won't re-trigger within 30 minutes of its last run
+   (`min_time_between_triggers_seconds`).
+7. **(Optional) Multi-source reconciliation** — needs a *second*, separate Neon project standing
+   in for "Core Banking System" and its own secret scope. See `specs/multi-source-reconciliation.md`
+   section 4 for why it must be separate from the app's own Neon project:
+   ```
+   databricks secrets create-scope multi-source-demo
+   databricks secrets put-secret multi-source-demo neon_jdbc_url --string-value "jdbc:postgresql://<host>:5432/<db>?sslmode=require"
+   databricks secrets put-secret multi-source-demo neon_user --string-value <user>
+   databricks secrets put-secret multi-source-demo neon_password --string-value <password>
+   ```
+   Create `customers`/`accounts` tables in that second project (with an `updated_at` column —
+   `multi_source_neon_ingestion.py`'s watermark logic needs it) and seed them with a deliberate
+   mix of matching/mismatched/missing records relative to your canonical data — a random/empty
+   seed means the first reconciliation run finds nothing and proves nothing. Then run
+   `multi_source_neon_ingestion.py` (once with the `source_table` widget set to `customers`, once
+   to `accounts`) followed by `multi_source_reconciliation.py`. **Not yet wired into the automatic
+   job** — run these manually until the pattern's proven out further.
 
 ---
 

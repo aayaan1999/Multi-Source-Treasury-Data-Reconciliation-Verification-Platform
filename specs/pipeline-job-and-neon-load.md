@@ -1,6 +1,9 @@
 # Spec: Pipeline Job (file-arrival trigger) and Load to Neon Postgres
 
-**Status:** Written; merge logic tested locally, **not yet deployed or run on Databricks/Neon**
+**Status:** Deployed and verified live on Databricks/Neon (2026-09-22) via `databricks bundle
+deploy`. Fixed one real bug found by the live run: the staging write in `load_to_postgres.py` used
+generic `format("jdbc")`, which this workspace's serverless compute rejects
+(`UNSUPPORTED_DATA_SOURCE_WRITE`); switched to Databricks' bundled `postgresql` Spark format.
 **Files:** `databricks.yml`, `notebooks/load_to_postgres.py`, `db/apply_schema.py`, `db/test_load_logic.py`
 **Depends on:** notebooks 1-6 (verified on Databricks), `db/schema.sql`, `specs/postgres-schema.md`
 **Supersedes:** the "nightly import job" wording in `CLAUDE.md` / `specs/postgres-schema.md` — the pipeline is now
