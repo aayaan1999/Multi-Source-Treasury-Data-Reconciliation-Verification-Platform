@@ -35,8 +35,8 @@ resources:
           url: ${var.landing_path}/
           # Uploading 8 files takes a while: wait until the folder has been quiet for 2 minutes
           # so one upload batch starts one run, not eight.
-          wait_after_last_change_seconds: 600
-          min_time_between_triggers_seconds: 1800
+          wait_after_last_change_seconds: 120
+          min_time_between_triggers_seconds: 120
 
       tasks:
         - task_key: ingest
