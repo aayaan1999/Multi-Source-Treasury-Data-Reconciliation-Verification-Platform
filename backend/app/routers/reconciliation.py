@@ -39,10 +39,9 @@ def list_exceptions(
     status: Optional[str] = None,
     entity_type: Optional[str] = None,
     mismatch_type: Optional[str] = None,
-    # Raised from the original 200/1000 cap: MISSING_IN_SOURCE alone currently has ~1,862 open rows,
-    # and DataTable already paginates whatever it's given client-side (10/page) - so the fix is
-    # letting a filtered fetch actually return everything that matches, not adding server-side
-    # offset pagination on top of that (this table is thousands of rows, not millions).
+    # Up to 5000: the Reconciliation page fetches the whole table once (unfiltered) and filters its
+    # tabs/status in the browser, so this must return every row. The table is hundreds-to-thousands
+    # of rows, not millions; move filtering back server-side if it ever outgrows this cap.
     limit: int = Query(200, le=5000),
 ):
     clauses, params = [], []

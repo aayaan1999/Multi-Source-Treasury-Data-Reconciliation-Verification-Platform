@@ -108,21 +108,21 @@ export default function Reconciliation() {
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("OPEN");
   const [selected, setSelected] = useState(null);
+  // Fetched once, unfiltered: the whole table is a few hundred rows, so the type tabs and status
+  // dropdown filter in the browser. Refetching per click cost 4 Neon round trips (~1-3 s) each time.
+  // Only a resolve (reload) goes back to the server.
   const { status, data, error, reload } = useAsync(
-    () => Promise.all([
-      // limit: 5000 - a filtered tab/status combo can be a couple thousand rows (e.g. MISSING_IN_SOURCE
-      // alone); DataTable already paginates whatever it receives 10/page, so this just makes sure that
-      // full filtered set actually arrives instead of being cut off at the API's old 200-row default.
-      api.reconciliationExceptions({ status: statusFilter || undefined, mismatch_type: typeFilter || undefined, limit: 5000 }),
-      api.reconciliationSummary(),
-    ]),
-    [typeFilter, statusFilter],
+    () => Promise.all([api.reconciliationExceptions({ limit: 5000 }), api.reconciliationSummary()]),
+    [],
   );
 
   if (status === "loading") return <PageShell title="Reconciliation"><Loading what="reconciliation exceptions" /></PageShell>;
   if (status === "error" && !data) return <PageShell title="Reconciliation"><LoadError error={error} onRetry={reload} /></PageShell>;
 
-  const [rows, summary] = data;
+  const [allRows, summary] = data;
+  const rows = allRows.filter(
+    (r) => (!statusFilter || r.status === statusFilter) && (!typeFilter || r.mismatch_type === typeFilter),
+  );
   const openCount = summary.by_status.find((s) => s.status === "OPEN")?.count ?? 0;
   const resolvedCount = summary.by_status.filter((s) => s.status !== "OPEN").reduce((n, s) => n + s.count, 0);
   const openCountByType = Object.fromEntries(summary.by_mismatch_type.map((m) => [m.mismatch_type, m.count]));
