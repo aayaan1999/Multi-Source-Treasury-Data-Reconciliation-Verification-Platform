@@ -63,7 +63,7 @@ describe("formatting", () => {
 describe("buildAlerts", () => {
   it("writes the source document's example sentence from real values", () => {
     const alerts = buildAlerts({ ...HEALTHY, car_pct: 12.4 }, { now: NOW });
-    expect(alerts[0]).toMatchObject({ tone: "critical", to: "/scenario" });
+    expect(alerts[0]).toMatchObject({ tone: "critical", to: "/kpi/car_pct" });
     expect(alerts[0].text).toBe("Capital ratio at 12.4% — only 0.4 points above the regulatory minimum of 12.0%");
   });
 
@@ -104,7 +104,4 @@ describe("buildAlerts", () => {
     expect(alerts.find((a) => a.key === "roe_pct").text).toMatch(/\(assumption-based\)$/);
   });
 
-  it("gives every KPI a drill-down route", () => {
-    expect(KPIS.every((k) => k.drill.startsWith("/"))).toBe(true);
-  });
 });

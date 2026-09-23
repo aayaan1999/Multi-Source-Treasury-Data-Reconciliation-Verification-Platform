@@ -14,42 +14,42 @@ export const KPIS = [
   {
     key: "car_pct", label: "Capital ratio (CAR)", short: "Capital ratio", unit: "pct",
     direction: "higher", amber: 15, red: 12.5, limit: 12, limitLabel: "regulatory minimum",
-    hint: "Do we have enough of our own money as a cushion?", drill: "/scenario",
+    hint: "Do we have enough of our own money as a cushion?",
   },
   {
     key: "lcr_pct", label: "Liquidity ratio (LCR)", short: "Liquidity", unit: "pct",
     direction: "higher", amber: 120, red: 100, limit: 100, limitLabel: "regulatory minimum",
-    hint: "If lots of people withdrew money tomorrow, could we pay them?", drill: "/scenario",
+    hint: "If lots of people withdrew money tomorrow, could we pay them?",
   },
   {
     key: "npl_ratio_pct", label: "Bad loans (NPL ratio)", short: "Bad loans", unit: "pct",
     direction: "lower", amber: 3, red: 5, limit: 5, limitLabel: "internal limit",
-    hint: "What share of our loans aren't being repaid?", drill: "/portfolio?filter=npl",
+    hint: "What share of our loans aren't being repaid?",
   },
   {
     key: "nim_pct", label: "Net interest margin", short: "Net interest margin", unit: "pct",
     direction: "higher", amber: 2.5, red: 1.5,
-    hint: "What do we earn on loans, after paying depositors?", drill: "/performance?view=products",
+    hint: "What do we earn on loans, after paying depositors?",
   },
   {
     key: "cost_to_income_pct", label: "Cost-to-income", short: "Cost-to-income", unit: "pct",
     direction: "lower", amber: 50, red: 60, limit: 60, limitLabel: "management watch line",
-    hint: "How much do we spend to earn each dollar?", drill: "/performance?view=branches",
+    hint: "How much do we spend to earn each dollar?",
   },
   {
     key: "roe_pct", label: "Return on equity", short: "Return on equity", unit: "pct",
     direction: "higher", amber: 10, red: 5,
-    hint: "What return are shareholders getting?", drill: "/performance?view=segments",
+    hint: "What return are shareholders getting?",
   },
   {
     key: "total_assets_usd", label: "Total assets", short: "Total assets", unit: "usd",
     direction: "higher", // no limits: shown for the trend only
-    hint: "How big are we?", drill: "/portfolio",
+    hint: "How big are we?",
   },
   {
     key: "dollarization_ratio_pct", label: "Dollarization ratio", short: "Dollarization", unit: "pct",
     direction: "lower", amber: 50, red: 70, limit: 70, limitLabel: "internal limit",
-    hint: "How much of our deposits are in foreign currency?", drill: "/portfolio?dimension=currency",
+    hint: "How much of our deposits are in foreign currency?",
   },
 ];
 

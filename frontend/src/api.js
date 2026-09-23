@@ -119,6 +119,7 @@ export const api = {
   // Screen 1
   kpiLatest: () => request("/kpi-summary/latest"),
   kpiHistory: (days = 730) => request(`/kpi-summary/history?days=${days}`),
+  kpiBreakdown: (key) => request(`/kpi-summary/${key}/breakdown`),
 
   // Screen 2 and the drill-downs from Screen 5
   portfolioOverview: () => request("/portfolio/overview"),

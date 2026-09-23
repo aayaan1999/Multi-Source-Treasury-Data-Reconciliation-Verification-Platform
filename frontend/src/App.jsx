@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import AuditOversight from "./pages/AuditOversight";
 import Dashboard from "./pages/Dashboard";
+import KpiDetail from "./pages/KpiDetail";
 import Login from "./pages/Login";
 import Performance from "./pages/Performance";
 import Portfolio from "./pages/Portfolio";
@@ -23,6 +24,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
+      <Route path="/kpi/:key" element={<RequireAuth><KpiDetail /></RequireAuth>} />
       <Route path="/portfolio" element={<RequireAuth><Portfolio /></RequireAuth>} />
       <Route path="/scenario" element={<RequireAuth><Scenario /></RequireAuth>} />
       <Route path="/performance" element={<RequireAuth><Performance /></RequireAuth>} />

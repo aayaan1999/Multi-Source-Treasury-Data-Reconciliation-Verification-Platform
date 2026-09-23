@@ -21,7 +21,7 @@ export default function KpiTile({ kpi, value, previous, previousDate, assumption
       <div className="flex items-start justify-between gap-2">
         {/* The label is the tile's link; its ::after stretches over the whole tile so the tile is one big click target. */}
         <Link
-          to={kpi.drill}
+          to={`/kpi/${kpi.key}`}
           title={kpi.hint}
           className="text-sm font-medium text-ink2 after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-xl focus-visible:after:outline-2 focus-visible:after:outline-accent"
         >

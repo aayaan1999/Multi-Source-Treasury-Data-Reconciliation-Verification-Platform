@@ -125,8 +125,15 @@ export async function getVariables(taskId) {
 }
 
 // The endpoint is /assign, not /claim - verified against the live instance (2026-09-22).
-export function claimTask(taskId, assignee) {
-  return call(`/tasks/${encodeURIComponent(taskId)}/assign`, { method: "PATCH", body: { assignee } });
+// No `assignee` in the body: Tasklist then self-assigns to whoever the TASKLIST-SESSION cookie
+// belongs to (always DEMO_USER here - there's no per-app-user identity in Tasklist, see this
+// file's header comment). Passing our own app's user_id as the assignee 403s ("doesn't have the
+// permission to assign another user to this task") since that's a different identity than DEMO_USER
+// - confirmed live (2026-09-23), and that failure was getting silently swallowed by the caller's
+// best-effort try/catch, so the task stayed unassigned and only surfaced later as Tasklist's
+// "Task is not assigned" 400 on /complete.
+export function claimTask(taskId) {
+  return call(`/tasks/${encodeURIComponent(taskId)}/assign`, { method: "PATCH", body: {} });
 }
 
 // Verified live: /complete wants { variables: [{name, value}] }, value JSON-encoded (Zeebe

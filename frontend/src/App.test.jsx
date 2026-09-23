@@ -22,6 +22,22 @@ const TODAY = {
   ],
 };
 
+function breakdownFor(key) {
+  return {
+    key, calculation_date: TODAY.calculation_date, value: TODAY[key],
+    previous_value: YESTERDAY[key], previous_calculation_date: YESTERDAY.calculation_date,
+    formula: "NPL ratio = Loans 90+ days past due ÷ Total loans outstanding × 100, all converted to USD",
+    components: [
+      { label: "Loans 90+ days past due (USD)", value: 500000, formatted: "$500,000" },
+      { label: "Total loans outstanding (USD)", value: 2098462, formatted: "$2,098,462" },
+    ],
+    fx_notes: [],
+    mismatch_note: null,
+    assumptions_applied: [],
+    history_series: [],
+  };
+}
+
 // Routes a fetch call by URL to a canned response.
 function stubApi({ latest = TODAY, history = [YESTERDAY, TODAY], latestStatus = 200, login } = {}) {
   const calls = [];
@@ -31,6 +47,8 @@ function stubApi({ latest = TODAY, history = [YESTERDAY, TODAY], latestStatus = 
     if (url.endsWith("/auth/login")) return login ? login(init) : respond(200, { access_token: "tok", token_type: "bearer", user: USER });
     if (url.endsWith("/kpi-summary/latest")) return respond(latestStatus, latestStatus === 200 ? latest : { detail: latestStatus === 404 ? "No KPI data loaded yet" : "Database unavailable" });
     if (url.includes("/kpi-summary/history")) return respond(200, history);
+    const breakdownMatch = url.match(/kpi-summary\/([^/]+)\/breakdown/);
+    if (breakdownMatch) return respond(200, breakdownFor(breakdownMatch[1]));
     return respond(404, { detail: "unexpected" });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -142,19 +160,19 @@ describe("executive summary", () => {
     expect(roeTip).toHaveTextContent("not verified accounting");
   });
 
-  it("makes every tile a link to its detail screen", async () => {
+  it("makes every tile a link to its own KPI detail page", async () => {
     stubApi();
     renderApp("/");
     await screen.findByRole("list", { name: "Key indicators" });
-    expect(within(tile("Bad loans (NPL ratio)")).getByRole("link")).toHaveAttribute("href", "/portfolio?filter=npl");
-    expect(within(tile("Capital ratio (CAR)")).getByRole("link")).toHaveAttribute("href", "/scenario");
+    expect(within(tile("Bad loans (NPL ratio)")).getByRole("link")).toHaveAttribute("href", "/kpi/npl_ratio_pct");
+    expect(within(tile("Capital ratio (CAR)")).getByRole("link")).toHaveAttribute("href", "/kpi/car_pct");
   });
 
-  it("generates the alert strip from the actual values and links each line", async () => {
+  it("generates the alert strip from the actual values and links each line to its KPI detail page", async () => {
     stubApi();
     renderApp("/");
     const worst = await screen.findByRole("link", { name: /Capital ratio at 12.4% — only 0.4 points above the regulatory minimum of 12.0%/ });
-    expect(worst).toHaveAttribute("href", "/scenario");
+    expect(worst).toHaveAttribute("href", "/kpi/car_pct");
     expect(screen.getByRole("link", { name: /Bad loans at 5.8% — 0.8 points over the internal limit of 5.0%/ })).toBeInTheDocument();
   });
 
@@ -223,12 +241,14 @@ describe("executive summary", () => {
     expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
   });
 
-  it("clicking a tile opens the screen behind it, with the filter in the request", async () => {
+  it("clicking a tile opens that KPI's own detail page with a real component breakdown, not another screen", async () => {
     stubApi();
     const user = userEvent.setup();
     renderApp("/");
     await screen.findByRole("list", { name: "Key indicators" });
     await user.click(within(tile("Bad loans (NPL ratio)")).getByRole("link"));
-    expect(await screen.findByRole("heading", { name: "Portfolio & credit risk" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Bad loans (NPL ratio)" })).toBeInTheDocument();
+    expect(screen.getByText(/NPL ratio = Loans 90\+ days past due/)).toBeInTheDocument();
+    expect(screen.getByText("$500,000")).toBeInTheDocument();
   });
 });

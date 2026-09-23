@@ -224,8 +224,10 @@ async function loadTasks() {
   return tasks.map((t) => ({ ...t, accountId: accountIds[t.vars.recordKey] }));
 }
 
-function TasksTable({ onSelect, selectedTaskId }) {
-  const { status, data, error, reload } = useAsync(loadTasks, []);
+function TasksTable({ onSelect, selectedTaskId, refreshKey }) {
+  // refreshKey: bumped by the parent after a task is completed, so the list drops the
+  // just-completed task instead of waiting for a full page reload.
+  const { status, data, error, reload } = useAsync(loadTasks, [refreshKey]);
   const [typeFilter, setTypeFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
 
@@ -282,10 +284,11 @@ function TasksTable({ onSelect, selectedTaskId }) {
 export default function Tasks() {
   const { user } = useAuth();
   const [selectedTask, setSelectedTask] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   async function selectTask(task) {
     try {
-      await claimTask(task.id, String(user.user_id));
+      await claimTask(task.id);
     } catch {
       /* claiming is best-effort for the POC - a task already claimed by someone else still opens for review */
     }
@@ -300,12 +303,19 @@ export default function Tasks() {
       actions={<AssumptionBadge items={GROUP_ASSUMPTION} label="How access works today" heading="Demo limitation: team-level access only" />}
     >
       <Section id="tasks" title="My tasks" description="Everything currently waiting for review, across every team.">
-        <TasksTable onSelect={selectTask} selectedTaskId={selectedTask?.id} />
+        <TasksTable onSelect={selectTask} selectedTaskId={selectedTask?.id} refreshKey={refreshKey} />
       </Section>
 
       {selectedTask && (
         <Modal title="Review task" onClose={() => setSelectedTask(null)}>
-          <ReviewPanel task={selectedTask} user={user} onDone={() => setSelectedTask(null)} />
+          <ReviewPanel
+            task={selectedTask}
+            user={user}
+            onDone={() => {
+              setSelectedTask(null);
+              setRefreshKey((k) => k + 1);
+            }}
+          />
         </Modal>
       )}
     </PageShell>

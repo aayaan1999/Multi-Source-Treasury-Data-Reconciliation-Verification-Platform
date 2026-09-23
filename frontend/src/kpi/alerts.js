@@ -5,7 +5,9 @@ import { statusOf } from "./status";
 // Words for the placeholder-assumption KPIs, so an alert never presents them as verified accounting.
 const ASSUMPTION_KEYS = new Set(["nim_pct", "cost_to_income_pct", "roe_pct"]);
 
-function sentence(kpi, value, status) {
+// Exported so the KPI detail page can quote the same "distance to the limit" phrasing the alert
+// strip uses, instead of a differently-worded duplicate.
+export function sentence(kpi, value, status) {
   const v = formatValue(kpi, value);
   const name = kpi.short;
   if (status === "good" || status === "none") return `${name} comfortable at ${v}`;
@@ -53,7 +55,7 @@ export function buildAlerts(row, { now = new Date(), maxLines = 5, minLines = 3,
   const toLine = ({ kpi, value, status }) => ({
     tone: status === "action" ? "critical" : status === "watch" ? "warning" : "good",
     key: kpi.key,
-    to: kpi.drill,
+    to: `/kpi/${kpi.key}`,
     text: sentence(kpi, value, status) + (ASSUMPTION_KEYS.has(kpi.key) ? " (assumption-based)" : ""),
   });
 
