@@ -93,16 +93,16 @@ export default function AuditOversight() {
       title="Audit & Oversight"
       subtitle="Risk-limit breaches, the permanent record of every review decision, and how the team is doing overall."
     >
+      <Section id="stats" title="Management view" description="How review is going: on-time vs late, how long reviews take, and how old the open breaches are.">
+        <ManagementStats />
+      </Section>
+
       <Section id="breaches" title="Breach alerts" description="Regulatory and risk limits that have been crossed. Each new breach is detected automatically and becomes a task on the Tasks tab; this section is the full history.">
         <BreachAlerts />
       </Section>
 
       <Section id="audit" title="Audit trail" description="A permanent record of every comment and decision made on the Tasks tab. Nothing here can be edited or deleted.">
         <AuditTrail />
-      </Section>
-
-      <Section id="stats" title="Management view" description="How review is going: on-time vs late, how long reviews take, and how old the open breaches are.">
-        <ManagementStats />
       </Section>
     </PageShell>
   );

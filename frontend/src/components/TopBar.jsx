@@ -10,9 +10,9 @@ const NAV = [
   ["/performance", "Branch & segment"],
   ["/scenario", "Scenario modelling"],
   ["/reports", "Regulatory reporting"],
+  ["/reconciliation", "Reconciliation"],
   ["/tasks", "Tasks"],
   ["/audit-oversight", "Audit & Oversight"],
-  ["/reconciliation", "Reconciliation"],
 ];
 
 const BANK_NAME = import.meta.env.VITE_BANK_NAME || "Bank X";

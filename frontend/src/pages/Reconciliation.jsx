@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import DataTable from "../components/DataTable";
+import Modal from "../components/Modal";
 import PageShell, { Loading, LoadError } from "../components/PageShell";
 import Section from "../components/Section";
 import StatBox from "../components/StatBox";
@@ -16,7 +17,8 @@ const MISMATCH_LABEL = {
   MISSING_IN_SOURCE: "Missing in source system",
 };
 
-/** Approve/Dismiss/Correct one open exception, with a note required for a correction. */
+/** Approve/Dismiss/Correct one open exception, with a note required for a correction. Rendered
+ * inside a Modal popup, matching the Tasks tab's review flow. */
 function ResolvePanel({ row, onDone, onClose }) {
   const [status, setStatus] = useState("");
   const [note, setNote] = useState("");
@@ -39,19 +41,22 @@ function ResolvePanel({ row, onDone, onClose }) {
   }
 
   return (
-    <Section
-      id="resolve"
-      title={`Resolve: ${row.entity_type} ${row.entity_id}${row.field_name ? ` — ${row.field_name}` : ""}`}
-      description={MISMATCH_LABEL[row.mismatch_type] || row.mismatch_type}
-      action={<button type="button" onClick={onClose} className="rounded-md border border-hair px-2.5 py-1.5 text-sm text-ink2 hover:border-accent/40 hover:bg-page hover:text-ink">Cancel</button>}
-    >
-      <div className="card rounded-xl border border-hair bg-surface p-4">
-        <dl className="mb-4 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
+    <>
+      <h3 className="text-sm font-semibold tracking-tight text-ink">
+        {row.entity_type} {row.entity_id}{row.field_name ? ` — ${row.field_name}` : ""}
+      </h3>
+      <p className="mt-0.5 text-sm text-ink2">{MISMATCH_LABEL[row.mismatch_type] || row.mismatch_type}</p>
+
+      <div className="card mb-5 mt-4 rounded-xl border border-hair bg-surface p-4">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
           <div><dt className="text-ink2">Source system value</dt><dd className="font-medium text-ink">{row.source_value ?? "—"}</dd></div>
           <div><dt className="text-ink2">Our recorded value</dt><dd className="font-medium text-ink">{row.canonical_value ?? "—"}</dd></div>
           <div><dt className="text-ink2">Detected</dt><dd className="font-medium text-ink">{fmtDateTime(row.detected_at)}</dd></div>
         </dl>
+      </div>
 
+      <h3 className="mb-2 text-sm font-medium text-ink2">Action</h3>
+      <div className="card rounded-xl border border-hair bg-surface p-4">
         <div className="mb-3 flex flex-wrap gap-2">
           {[["ACCEPTED", "Accept"], ["CORRECTED", "Correct"], ["DISMISSED", "Dismiss"]].map(([value, label]) => (
             <button
@@ -74,16 +79,26 @@ function ResolvePanel({ row, onDone, onClose }) {
           className="mb-3 w-full rounded-md border border-hair bg-surface px-3 py-1.5 text-sm text-ink"
         />
         {error && <p role="alert" className="mb-3 text-sm" style={{ color: "var(--critical)" }}>{error}</p>}
-        <button
-          type="button"
-          onClick={submit}
-          disabled={busy}
-          className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
-        >
-          {busy ? "Submitting…" : "Submit"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy}
+            className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
+          >
+            {busy ? "Submitting…" : "Submit decision"}
+          </button>
+        </div>
       </div>
-    </Section>
+    </>
   );
 }
 
@@ -155,14 +170,16 @@ export default function Reconciliation() {
       </Section>
 
       {selected && (
-        <ResolvePanel
-          row={selected}
-          onClose={() => setSelected(null)}
-          onDone={() => {
-            setSelected(null);
-            reload();
-          }}
-        />
+        <Modal title="Resolve exception" onClose={() => setSelected(null)}>
+          <ResolvePanel
+            row={selected}
+            onClose={() => setSelected(null)}
+            onDone={() => {
+              setSelected(null);
+              reload();
+            }}
+          />
+        </Modal>
       )}
     </PageShell>
   );
