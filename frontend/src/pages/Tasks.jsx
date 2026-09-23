@@ -31,7 +31,7 @@ function KeyValueTable({ row }) {
 }
 
 /** Full record detail + comment thread + Approve/Reject/Corrected actions for one selected task. */
-function ReviewPanel({ task, user, onDone }) {
+function ReviewPanel({ task, user, onDone, onClose }) {
   const { status, data, error, reload } = useAsync(async () => {
     const variables = await getVariables(task.id);
     const [detail, comments] = await Promise.all([
@@ -193,7 +193,7 @@ function ReviewPanel({ task, user, onDone }) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={onDone}
+            onClick={onClose}
             disabled={busy}
             className="rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink disabled:opacity-60"
           >
@@ -224,9 +224,11 @@ async function loadTasks() {
   return tasks.map((t) => ({ ...t, accountId: accountIds[t.vars.recordKey] }));
 }
 
-function TasksTable({ onSelect, selectedTaskId, refreshKey }) {
-  // refreshKey: bumped by the parent after a task is completed, so the list drops the
-  // just-completed task instead of waiting for a full page reload.
+function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
+  // refreshKey: bumped by the parent after a task is completed, so the list refetches in the
+  // background. completedIds hides a just-completed task at once rather than waiting on that
+  // refetch: a Tasklist search can take several seconds, and right after /complete it can still
+  // return the task (Tasklist's Elasticsearch index catches up asynchronously).
   const { status, data, error, reload } = useAsync(loadTasks, [refreshKey]);
   const [typeFilter, setTypeFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
@@ -234,11 +236,12 @@ function TasksTable({ onSelect, selectedTaskId, refreshKey }) {
   const filtered = useMemo(() => {
     if (!data) return [];
     return data.filter((t) => {
+      if (completedIds.has(t.id)) return false;
       if (typeFilter && t.vars.recordType !== typeFilter) return false;
       if (nameFilter && !t.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
       return true;
     });
-  }, [data, typeFilter, nameFilter]);
+  }, [data, typeFilter, nameFilter, completedIds]);
 
   if (status === "loading") return <Loading what="your tasks" />;
   if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
@@ -285,6 +288,7 @@ export default function Tasks() {
   const { user } = useAuth();
   const [selectedTask, setSelectedTask] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [completedIds, setCompletedIds] = useState(() => new Set());
 
   async function selectTask(task) {
     try {
@@ -303,7 +307,7 @@ export default function Tasks() {
       actions={<AssumptionBadge items={GROUP_ASSUMPTION} label="How access works today" heading="Demo limitation: team-level access only" />}
     >
       <Section id="tasks" title="My tasks" description="Everything currently waiting for review, across every team.">
-        <TasksTable onSelect={selectTask} selectedTaskId={selectedTask?.id} refreshKey={refreshKey} />
+        <TasksTable onSelect={selectTask} selectedTaskId={selectedTask?.id} refreshKey={refreshKey} completedIds={completedIds} />
       </Section>
 
       {selectedTask && (
@@ -311,7 +315,10 @@ export default function Tasks() {
           <ReviewPanel
             task={selectedTask}
             user={user}
+            onClose={() => setSelectedTask(null)}
             onDone={() => {
+              const doneId = selectedTask.id;
+              setCompletedIds((ids) => new Set(ids).add(doneId));
               setSelectedTask(null);
               setRefreshKey((k) => k + 1);
             }}
