@@ -1,0 +1,16 @@
+branch_id,name,region,staff_count,monthly_opex
+BN01,Beirut Central,Beirut,48,82266.21
+BN02,Beirut Hamra,Beirut,55,115005.86
+BN03,Beirut Ashrafieh,Beirut,22,87907.59
+BN04,Beirut Verdun,Beirut,14,195339.9
+BN05,Tripoli North,North,42,77387.77
+BN06,Zgharta,North,35,66356.54
+BN07,Koura,North,13,103727.59
+BN08,Zahle,Bekaa,40,180403.75
+BN09,Baalbek,Bekaa,43,99767.53
+BN10,Saida,South,49,200264.99
+BN11,Tyre,South,34,104088.12
+BN12,Nabatieh,South,45,115638.14
+BN13,Jounieh,Mount Lebanon,8,211761.47
+BN14,Baabda,Mount Lebanon,18,199627.88
+BN15,Aley,Mount Lebanon,29,115574.27
