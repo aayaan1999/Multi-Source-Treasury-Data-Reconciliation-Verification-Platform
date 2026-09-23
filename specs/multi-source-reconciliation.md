@@ -10,6 +10,21 @@ staging write in `load_to_postgres.py` used generic `format("jdbc")`, which this
 compute rejects (`UNSUPPORTED_DATA_SOURCE_WRITE`); switched to Databricks' bundled `postgresql`
 Spark format, which serverless does support. Mockaroo and Salesforce (section 3) remain spec-only —
 starting with Neon only was a deliberate scope decision, not a partial failure.
+**Second bug found and fixed (2026-09-23, code review against the live app database, not yet rerun
+on a cluster):** a later, larger pipeline run (313 accounts/200 customers, not the original 20/30
+sample) put `reconciliation_exceptions` at 1,886 rows in the app's Neon database — 469 entities each
+showing up with 4 byte-identical duplicate exception rows (confirmed by every row sharing the exact
+same `detected_at`). Root cause: `reconcile()` deduplicated `bronze_neon_*` (the source side) via
+`latest_per_entity()` before joining, but passed `customers_clean`/`accounts_clean` (the canonical
+side) into the full outer join raw — if that Delta table (no PK constraint, unlike Postgres) held
+duplicate rows per key upstream, the join fanned out N-for-N. Fixed by adding
+`dedupe_canonical()`/`dropDuplicates(key_col)` on the canonical side too, mirroring the source-side
+treatment. **Not yet verified by an actual rerun** — this closes the hole for future runs, but does
+**not** retroactively clean the 1,876 already-duplicated rows already sitting in the app's Neon
+database (the MERGE's insert-only key can't tell 4 identical existing rows apart from each other, so
+a rerun would just see the key as already-matched and insert nothing new either way). A one-time
+dedup of the existing rows is a separate, deliberate cleanup action against production data, not
+something this notebook does on its own.
 **New for:** closing the actual reconciliation gap in this project's own name. See "Are We Doing
 Reconciliation?" discussion in-session, 2026-09-22.
 **File:** `notebooks/multi_source_reconciliation.py` — written.
@@ -218,6 +233,10 @@ error the first time it actually ran the `load_postgres` task, reconciliation or
 - [x] `load_to_postgres.py` merges `reconciliation_exceptions` using the same insert-only,
       status-preserving rule as `flagged_transactions` — confirmed live: all 479 rows landed
       correctly (section 8)
+- [ ] `reconcile()` produces exactly one exception row per genuine disagreement, not N duplicates
+      when the canonical Delta table holds duplicate rows per key — fixed in code (`dedupe_canonical`)
+      2026-09-23 after finding 469 entities with 4 identical rows each in the live database; not yet
+      verified by an actual rerun
 
 The Neon slice is implemented and verified end-to-end. Mockaroo/Salesforce (section 3) and the
 review UI (section 7) remain open.

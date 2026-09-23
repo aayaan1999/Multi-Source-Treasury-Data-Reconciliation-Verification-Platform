@@ -79,6 +79,31 @@ bronze_accounts = latest_per_entity("bronze_neon_accounts", "account_id")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## One row per entity on the canonical side too
+# MAGIC
+# MAGIC `customers_clean`/`accounts_clean` are overwritten fresh each Notebook 2 run
+# MAGIC (`specs/notebook-02-bank-data-quality.md`), so there's no legitimate reason for more than one
+# MAGIC row per `customer_id`/`account_id` - but Delta tables carry no primary-key constraint, so a
+# MAGIC duplicate slipping in upstream (a re-ingested raw file, a bad join elsewhere) isn't caught
+# MAGIC anywhere before it gets here. Confirmed live (2026-09-23): without this, `reconcile()`'s full
+# MAGIC outer join fanned out N-for-N on every duplicated entity - 469 entities each produced 4
+# MAGIC identical exception rows, all with the same detected_at, because accounts_clean/customers_clean
+# MAGIC held 4 duplicate rows per key. dropDuplicates(key) takes one arbitrary row per key rather than
+# MAGIC picking "latest" (there's no ingested_at-equivalent column here to order by, and since a
+# MAGIC correctly-functioning pipeline never legitimately has two different rows for the same key,
+# MAGIC arbitrary-but-single is the right defensive behaviour, not a data-loss risk).
+
+# COMMAND ----------
+
+def dedupe_canonical(df, key_col: str):
+    return df.dropDuplicates([key_col])
+
+canonical_customers = dedupe_canonical(spark.table("customers_clean"), "customer_id")
+canonical_accounts = dedupe_canonical(spark.table("accounts_clean"), "account_id")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Compare one entity type
 # MAGIC
 # MAGIC Full outer join on the shared key, then one output row per compared field that differs
@@ -162,8 +187,8 @@ def reconcile(bronze_df, canonical_df, entity_type: str, key_col: str, fields: l
 customer_fields = [("name", False), ("segment", False), ("risk_rating", False), ("branch_id", False)]
 account_fields = [("type", False), ("currency", False), ("balance", True)]
 
-customer_exceptions = reconcile(bronze_customers, spark.table("customers_clean"), "customer", "customer_id", customer_fields)
-account_exceptions = reconcile(bronze_accounts, spark.table("accounts_clean"), "account", "account_id", account_fields)
+customer_exceptions = reconcile(bronze_customers, canonical_customers, "customer", "customer_id", customer_fields)
+account_exceptions = reconcile(bronze_accounts, canonical_accounts, "account", "account_id", account_fields)
 
 parts = [e for e in [customer_exceptions, account_exceptions] if e is not None]
 

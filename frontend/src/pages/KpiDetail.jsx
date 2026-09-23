@@ -103,7 +103,7 @@ export default function KpiDetail() {
             </span>
           </div>
 
-          {breakdown.assumptions_applied.length > 0 && (
+          {(breakdown.assumptions_applied ?? []).length > 0 && (
             <div className="mt-4">
               <AssumptionBadge items={breakdown.assumptions_applied} align="left" />
             </div>
@@ -122,7 +122,7 @@ export default function KpiDetail() {
 
           <h2 className="mt-5 text-sm font-medium text-ink2">What it's made of, as of {formatDay(breakdown.calculation_date)}</h2>
           <dl className="mt-2 divide-y divide-hair">
-            {breakdown.components.map((c) => (
+            {(breakdown.components ?? []).map((c) => (
               <div key={c.label} className="flex items-center justify-between gap-4 py-2 text-sm">
                 <dt className="text-ink2">{c.label}</dt>
                 <dd className="font-medium tabular-nums text-ink">{c.formatted}</dd>
@@ -130,7 +130,7 @@ export default function KpiDetail() {
             ))}
           </dl>
 
-          {breakdown.fx_notes.length > 0 && (
+          {(breakdown.fx_notes ?? []).length > 0 && (
             <ul className="mt-3 space-y-0.5 text-xs text-muted">
               {breakdown.fx_notes.map((n) => <li key={n}>{n}</li>)}
             </ul>
@@ -147,7 +147,7 @@ export default function KpiDetail() {
             <p className="mt-2 text-sm text-ink">{limitSentence(kpi, breakdown.value, kpiStatus)}.</p>
           )}
 
-          {breakdown.history_series.length > 1 && (
+          {(breakdown.history_series ?? []).length > 1 && (
             <>
               <h3 className="mt-4 text-sm font-medium text-ink2">Every data point behind this ratio</h3>
               <dl className="mt-2 divide-y divide-hair">
@@ -170,7 +170,7 @@ export default function KpiDetail() {
           ) : kpiStatus === "none" || kpiStatus === "unknown" ? (
             <p>No target is set for this KPI - it's tracked for trend/scale context, not against a limit.</p>
           ) : (
-            <p>{suggestionFor(key, breakdown.components) ?? "No formula-derived suggestion is available for this KPI."}</p>
+            <p>{suggestionFor(key, breakdown.components ?? []) ?? "No formula-derived suggestion is available for this KPI."}</p>
           )}
         </div>
       </Section>

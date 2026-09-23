@@ -102,12 +102,21 @@ function ResolvePanel({ row, onDone, onClose }) {
   );
 }
 
+const TYPE_TABS = [["", "All types"], ...Object.entries(MISMATCH_LABEL)];
+
 export default function Reconciliation() {
+  const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("OPEN");
   const [selected, setSelected] = useState(null);
   const { status, data, error, reload } = useAsync(
-    () => Promise.all([api.reconciliationExceptions({ status: statusFilter || undefined }), api.reconciliationSummary()]),
-    [statusFilter],
+    () => Promise.all([
+      // limit: 5000 - a filtered tab/status combo can be a couple thousand rows (e.g. MISSING_IN_SOURCE
+      // alone); DataTable already paginates whatever it receives 10/page, so this just makes sure that
+      // full filtered set actually arrives instead of being cut off at the API's old 200-row default.
+      api.reconciliationExceptions({ status: statusFilter || undefined, mismatch_type: typeFilter || undefined, limit: 5000 }),
+      api.reconciliationSummary(),
+    ]),
+    [typeFilter, statusFilter],
   );
 
   if (status === "loading") return <PageShell title="Reconciliation"><Loading what="reconciliation exceptions" /></PageShell>;
@@ -116,6 +125,12 @@ export default function Reconciliation() {
   const [rows, summary] = data;
   const openCount = summary.by_status.find((s) => s.status === "OPEN")?.count ?? 0;
   const resolvedCount = summary.by_status.filter((s) => s.status !== "OPEN").reduce((n, s) => n + s.count, 0);
+  const openCountByType = Object.fromEntries(summary.by_mismatch_type.map((m) => [m.mismatch_type, m.count]));
+
+  function selectType(value) {
+    setTypeFilter(value);
+    setSelected(null);
+  }
 
   return (
     <PageShell
@@ -130,6 +145,26 @@ export default function Reconciliation() {
           <StatBox key={m.mismatch_type} label={MISMATCH_LABEL[m.mismatch_type] || m.mismatch_type} value={m.count} hint="Open, by type" />
         ))}
       </ul>
+
+      <div role="tablist" aria-label="Filter by mismatch type" className="mt-8 flex flex-wrap gap-1 border-b border-hair pb-2.5">
+        {TYPE_TABS.map(([value, label]) => (
+          <button
+            key={value || "all"}
+            type="button"
+            role="tab"
+            aria-selected={typeFilter === value}
+            onClick={() => selectType(value)}
+            className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-all ${
+              typeFilter === value
+                ? "bg-accent font-medium text-white shadow-[0_4px_12px_-2px_var(--series-1-soft)]"
+                : "text-ink2 hover:bg-page hover:text-ink"
+            }`}
+          >
+            {label}
+            {value && openCountByType[value] > 0 && <span className="ml-1.5 opacity-80">({openCountByType[value]})</span>}
+          </button>
+        ))}
+      </div>
 
       <Section
         id="exceptions"

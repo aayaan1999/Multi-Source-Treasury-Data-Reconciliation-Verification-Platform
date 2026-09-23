@@ -39,7 +39,11 @@ def list_exceptions(
     status: Optional[str] = None,
     entity_type: Optional[str] = None,
     mismatch_type: Optional[str] = None,
-    limit: int = Query(200, le=1000),
+    # Raised from the original 200/1000 cap: MISSING_IN_SOURCE alone currently has ~1,862 open rows,
+    # and DataTable already paginates whatever it's given client-side (10/page) - so the fix is
+    # letting a filtered fetch actually return everything that matches, not adding server-side
+    # offset pagination on top of that (this table is thousands of rows, not millions).
+    limit: int = Query(200, le=5000),
 ):
     clauses, params = [], []
     for col, val in (("status", status), ("entity_type", entity_type), ("mismatch_type", mismatch_type)):
