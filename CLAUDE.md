@@ -4,6 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project State
 
+**Project documents live in `project-docs/`** — the source-of-truth doc, the plans
+(`3-WEEK-POC-PLAN.md`, `PLATFORM-BUILD-PLAN.md`, `7-DAY-PLAN.md`), `PREREQUISITES.md`,
+`DATABRICKS-SETUP.md`, `DEPLOYMENT.md`, `bank-x poc-brief.md` and `prompt.md`. Wherever this file,
+a spec, or a code comment names one of those files by bare filename, it means the copy in
+`project-docs/`. Per-feature specs stay in `specs/`.
+
 **`Middle East bank data cleaning and reporting.md` is the source of truth for this entire
 project** — the application layer (six screens, database schema) *and*, as of the Notebook 1-2
 rewrite, the Databricks data layer too. `bank-x poc-brief.md` is retained as **historical
@@ -51,8 +57,9 @@ and the FastAPI backend (`backend/`: login, health, read endpoints for Screens 1
 scenarios — see `specs/fastapi-backend.md`) are built and tested locally, and `frontend/` (React + Vite + Tailwind +
 Recharts) has login and **Screens 1-5** (see `specs/screen-0*.md`). Screens 2-5 have backend (pytest) and frontend
 (vitest) tests but are not yet verified in a browser against a bank-scale dataset. Screen 6 and Camunda are not built
-(`/workflow` is a placeholder). Hosting plan: Netlify (frontend) + Render (backend) + Neon (database), configured in `netlify.toml` / `render.yaml`
-and described in `DEPLOYMENT.md` (config verified locally; not yet deployed). Frontend commands: `cd frontend; npm run dev` / `npm test`
+(`/workflow` is a placeholder). Hosting: the app runs locally against Neon; the
+Netlify/Render cloud-hosting config (`netlify.toml` / `render.yaml`) was removed after commit `146d0ea` —
+`DEPLOYMENT.md` still describes that path, restore the files from Git if it's revived. Frontend commands: `cd frontend; npm run dev` / `npm test`
 (always `npm run`, never `npx vite` — the folder name contains an `&`, which breaks Windows `.cmd` shims).
 
 ## What This Project Is

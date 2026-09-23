@@ -1,5 +1,8 @@
 # Deploying: Netlify (frontend) + Render (backend)
 
+> **Not active.** `netlify.toml` and `render.yaml` have been removed from the repo; the app currently
+> runs locally only. To use this guide again, restore them with `git checkout 146d0ea -- netlify.toml render.yaml`.
+
 The pieces and where they live:
 
 | Piece | Host | Config |
