@@ -122,6 +122,7 @@ export default function Portfolio() {
   return (
     <PageShell
       title="Portfolio & credit risk"
+      eyebrow="Loan book intelligence"
       subtitle="Where the loan book is, and how much of it is going bad. Every figure comes from the nightly precomputed tables."
       asOf={asOf}
       actions={<ExportButton label="Export to Excel" onExport={api.exportPortfolio} />}

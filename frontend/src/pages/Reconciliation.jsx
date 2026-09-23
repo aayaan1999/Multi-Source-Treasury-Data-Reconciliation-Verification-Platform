@@ -120,6 +120,7 @@ export default function Reconciliation() {
   return (
     <PageShell
       title="Reconciliation"
+      eyebrow="Multi-source reconciliation"
       subtitle="Differences found between our own records and the bank's core system feed. Review each one and decide whether to accept it, correct our data, or dismiss it."
     >
       <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Reconciliation summary">

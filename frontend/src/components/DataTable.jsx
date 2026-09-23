@@ -83,7 +83,10 @@ export default function DataTable({ columns, rows, rowKey, rowFlag, onRowClick, 
                             content
                           )}
                           {flag && (
-                            <span className="inline-flex items-center gap-1 rounded border border-hair px-1.5 py-0.5 text-xs text-ink2">
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                              style={{ background: `color-mix(in srgb, ${FLAG_COLOR[flag.kind]} 14%, transparent)`, color: FLAG_COLOR[flag.kind] }}
+                            >
                               <Icon color={FLAG_COLOR[flag.kind]} />
                               {flag.label}
                             </span>

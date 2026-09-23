@@ -121,7 +121,7 @@ export default function ReportView() {
   const noPrior = data.comparison.every((c) => c.prior === null || c.prior === undefined);
 
   return (
-    <PageShell title={title} subtitle={`${report.frequency} return · ${statusLabel(report.status)} · due ${report.due_date}`} actions={<div className="flex flex-col items-end gap-2">{back}{exports}</div>}>
+    <PageShell title={title} eyebrow="Regulatory intelligence" subtitle={`${report.frequency} return · ${statusLabel(report.status)} · due ${report.due_date}`} actions={<div className="flex flex-col items-end gap-2">{back}{exports}</div>}>
       {data.blocked && (
         <div role="alert" className="card mt-4 rounded-xl border p-3 text-sm text-ink" style={{ borderColor: "var(--critical)", background: "color-mix(in srgb, var(--critical) 8%, transparent)" }}>
           <CrossIcon color="var(--critical)" /> <strong>This return cannot be approved or submitted</strong> until the failed checks below are fixed.

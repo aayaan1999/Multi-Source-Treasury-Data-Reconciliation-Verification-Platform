@@ -2,13 +2,14 @@ import { useState } from "react";
 import TopBar from "./TopBar";
 
 /** Top bar + page title + content column shared by every screen after the first. */
-export default function PageShell({ title, subtitle, asOf, actions, children }) {
+export default function PageShell({ title, eyebrow, subtitle, asOf, actions, children }) {
   return (
     <>
       <TopBar asOf={asOf} />
       <main className="mx-auto max-w-7xl px-4 pb-16 pt-7">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
+            {eyebrow && <span className="kicker mb-2">{eyebrow}</span>}
             <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
             {subtitle && <p className="mt-1 max-w-3xl text-sm text-ink2">{subtitle}</p>}
           </div>

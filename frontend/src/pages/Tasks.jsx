@@ -295,6 +295,7 @@ export default function Tasks() {
   return (
     <PageShell
       title="Tasks"
+      eyebrow="Review queue"
       subtitle="Review and act on everything the bank's checks have flagged — fraud alerts, data-quality issues, and risk-limit breaches all land here."
       actions={<AssumptionBadge items={GROUP_ASSUMPTION} label="How access works today" heading="Demo limitation: team-level access only" />}
     >

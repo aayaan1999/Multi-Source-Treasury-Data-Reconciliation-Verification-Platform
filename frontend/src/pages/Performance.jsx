@@ -109,6 +109,7 @@ export default function Performance() {
   return (
     <PageShell
       title="Branch & segment performance"
+      eyebrow="Performance intelligence"
       subtitle="Who in the bank is making money and who is losing it. Cost here is direct branch cost only."
       asOf={asOf}
       actions={<ExportButton label="Export to Excel" onExport={api.exportPerformance} />}

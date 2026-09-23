@@ -138,9 +138,10 @@ export default function Dashboard() {
     <>
       <TopBar asOf={row.calculation_date} dates={dates} selected={row.calculation_date} onSelect={setSelected} />
       <main className="mx-auto max-w-7xl px-4 pb-16 pt-6">
-        <h1 className="sr-only">Executive summary</h1>
+        <span className="kicker mb-2">Executive overview</span>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Executive summary</h1>
 
-        <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Key indicators">
+        <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Key indicators">
           {KPIS.map((kpi) => (
             <KpiTile
               key={kpi.key}

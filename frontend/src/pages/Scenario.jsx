@@ -340,7 +340,7 @@ export default function Scenario() {
     );
   }
   return (
-    <PageShell title={title} subtitle={subtitle} asOf={data.calculation_date}>
+    <PageShell title={title} eyebrow="Scenario engine" subtitle={subtitle} asOf={data.calculation_date}>
       <ScenarioBody snapshot={data} />
     </PageShell>
   );

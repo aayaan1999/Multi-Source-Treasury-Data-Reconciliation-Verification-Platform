@@ -39,7 +39,7 @@ export default function Reports() {
   ];
 
   return (
-    <PageShell title={title} subtitle={subtitle}>
+    <PageShell title={title} eyebrow="Regulatory intelligence" subtitle={subtitle}>
       <ul className="mt-6 grid grid-cols-2 gap-5 lg:grid-cols-4" aria-label="Reporting summary">
         <StatBox label="Due this month" value={counts.dueThisMonth} hint="Reports with a due date this month" />
         <StatBox label="Submitted" value={counts.submitted} hint="Sent to the regulator" />

@@ -53,7 +53,10 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   return (
-    <header className="sticky top-0 z-20 border-b border-hair bg-surface/90 backdrop-blur supports-[backdrop-filter]:bg-surface/75">
+    <header
+      className="sticky top-0 z-20 border-b border-hair backdrop-blur"
+      style={{ background: "linear-gradient(180deg, color-mix(in srgb, var(--series-1) 5%, var(--surface-1)) 0%, var(--surface-1) 100%)" }}
+    >
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3">
         <div className="flex items-center gap-3">
           <svg viewBox="0 0 32 32" className="h-8 w-8 shrink-0" aria-hidden>
@@ -119,8 +122,10 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
             to={to}
             end={end}
             className={({ isActive }) =>
-              `whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-colors ${
-                isActive ? "bg-accent font-medium text-white shadow-sm" : "text-ink2 hover:bg-page hover:text-ink"
+              `whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-all ${
+                isActive
+                  ? "bg-accent font-medium text-white shadow-[0_4px_12px_-2px_var(--series-1-soft)]"
+                  : "text-ink2 hover:bg-page hover:text-ink"
               }`
             }
           >

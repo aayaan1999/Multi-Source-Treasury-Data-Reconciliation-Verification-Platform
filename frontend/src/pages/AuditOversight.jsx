@@ -91,6 +91,7 @@ export default function AuditOversight() {
   return (
     <PageShell
       title="Audit & Oversight"
+      eyebrow="Governance & oversight"
       subtitle="Risk-limit breaches, the permanent record of every review decision, and how the team is doing overall."
     >
       <Section id="stats" title="Management view" description="How review is going: on-time vs late, how long reviews take, and how old the open breaches are.">
