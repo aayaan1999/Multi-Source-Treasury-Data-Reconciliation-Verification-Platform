@@ -55,7 +55,7 @@ A process instance is created **per flagged record** (one per `data_quality_exce
 | `sourceTable` | `data_quality_exceptions.source_table` or `"transactions"` | |
 | `recordKey` | `data_quality_exceptions.record_key` or `flagged_transactions.transaction_id` | the join key back to Postgres |
 | `flagLabel` | e.g. `MISSING_RISK_RATING`, `LARGE_AMOUNT` | |
-| `flagType` | `"FRAUD"` or `"FAULT"` (data-quality records are always treated as `"FAULT"`) | input to `flagCategory` derivation below |
+| `flagType` | `"THRESHOLD"`, `"SUSPICIOUS"` or `"OPERATIONAL"` from `flagged_transactions` (was `"FRAUD"`/`"FAULT"` before FRD-1, 2026-09-24); data-quality records and breaches are always `"FAULT"` | input to `flagCategory` derivation below |
 | `flagCategory` | derived: `"FRAUD"` / `"COMPLIANCE"` / `"OPERATIONS"` — see the flow section for the derivation rule | drives the gateway |
 | `description` | human-readable description | shown in the task detail |
 
@@ -85,16 +85,20 @@ A process instance is created **per flagged record** (one per `data_quality_exce
 
 - **`flagCategory` derivation (resolves the 3-way routing gap with a documented assumption, per
   the decision to make all 6 screens fit the 3-week timeline rather than leave this blocked):**
-  - `flagType = "FRAUD"` (from `flagged_transactions`) → **`flagCategory = "FRAUD"`** →
-    `fraud-investigation` candidate group
+  - `flagType = "SUSPICIOUS"` (from `flagged_transactions`: `VELOCITY_BREACH`,
+    `STRUCTURING_PATTERN`) → **`flagCategory = "FRAUD"`** → `fraud-investigation` candidate group
+  - `flagType = "THRESHOLD"` (`LARGE_AMOUNT`) → **`flagCategory = "COMPLIANCE"`** → `compliance`
+    candidate group: crossing an amount limit is a reporting event, not a sign of fraud (client
+    feedback 2026-09-23, FRD-1 in `project-docs/CLIENT-FEEDBACK-BACKLOG.md`). Before 2026-09-24 all
+    three of these rules were `"FRAUD"` and went to `fraud-investigation`.
   - `flagType = "FAULT"` **and** `sourceTable` in `{capital_positions, liquidity_daily, fx_rates}`
     → **`flagCategory = "COMPLIANCE"`** → `compliance` candidate group. Rationale: these three
     tables feed the KPIs regulators actually check (CAR from `capital_positions`, LCR from
     `liquidity_daily`); a data-quality issue there is a regulatory-reporting-integrity concern,
     not a routine data-entry fix.
-  - `flagType = "FAULT"` and `sourceTable` in `{customers, accounts, loans, branches,
-    transactions}` (i.e. `DUPLICATE_TRANSACTION` from Notebook 5, or any Notebook 2 structural
-    check) → **`flagCategory = "OPERATIONS"`** → `operations` candidate group
+  - `flagType = "OPERATIONAL"` (`DUPLICATE_TRANSACTION` from Notebook 5), or `"FAULT"` with
+    `sourceTable` in `{customers, accounts, loans, branches, transactions}` (any Notebook 2
+    structural check) → **`flagCategory = "OPERATIONS"`** → `operations` candidate group
   - **This is an assumption, not a specification the user provided** — the original process
     description names all three groups but never defines what makes something a "compliance
     issue." Confirm this table-based split with whoever owns the process requirements; it's a

@@ -10,7 +10,26 @@ Eight points raised by the bank after the demo walkthrough, each broken into bui
   existing NIM / cost-to-income / ROE assumptions.
 - Status: `todo` / `in progress` / `done` / `blocked (bank)`
 
-**Suggested order:** 5 + 6 → 8 → 1 → 4 → 2 → 3 → 7 (reasoning at the end).
+**Suggested order:** 5 + 6 → 8 → 1 → 7 → 4 → 2 → 3 (reasoning at the end; 7 moved up on
+2026-09-24 when the chatbot became rule-based and stopped waiting on external-AI approval).
+
+**Open scope question:** these tasks go beyond `3-WEEK-POC-PLAN.md`, the plan currently being
+executed. Decide whether they replace its remaining work or follow it before starting Phase 1.
+
+## Rules for every task (from `CLAUDE.md`)
+
+- [ ] Spec in `specs/` first, with a hand-traced acceptance/traceability table against the sample
+      data; anything not run on a live cluster or in a browser is marked unverified.
+- [ ] Placeholder values carry a UI footnote and are confirmed with the source-of-truth doc owner.
+- [ ] New columns/tables → a new file in `db/migrations/`, applied to Neon with `db/apply_migration.py`.
+- [ ] Notebook outputs in Delta, at the right medallion layer, with inline comments on each step;
+      notebooks edited in Databricks, not locally at the same time.
+- [ ] `flagged_transactions` / `reconciliation_exceptions` keep reviewer-set status on rerun;
+      `poll_worker.py` stays idempotent (never starts the same process twice).
+- [ ] Screens read precomputed summary tables (~2 s load target), never raw transactions on page load.
+- [ ] BPMN/form changes redeployed with `camunda/bridge/deploy.py`; the Tasks screen keeps using Tasklist.
+- [ ] `audit_log` stays insert-only; bulk actions write one row per record.
+- [ ] pytest / vitest for backend and frontend changes; backlog status updated.
 
 ---
 
@@ -103,7 +122,7 @@ structuring = **genuine AML red flag**; duplicate = **operational fault**.
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| FRD-1 | Reclassify flags into **THRESHOLD** (reporting) / **SUSPICIOUS** (AML or fraud pattern) / **OPERATIONAL**; update routing + UI labels | S | - | todo |
+| FRD-1 | Reclassify flags into **THRESHOLD** (reporting) / **SUSPICIOUS** (AML or fraud pattern) / **OPERATIONAL**; update routing + UI labels | S | - | in progress: code + tests done 2026-09-24; migration 006 not yet applied to Neon, Notebook 5 not yet run on the cluster |
 | FRD-2 | New suspicious patterns possible with current data: dormant account reactivated; pass-through (in and out same day); activity too big for segment; many round amounts; splitting across a customer's accounts | M | - | todo |
 | FRD-3 | Thresholds and typologies from config, not hard-coded constants | S | **Bank's AML typologies + reporting thresholds** | todo |
 | FRD-4 | Real fraud signals (account takeover, new device/IP, new beneficiary) - future Notebook 7 | L | **Device/login/beneficiary data** | blocked (bank) |
@@ -135,18 +154,23 @@ transaction hit by two rules = two tasks; no priority, severity or due date; rec
 
 > A chat box in Reports: "Give me the report for X, Y, Z" → a table.
 
-**Today:** nothing. No AI model is connected. Reports has fixed views with PDF/Excel export and an
-insert-only `audit_log`.
+**Today:** nothing. Reports has fixed views with PDF/Excel export and an insert-only `audit_log`.
+
+**Decision (2026-09-24): rule-based, no AI.** The chatbot only has to fill approved reports, so
+fixed rules parse the question; nothing leaves the bank and no external-AI approval is needed. A
+controlled AI parser can replace CHT-2 later without touching CHT-1/3/4 (the earlier AI design's
+number-checking guardrail is dropped: there is no model text to check). Proposal - confirm with the
+bank and the source-of-truth doc owner.
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| CHT-1 | Catalogue of approved, read-only query "tools" (KPIs, report lines, portfolio/branch aggregates) with allowed filters | M | Which reports it must answer | todo |
-| CHT-2 | Backend endpoint: the model only picks a tool + filters; the table is filled **straight from the query result**, never from model text; read-only DB role | L | **Approval to send data to an external AI service** | blocked (bank) |
-| CHT-3 | Answer panel: table, "data used / filters used", Excel export (reuse existing export) | M | - | todo |
-| CHT-4 | Every question, tool, filters and row count written to `audit_log` | S | - | todo |
-| CHT-5 | Guardrail: numbers in the model's text checked against the table; "can't answer from approved data" instead of guessing | M | - | todo |
+| CHT-1 | Catalogue of approved, read-only queries (KPIs, report lines, portfolio/branch aggregates) with allowed filters; reads precomputed summary tables only | M | Which reports it must answer | todo |
+| CHT-2 | Rule-based parser: synonym list ("NPL" = "bad loans"), branch/product/customer names from the database, date and currency phrases, fuzzy matching for typos; read-only DB role | M | - | todo |
+| CHT-3 | Answer panel on Reports: table, "filters used", Excel export (reuse existing export); unclear or missing filter → follow-up question with buttons, never a guess | M | - | todo |
+| CHT-4 | Every question, matched query, filters and row count written to `audit_log` | S | - | todo |
+| CHT-5 | Test set of sample questions, each with its expected query + filters | S | - | todo |
 
-**Done when:** a question returns an exportable table whose every number came from the database, with its sources shown and the request audited.
+**Done when:** a typed question returns an exportable table whose every number came from the database, with the filters shown and the request audited; anything it can't parse gets a follow-up question.
 
 ---
 
@@ -174,9 +198,9 @@ breach creates a Compliance task. Two **placeholder** limits set 2026-09-23: cap
    right away; no bank input needed to start.
 2. **8** - small, and the structure can go in with placeholders.
 3. **1** - builds on 6's case grouping for reconciliation tasks.
-4. **4 → 2 → 3** - each needs a bank input (official FX source, source-system code lists,
+4. **7** - rule-based, so nothing blocks it; only the report list is needed from the bank.
+5. **4 → 2 → 3** - each needs a bank input (official FX source, source-system code lists,
    registration IDs) to be real.
-5. **7** - largest, and gated on the bank's decision about external AI.
 
 ## Waiting on the bank (collected)
 
@@ -187,4 +211,4 @@ breach creates a Compliance task. Two **placeholder** limits set 2026-09-23: cap
 - Official FX source per currency; which LBP rate per report (FX-2/3)
 - Source-system list and transaction-code lists (SRC-4)
 - A reliable company identifier (DUP-2)
-- Approval to use an external AI service; list of reports for chat (CHT-1/2)
+- List of reports and filters the chatbot must cover (CHT-1)

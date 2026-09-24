@@ -58,6 +58,19 @@ VELOCITY_BREACH_COUNT = 2  # more than this many same-day txns on one account
 STRUCTURING_LOWER_BOUND = 8_500
 STRUCTURING_UPPER_BOUND = 10_000  # exclusive
 
+# What kind of alert each rule raises (client feedback 2026-09-23, FRD-1: a large amount alone is
+# not fraud). This is the value written to `flag_type`, and the Camunda bridge routes on it:
+#   THRESHOLD   - a reporting event: the amount crossed a limit, nothing more is implied
+#   SUSPICIOUS  - a pattern worth an investigator's judgment (unusual activity, AML red flag)
+#   OPERATIONAL - a processing fault to correct, not a customer-behaviour concern
+# Replaces the earlier FRAUD / FAULT split, where three of the four rules were called FRAUD.
+FLAG_TYPE_BY_LABEL = {
+    "LARGE_AMOUNT": "THRESHOLD",
+    "VELOCITY_BREACH": "SUSPICIOUS",
+    "STRUCTURING_PATTERN": "SUSPICIOUS",
+    "DUPLICATE_TRANSACTION": "OPERATIONAL",
+}
+
 NOTEBOOK_RUN_ID = str(uuid.uuid4())
 
 # COMMAND ----------
@@ -87,14 +100,14 @@ transactions_usd = transactions_clean.withColumn(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Rule 1 — `LARGE_AMOUNT` (FRAUD)
+# MAGIC ## Rule 1 — `LARGE_AMOUNT` (THRESHOLD)
 
 # COMMAND ----------
 
 large_amount_flags = transactions_usd.filter(F.col("amount_usd") > LARGE_AMOUNT_THRESHOLD_USD).select(
     "transaction_id",
     F.lit("LARGE_AMOUNT").alias("flag_label"),
-    F.lit("FRAUD").alias("flag_type"),
+    F.lit(FLAG_TYPE_BY_LABEL["LARGE_AMOUNT"]).alias("flag_type"),
     F.concat(
         F.lit("amount "), F.format_number("amount_usd", 2), F.lit(" USD exceeds "),
         F.lit(str(LARGE_AMOUNT_THRESHOLD_USD)), F.lit(" USD threshold"),
@@ -104,7 +117,7 @@ large_amount_flags = transactions_usd.filter(F.col("amount_usd") > LARGE_AMOUNT_
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Rule 2 — `VELOCITY_BREACH` (FRAUD)
+# MAGIC ## Rule 2 — `VELOCITY_BREACH` (SUSPICIOUS)
 # MAGIC
 # MAGIC More than `VELOCITY_BREACH_COUNT` transactions for the same account on the same date.
 
@@ -116,7 +129,7 @@ txn_with_velocity = transactions_clean.withColumn("same_day_count", F.count("*")
 velocity_flags = txn_with_velocity.filter(F.col("same_day_count") > VELOCITY_BREACH_COUNT).select(
     "transaction_id",
     F.lit("VELOCITY_BREACH").alias("flag_label"),
-    F.lit("FRAUD").alias("flag_type"),
+    F.lit(FLAG_TYPE_BY_LABEL["VELOCITY_BREACH"]).alias("flag_type"),
     F.concat(
         F.col("same_day_count").cast("string"),
         F.lit(" transactions for account "), F.col("account_id"),
@@ -128,7 +141,7 @@ velocity_flags = txn_with_velocity.filter(F.col("same_day_count") > VELOCITY_BRE
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Rule 3 — `STRUCTURING_PATTERN` (FRAUD)
+# MAGIC ## Rule 3 — `STRUCTURING_PATTERN` (SUSPICIOUS)
 # MAGIC
 # MAGIC Native-currency amount just under a round reporting threshold, with 2+ such transactions on
 # MAGIC the same account/date — a single near-threshold transaction alone isn't structuring, the
@@ -151,7 +164,7 @@ structuring_flags = in_band_with_count.filter(
 ).select(
     "transaction_id",
     F.lit("STRUCTURING_PATTERN").alias("flag_label"),
-    F.lit("FRAUD").alias("flag_type"),
+    F.lit(FLAG_TYPE_BY_LABEL["STRUCTURING_PATTERN"]).alias("flag_type"),
     F.concat(
         F.lit("amount "), F.abs(F.col("amount")).cast("string"), F.lit(" "), F.col("currency"),
         F.lit(" is in the "), F.lit(str(STRUCTURING_LOWER_BOUND)), F.lit("-"), F.lit(str(STRUCTURING_UPPER_BOUND)),
@@ -163,7 +176,7 @@ structuring_flags = in_band_with_count.filter(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Rule 4 — `DUPLICATE_TRANSACTION` (FAULT)
+# MAGIC ## Rule 4 — `DUPLICATE_TRANSACTION` (OPERATIONAL)
 # MAGIC
 # MAGIC Self-join on `(account_id, amount, currency, type, date)` excluding self-matches — every
 # MAGIC row in a duplicate group gets flagged, not just the second one, since there's no reliable
@@ -185,7 +198,7 @@ duplicate_pairs = left.join(
 duplicate_flags = duplicate_pairs.select(
     "transaction_id",
     F.lit("DUPLICATE_TRANSACTION").alias("flag_label"),
-    F.lit("FAULT").alias("flag_type"),
+    F.lit(FLAG_TYPE_BY_LABEL["DUPLICATE_TRANSACTION"]).alias("flag_type"),
     F.concat(F.lit("matches transaction "), F.col("matched_transaction_id"), F.lit(" on account_id/amount/currency/type/date")).alias("description"),
 ).dropDuplicates(["transaction_id"])
 
@@ -212,6 +225,12 @@ all_flags = (
 
 if spark.catalog.tableExists("flagged_transactions"):
     target = DeltaTable.forName(spark, "flagged_transactions")
+    # Bring rows written before the FRAUD/FAULT -> THRESHOLD/SUSPICIOUS/OPERATIONAL relabel in line
+    # with FLAG_TYPE_BY_LABEL. Only `flag_type` changes; `status` (the reviewer's decision) is left
+    # untouched. After the first run this matches no rows, so it is safe on every rerun. Needed
+    # because the Postgres load stages every Delta row and Postgres' CHECK rejects the old values.
+    flag_type_expr = F.create_map([F.lit(x) for pair in FLAG_TYPE_BY_LABEL.items() for x in pair])[F.col("flag_label")]
+    target.update(condition=F.col("flag_type") != flag_type_expr, set={"flag_type": flag_type_expr})
     (
         target.alias("t")
         .merge(all_flags.alias("s"), "t.transaction_id = s.transaction_id AND t.flag_label = s.flag_label")

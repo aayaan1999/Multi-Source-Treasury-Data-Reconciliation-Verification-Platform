@@ -20,8 +20,8 @@ from _env import zeebe_address
 SAMPLE_VARS = {
     "FRAUD": {
         "recordType": "fraud", "sourceTable": "transactions", "recordKey": "TEST-TXN-001",
-        "flagLabel": "LARGE_AMOUNT", "flagType": "FRAUD", "flagCategory": "FRAUD",
-        "description": "Manual test instance - large-amount fraud flag",
+        "flagLabel": "STRUCTURING_PATTERN", "flagType": "SUSPICIOUS", "flagCategory": "FRAUD",
+        "description": "Manual test instance - suspicious structuring flag",
     },
     "COMPLIANCE": {
         "recordType": "data_quality", "sourceTable": "capital_positions", "recordKey": "TEST-CAP-001",

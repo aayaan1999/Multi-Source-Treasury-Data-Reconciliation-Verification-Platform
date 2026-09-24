@@ -100,7 +100,7 @@ stage({
     "data_quality_exceptions": (DQ, [("customers", "C9", "MISSING_RISK_RATING", "risk_rating is missing"),
                                      ("loans", "L9", "INVALID_STAGE", "stage 5"),
                                      ("capital_positions", "(no key #1)", "MISSING_MONTH", "month is missing")]),
-    "flagged_transactions": (FLAG, [("T1", "LARGE_AMOUNT", "FRAUD", "60000 USD", "PENDING_REVIEW", ts)]),
+    "flagged_transactions": (FLAG, [("T1", "LARGE_AMOUNT", "THRESHOLD", "60000 USD", "PENDING_REVIEW", ts)]),
     "fx_rate_usage_log": (FXLOG, [("run1", "USD/LBP", 89500.0, "2026-09-21T08:00:00", "kpi", ts)]),
 })
 w = merge()
@@ -128,8 +128,8 @@ stage({
     "kpi_daily_summary": (KPI, [(d2, 13.0, ["x"])]),
     "data_quality_exceptions": (DQ, [("customers", "C9", "MISSING_RISK_RATING", "updated text"),
                                      ("accounts", "A9", "NEGATIVE_BALANCE", "new one")]),
-    "flagged_transactions": (FLAG, [("T1", "LARGE_AMOUNT", "FRAUD", "60000 USD", "PENDING_REVIEW", ts),
-                                    ("T2", "DUPLICATE_TRANSACTION", "FAULT", "dup", "PENDING_REVIEW", ts)]),
+    "flagged_transactions": (FLAG, [("T1", "LARGE_AMOUNT", "THRESHOLD", "60000 USD", "PENDING_REVIEW", ts),
+                                    ("T2", "DUPLICATE_TRANSACTION", "OPERATIONAL", "dup", "PENDING_REVIEW", ts)]),
 })
 w = merge()
 check("load 2: reviewed status NOT overwritten",

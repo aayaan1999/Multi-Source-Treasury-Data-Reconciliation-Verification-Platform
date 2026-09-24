@@ -13,8 +13,8 @@ fault/fraud type and status.")
 ## 1. Objective
 
 Run fraud- and business-rule checks against `transactions_clean` (Notebook 2's Silver-layer
-output) and produce `flagged_transactions`, a table with a **type** (`FRAUD` vs `FAULT`) and a
-mutable **status** field — the input Camunda's process needs to create and route review tasks (see
+output) and produce `flagged_transactions`, a table with a **type** (`THRESHOLD` / `SUSPICIOUS` / `OPERATIONAL` —
+see section 3) and a mutable **status** field — the input Camunda's process needs to create and route review tasks (see
 `specs/camunda-bpmn-process-design.md`). In medallion terms, `flagged_transactions` sits between
 Silver and Gold: it's an enrichment of Silver-layer `transactions_clean` (not a re-validation of
 structure — that's Notebook 2's job), and it in turn feeds toward Gold consumers (Screen 6's task
@@ -40,10 +40,25 @@ section 4.
 
 | Flag | Type | Condition | Threshold (POC value, configurable) |
 |---|---|---|---|
-| `LARGE_AMOUNT` | FRAUD | `ABS(amount)` (USD-converted) exceeds a threshold | 50,000 USD |
-| `VELOCITY_BREACH` | FRAUD | More than 2 transactions for the same `account_id` on the same `date` | count > 2 |
-| `STRUCTURING_PATTERN` | FRAUD | `ABS(amount)` (native currency) falls in the band just under a round reporting threshold, for an account with 2+ such transactions on the same date | 8,500 ≤ amount < 10,000 (illustrative; a real reporting threshold is jurisdiction-specific and should come from the client, not be hardcoded here) |
-| `DUPLICATE_TRANSACTION` | FAULT | Another row shares the same `account_id`, `amount`, `currency`, `type`, and `date` (different `transaction_id`) | exact match on those 5 fields |
+| `LARGE_AMOUNT` | THRESHOLD | `ABS(amount)` (USD-converted) exceeds a threshold | 50,000 USD |
+| `VELOCITY_BREACH` | SUSPICIOUS | More than 2 transactions for the same `account_id` on the same `date` | count > 2 |
+| `STRUCTURING_PATTERN` | SUSPICIOUS | `ABS(amount)` (native currency) falls in the band just under a round reporting threshold, for an account with 2+ such transactions on the same date | 8,500 ≤ amount < 10,000 (illustrative; a real reporting threshold is jurisdiction-specific and should come from the client, not be hardcoded here) |
+| `DUPLICATE_TRANSACTION` | OPERATIONAL | Another row shares the same `account_id`, `amount`, `currency`, `type`, and `date` (different `transaction_id`) | exact match on those 5 fields |
+
+**Type = what kind of alert, not a verdict (FRD-1, 2026-09-24).** The bank's review (client feedback
+2026-09-23, `project-docs/CLIENT-FEEDBACK-BACKLOG.md` point 5) pointed out that an amount over a
+limit is not fraud. The types were `FRAUD` (first three rules) / `FAULT` (duplicates); they are now:
+
+| Type | Meaning | Routed to (`camunda/bridge/poll_worker.py`) |
+|---|---|---|
+| `THRESHOLD` | A reporting event: a limit was crossed, nothing more is implied | `compliance` |
+| `SUSPICIOUS` | A pattern worth an investigator's judgment (unusual activity, AML red flag) | `fraud-investigation` |
+| `OPERATIONAL` | A processing fault to correct | `operations` |
+
+The mapping lives in one dict, `FLAG_TYPE_BY_LABEL`, in the notebook. Rows written before the
+relabel are converted in place (Delta: an `UPDATE` of `flag_type` only, before the merge; Postgres:
+`db/migrations/006_flag_type_categories.sql`) — `status` is never touched. The routing is an
+assumption to confirm with the bank.
 
 **These are illustrative POC rules, not a validated fraud model.** Real fraud detection
 typically also needs: customer-level behavioral baselines (is this unusual *for this customer*,
@@ -70,7 +85,7 @@ Delta table `flagged_transactions`:
 |---|---|---|
 | `transaction_id` | string | |
 | `flag_label` | string | `LARGE_AMOUNT`, `VELOCITY_BREACH`, `STRUCTURING_PATTERN`, `DUPLICATE_TRANSACTION` |
-| `flag_type` | string | `FRAUD` or `FAULT` |
+| `flag_type` | string | `THRESHOLD`, `SUSPICIOUS` or `OPERATIONAL` (section 3) |
 | `description` | string | human-readable, same pattern as Notebook 2's exceptions |
 | `status` | string | initialised to `PENDING_REVIEW`; updated by the bidirectional sync (`specs/bidirectional-sync.md`), never mutated directly by this notebook after first creation |
 | `detected_at` | timestamp | `current_timestamp()` at notebook run time |
@@ -94,16 +109,19 @@ reruns. This is the one notebook in the pipeline that isn't a clean overwrite-on
 - [x]/[ ] `LARGE_AMOUNT`'s USD conversion uses `fx_utils.get_live_rate()` per
       `specs/fx-realtime-ingestion.md`'s platform-wide move off `fx_rates_clean`, even though that
       spec's acceptance criteria only names Notebooks 3/6 explicitly — not yet verified
+- [x]/[ ] FRD-1: every flag carries `THRESHOLD` / `SUSPICIOUS` / `OPERATIONAL` per
+      `FLAG_TYPE_BY_LABEL`, and a rerun converts pre-existing `FRAUD`/`FAULT` rows without changing
+      their `status` — implemented; not yet run on a cluster
 
 ## 7. Traceability (hand-computed against `bank-data/transactions.csv`)
 
 | transaction_id | account_id | Expected flag(s) |
 |---|---|---|
-| `T0011` | ACC001 | `LARGE_AMOUNT` (60,000 USD > 50,000 threshold) |
-| `T0012` | ACC005 | `STRUCTURING_PATTERN` (9,500 SAR in band), `VELOCITY_BREACH` (3 txns on 2026-09-09 for ACC005) |
+| `T0011` | ACC001 | `LARGE_AMOUNT` (60,000 USD > 50,000 threshold) → THRESHOLD |
+| `T0012` | ACC005 | `STRUCTURING_PATTERN` (9,500 SAR in band), `VELOCITY_BREACH` (3 txns on 2026-09-09 for ACC005) → both SUSPICIOUS |
 | `T0013` | ACC005 | `STRUCTURING_PATTERN`, `VELOCITY_BREACH` (same date/account as T0012) |
 | `T0014` | ACC005 | `STRUCTURING_PATTERN`, `VELOCITY_BREACH` (same date/account as T0012/T0013) |
-| `T0015` | ACC007 | `DUPLICATE_TRANSACTION` (matches `T0007`: ACC007, 15000, QAR, Deposit, 2026-09-01) |
+| `T0015` | ACC007 | `DUPLICATE_TRANSACTION` (matches `T0007`: ACC007, 15000, QAR, Deposit, 2026-09-01) → OPERATIONAL |
 
 All other clean transactions (`T0001`-`T0006`) are expected to produce zero flags. `T0007`-`T0010`
 either don't reach `transactions_clean` (missing amount, invalid channel, orphan account — see

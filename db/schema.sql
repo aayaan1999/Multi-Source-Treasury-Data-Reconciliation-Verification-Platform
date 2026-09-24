@@ -143,7 +143,10 @@ CREATE TABLE flagged_transactions (
     transaction_id  text NOT NULL,
     flag_label      text NOT NULL CHECK (flag_label IN
                         ('LARGE_AMOUNT', 'VELOCITY_BREACH', 'STRUCTURING_PATTERN', 'DUPLICATE_TRANSACTION')),
-    flag_type       text NOT NULL CHECK (flag_type IN ('FRAUD', 'FAULT')),
+    -- THRESHOLD (reporting event) / SUSPICIOUS (worth investigating) / OPERATIONAL (processing
+    -- fault): FLAG_TYPE_BY_LABEL in Notebook 5; replaced FRAUD / FAULT (migrations/006).
+    flag_type       text NOT NULL CONSTRAINT flagged_transactions_flag_type_check
+                        CHECK (flag_type IN ('THRESHOLD', 'SUSPICIOUS', 'OPERATIONAL')),
     description     text,
     status          text NOT NULL DEFAULT 'PENDING_REVIEW',
     detected_at     timestamptz NOT NULL,

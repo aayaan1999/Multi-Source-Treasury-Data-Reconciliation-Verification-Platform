@@ -29,10 +29,15 @@ PROCESS_ID = "transaction-review"
 # assumption, not a verified business rule (see that spec's Open Items).
 COMPLIANCE_TABLES = {"capital_positions", "liquidity_daily", "fx_rates"}
 
+# Notebook 5's flag_type (FRD-1: THRESHOLD / SUSPICIOUS / OPERATIONAL) -> team. A suspicious
+# pattern goes to investigators; a threshold crossing is a reporting matter for Compliance, not an
+# investigation; an operational fault falls through to the table-based rule (Operations).
+TRANSACTION_FLAG_CATEGORY = {"SUSPICIOUS": "FRAUD", "THRESHOLD": "COMPLIANCE"}
+
 
 def flag_category(flag_type: str, source_table: str) -> str:
-    if flag_type == "FRAUD":
-        return "FRAUD"
+    if flag_type in TRANSACTION_FLAG_CATEGORY:
+        return TRANSACTION_FLAG_CATEGORY[flag_type]
     if source_table in COMPLIANCE_TABLES:
         return "COMPLIANCE"
     return "OPERATIONS"

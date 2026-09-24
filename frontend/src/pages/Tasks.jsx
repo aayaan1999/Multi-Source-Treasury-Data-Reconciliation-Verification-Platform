@@ -10,6 +10,7 @@ import useAsync from "../hooks/useAsync";
 import { KPI_BY_KEY } from "../kpi/kpiConfig";
 import { formatDateTime, formatValue } from "../kpi/format";
 import ApprovalChain from "../workflow/ApprovalChain";
+import { TRANSACTION_FLAGS, alertType } from "../workflow/flagTypes";
 import { claimTask, completeTask, getVariables, searchTasks } from "../workflow/tasklistApi";
 
 const GROUP_ASSUMPTION = [
@@ -58,6 +59,7 @@ function ReviewPanel({ task, user, onDone, onClose }) {
   if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
 
   const { variables, detail, comments } = data;
+  const flagInfo = variables.recordType === "fraud" ? TRANSACTION_FLAGS[variables.flagLabel] : undefined;
 
   async function submitComment(e) {
     e.preventDefault();
@@ -118,6 +120,12 @@ function ReviewPanel({ task, user, onDone, onClose }) {
         {variables.flagLabel} on {variables.sourceTable} ({variables.recordKey})
       </h3>
       {variables.description && <p className="mt-0.5 text-sm text-ink2">{variables.description}</p>}
+      {flagInfo && (
+        <p className="mt-2 text-sm text-ink">
+          <span className="mr-2 rounded-full border border-hair px-2 py-0.5 text-xs font-medium">{flagInfo.type}</span>
+          {flagInfo.reason}
+        </p>
+      )}
 
       <div className="card mb-4 mt-4 rounded-xl border border-hair bg-surface p-4">
         <ApprovalChain candidateGroup={task.candidateGroups?.[0]} taskState={task.taskState} />
@@ -214,7 +222,7 @@ function ReviewPanel({ task, user, onDone, onClose }) {
   );
 }
 
-const RECORD_TYPE_LABEL = { data_quality: "Data quality", fraud: "Fraud", breach: "Breach" };
+const RECORD_TYPE_LABEL = { data_quality: "Data quality", fraud: "Transaction alert", breach: "Breach" };
 
 const SOURCE_TABLE_LABEL = {
   customers: "Customer", accounts: "Account", loans: "Loan", branches: "Branch",
@@ -310,7 +318,7 @@ function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
           { key: "name", header: "Name" },
           { key: "group", header: "Group", render: (t) => (t.candidateGroups || []).join(", ") },
           { key: "completionDate", header: "Modified At", title: "Tasklist only records a change once the task is completed - open tasks show —", render: (t) => formatDateTime(t.completionDate) },
-          { key: "type", header: "Type", render: (t) => RECORD_TYPE_LABEL[t.vars.recordType] || t.vars.recordType },
+          { key: "type", header: "Type", render: (t) => alertType(t.vars) },
         ]}
         rows={filtered}
         rowKey={(t) => t.id}
@@ -341,7 +349,7 @@ export default function Tasks() {
     <PageShell
       title="Tasks"
       eyebrow="Review queue"
-      subtitle="Review and act on everything the bank's checks have flagged — fraud alerts, data-quality issues, and risk-limit breaches all land here."
+      subtitle="Review and act on everything the bank's checks have flagged — transaction alerts, data-quality issues, and risk-limit breaches all land here."
       actions={<AssumptionBadge items={GROUP_ASSUMPTION} label="How access works today" heading="Demo limitation: team-level access only" />}
     >
       <Section id="tasks" title="My tasks" description="Everything currently waiting for review, across every team.">
