@@ -123,8 +123,9 @@ class CommentRequest(BaseModel):
 
 @router.post("/exceptions/comments")
 def add_comment(body: CommentRequest, user: dict = Depends(current_user)):
-    # pipeline_reconciliation: comments on a CFO reconciliation item (specs/cfo-reconciliation-workflow.md).
-    if body.source_table not in SOURCE_TABLES | {"pipeline_reconciliation"}:
+    # pipeline_reconciliation: comments on a CFO reconciliation item (specs/cfo-reconciliation-workflow.md);
+    # task_cases: comments on a case of transaction flags (specs/task-cases.md).
+    if body.source_table not in SOURCE_TABLES | {"pipeline_reconciliation", "task_cases", "entity_match_candidates", "reconciliation_groups"}:
         raise HTTPException(400, f"Unknown source_table: {body.source_table}")
     row = write(
         """INSERT INTO comments (source_table, record_key, flag_label, user_id, comment_text, parent_comment_id)
@@ -165,6 +166,86 @@ def log_task_completion(body: TaskCompletionRequest, user: dict = Depends(curren
     return {"status": "logged"}
 
 
+# ---- Task cases, digest and policy (specs/task-cases.md, client point 6) ----------------------
+
+CASE_COLUMNS = """case_id, account_id, case_date, flag_type, team, severity, severity_score, flag_count,
+                  due_date, status, outcome, created_at, closed_at"""
+
+
+@router.get("/cases/{case_id}")
+def case_detail(case_id: int):
+    """A case and every flag in it, with the transaction behind each flag."""
+    case = query_one(f"SELECT {CASE_COLUMNS} FROM task_cases WHERE case_id = %s", (case_id,))
+    if case is None:
+        raise HTTPException(404, "No such case")
+    case["flags"] = query(
+        """SELECT c.transaction_id, c.flag_label, f.flag_type, f.description, f.status,
+                  t.date, t.amount, t.currency, t.type, t.channel
+           FROM task_case_flags c
+           JOIN flagged_transactions f ON f.transaction_id = c.transaction_id AND f.flag_label = c.flag_label
+           LEFT JOIN transactions t ON t.transaction_id = c.transaction_id
+           WHERE c.case_id = %s ORDER BY t.date, c.transaction_id, c.flag_label""",
+        (case_id,),
+    )
+    return case
+
+
+@router.get("/entity-matches/{candidate_id}")
+def entity_match_detail(candidate_id: int):
+    """A possible duplicate pair (specs/entity-matching.md) with both customer records side by side
+    and each one's loan exposure, so a reviewer can decide "same company" or "different"."""
+    pair = query_one(
+        """SELECT candidate_id, customer_a, customer_b, name_a, name_b, score, reasons, status, decided_at
+           FROM entity_match_candidates WHERE candidate_id = %s""",
+        (candidate_id,),
+    )
+    if pair is None:
+        raise HTTPException(404, "No such match candidate")
+    ids = (pair["customer_a"], pair["customer_b"])
+    pair["customers"] = query(
+        """SELECT c.customer_id, c.name, c.segment, c.branch_id, b.name AS branch_name, c.country, c.onboard_date, c.risk_rating
+           FROM customers c LEFT JOIN branches b ON b.branch_id = c.branch_id
+           WHERE c.customer_id IN (%s, %s) ORDER BY c.customer_id""",
+        ids,
+    )
+    # Loans per currency (never added across currencies).
+    loans = query(
+        """SELECT customer_id, currency, count(*) AS loan_count, sum(outstanding) AS outstanding
+           FROM loans WHERE customer_id IN (%s, %s) GROUP BY customer_id, currency ORDER BY currency""",
+        ids,
+    )
+    for c in pair["customers"]:
+        c["loans"] = [{k: l[k] for k in ("currency", "loan_count", "outstanding")} for l in loans if l["customer_id"] == c["customer_id"]]
+    return pair
+
+
+@router.get("/digest")
+def digest():
+    """Low-severity cases: listed, not tasks (spec section 3). Newest first."""
+    return query(f"SELECT {CASE_COLUMNS} FROM task_cases WHERE status = 'DIGEST' ORDER BY case_date DESC, case_id DESC LIMIT 500")
+
+
+@router.post("/digest/{case_id}/raise")
+def raise_digest_case(case_id: int, user: dict = Depends(current_user)):
+    """Turns a digest case into a task: the bridge starts it on its next poll. Audited."""
+    row = write(
+        """WITH upd AS (UPDATE task_cases SET status = 'PENDING' WHERE case_id = %s AND status = 'DIGEST' RETURNING case_id),
+                aud AS (INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value)
+                        SELECT %s, 'RAISED_FROM_DIGEST', 'task_case', case_id::text, 'DIGEST', 'PENDING' FROM upd)
+           SELECT case_id FROM upd""",
+        (case_id, user["user_id"]),
+    )
+    if row is None:
+        raise HTTPException(409, "That case isn't in the digest any more")
+    return {"status": "PENDING"}
+
+
+@router.get("/policy")
+def policy():
+    """The task-creation settings (app_settings task.*), for the screen's "How tasks are created"."""
+    return query("SELECT key, value, description, is_placeholder, updated_at FROM app_settings WHERE key LIKE 'task.%' ORDER BY key")
+
+
 @router.get("/audit-log")
 def audit_log(
     object_type: Optional[str] = None,
@@ -196,7 +277,8 @@ def breaches(status: Optional[str] = None):
     return query(
         f"""SELECT b.breach_id, l.metric_name, l.threshold_value, l.direction, b.detected_at,
                    b.actual_value, b.assigned_to, u.name AS assigned_to_name, b.status, b.action_plan,
-                   b.resolved_at, l.resolution_days
+                   b.resolved_at, l.resolution_days, b.level, b.due_date, l.early_warning_value,
+                   l.regulatory_value
             FROM breaches b JOIN limits l ON l.limit_id = b.limit_id
             LEFT JOIN users u ON u.user_id = b.assigned_to
             {where} ORDER BY b.detected_at DESC""",

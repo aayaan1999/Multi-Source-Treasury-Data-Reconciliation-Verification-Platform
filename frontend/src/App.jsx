@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { api } from "./api";
 import { useAuth } from "./auth";
+import { applyLimits } from "./kpi/kpiConfig";
 import AuditOversight from "./pages/AuditOversight";
 import Dashboard from "./pages/Dashboard";
 import KpiDetail from "./pages/KpiDetail";
@@ -12,11 +15,28 @@ import Reports from "./pages/Reports";
 import Scenario from "./pages/Scenario";
 import Tasks from "./pages/Tasks";
 
+// Thresholds come from the database once per session (specs/breach-levels.md); if they can't be
+// loaded the built-in values in kpiConfig stay, so a failure never blocks the app.
+let limitsLoaded = null;
+function loadLimitsOnce() {
+  if (!limitsLoaded) {
+    limitsLoaded = Promise.resolve()
+      .then(() => api.kpiLimits())
+      .then(applyLimits)
+      .catch(() => {});
+  }
+  return limitsLoaded;
+}
+
 function RequireAuth({ children }) {
   const { user } = useAuth();
   const location = useLocation();
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (user) loadLimitsOnce().then(() => setReady(true));
+  }, [user]);
   if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
-  return children;
+  return ready ? children : null;
 }
 
 export default function App() {

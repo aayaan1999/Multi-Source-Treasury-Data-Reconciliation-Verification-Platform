@@ -12,6 +12,11 @@ import { formatDateTime, formatValue } from "../kpi/format";
 import ApprovalChain from "../workflow/ApprovalChain";
 import { TRANSACTION_FLAGS, alertType } from "../workflow/flagTypes";
 import ReconciliationTaskPanel from "../reconciliation/ReconciliationTaskPanel";
+import CaseReviewPanel from "../workflow/CaseReviewPanel";
+import EntityMatchPanel from "../workflow/EntityMatchPanel";
+import GroupReviewPanel from "../reconciliation/GroupReviewPanel";
+import { Digest, TaskPolicy } from "../workflow/DigestAndPolicy";
+import { byUrgency, daysLeftText, isOverdue, taskDue } from "../workflow/taskDue";
 import { claimTask, completeTask, getVariables, searchTasks } from "../workflow/tasklistApi";
 
 // Provenance columns stamped by Notebook 1 (specs/source-tagging.md): shown with the source record,
@@ -227,7 +232,11 @@ function ReviewPanel({ task, user, onDone, onClose }) {
   );
 }
 
-const RECORD_TYPE_LABEL = { data_quality: "Data quality", fraud: "Transaction alert", breach: "Breach", reconciliation: "Reconciliation" };
+const RECORD_TYPE_LABEL = {
+  fraud_case: "Transaction case", data_quality: "Data quality", fraud: "Transaction alert", breach: "Breach", reconciliation: "Reconciliation",
+  entity_match: "Possible duplicate", recon_group: "Core-system break",
+};
+const SEVERITY_LABEL = { HIGH: "High", MEDIUM: "Medium", LOW: "Low" };
 
 const SOURCE_TABLE_LABEL = {
   customers: "Customer", accounts: "Account", loans: "Loan", branches: "Branch",
@@ -247,12 +256,18 @@ const BREACH_METRIC_KPI = {
 export function recordLabel(task) {
   const { sourceTable, recordKey } = task.vars;
   if (sourceTable === "transactions") return recordKey;
-  // A CFO reconciliation item (specs/cfo-reconciliation-workflow.md): the bridge sets a one-line title.
+  // A CFO reconciliation item (specs/cfo-reconciliation-workflow.md) or a case of flags
+  // (specs/task-cases.md): the bridge sets a one-line title.
   if (sourceTable === "pipeline_reconciliation") return task.vars.title || `Reconciliation item #${recordKey}`;
+  if (sourceTable === "task_cases") return task.vars.title || `Case #${recordKey}`;
+  if (sourceTable === "entity_match_candidates") return task.vars.title || `Possible duplicate #${recordKey}`;
+  if (sourceTable === "reconciliation_groups") return task.vars.title || `Reconciliation group #${recordKey}`;
   if (sourceTable === "breaches") {
     const b = task.breach;
     const kpi = b && KPI_BY_KEY[BREACH_METRIC_KPI[b.metric_name]];
     if (!kpi) return `Breach #${recordKey}`;
+    // The level decides which line was crossed (specs/breach-levels.md).
+    if (b.level === "REGULATORY") return `${kpi.short} ${formatValue(kpi, b.actual_value)} (regulatory limit ${formatValue(kpi, b.regulatory_value)})`;
     return `${kpi.short} ${formatValue(kpi, b.actual_value)} (limit ${formatValue(kpi, b.threshold_value)})`;
   }
   return `${SOURCE_TABLE_LABEL[sourceTable] || sourceTable} ${recordKey}`;
@@ -265,16 +280,20 @@ async function loadTasks() {
   // come from one /workflow/breaches call; if it fails the Record cell falls back to "Breach #id".
   const txnIds = [...new Set(tasks.filter((t) => t.vars.sourceTable === "transactions").map((t) => t.vars.recordKey))];
   const hasBreaches = tasks.some((t) => t.vars.sourceTable === "breaches");
-  const [accountIds, breaches] = await Promise.all([
+  // Due days come from the task policy (specs/task-cases.md); without it, only cases show a due date.
+  const [accountIds, breaches, policy] = await Promise.all([
     txnIds.length ? api.lookupAccountIds(txnIds) : {},
     hasBreaches ? api.breaches().catch(() => []) : [],
+    api.taskPolicy().catch(() => []),
   ]);
   const breachById = Object.fromEntries(breaches.map((b) => [String(b.breach_id), b]));
-  return tasks.map((t) => ({
-    ...t,
-    accountId: accountIds[t.vars.recordKey],
-    breach: t.vars.sourceTable === "breaches" ? breachById[t.vars.recordKey] : undefined,
-  }));
+  const dueDays = policy.find((p) => p.key === "task.due_days")?.value;
+  return tasks
+    .map((t) => {
+      const breach = t.vars.sourceTable === "breaches" ? breachById[t.vars.recordKey] : undefined;
+      return { ...t, accountId: accountIds[t.vars.recordKey] || t.vars.accountId, breach, severity: t.vars.severity || null, due: taskDue(t, dueDays, breach) };
+    })
+    .sort(byUrgency());
 }
 
 function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
@@ -324,11 +343,13 @@ function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
           { key: "accountId", header: "Account ID", render: (t) => t.accountId || "—" },
           { key: "name", header: "Name" },
           { key: "group", header: "Group", render: (t) => (t.candidateGroups || []).join(", ") },
-          { key: "completionDate", header: "Modified At", title: "Tasklist only records a change once the task is completed - open tasks show —", render: (t) => formatDateTime(t.completionDate) },
           { key: "type", header: "Type", render: (t) => alertType(t.vars) },
+          { key: "severity", header: "Severity", render: (t) => SEVERITY_LABEL[t.severity] || "—" },
+          { key: "due", header: "Due", render: (t) => (t.due ? `${t.due} · ${daysLeftText(t.due)}` : "—") },
         ]}
         rows={filtered}
         rowKey={(t) => t.id}
+        rowFlag={(t) => (isOverdue(t.due) ? { kind: "loss", label: "Overdue" } : null)}
         selectedKey={selectedTaskId}
         onRowClick={(t) => onSelect(t)}
         emptyText="Nothing waiting for review right now. New items appear here automatically as they're flagged."
@@ -361,7 +382,10 @@ export default function Tasks() {
     >
       <Section id="tasks" title="My tasks" description="Everything currently waiting for review, across every team.">
         <TasksTable onSelect={selectTask} selectedTaskId={selectedTask?.id} refreshKey={refreshKey} completedIds={completedIds} />
+        <TaskPolicy />
       </Section>
+
+      <Digest />
 
       {selectedTask && (
         <Modal title="Review task" onClose={() => setSelectedTask(null)}>
@@ -372,7 +396,7 @@ export default function Tasks() {
               setSelectedTask(null);
               setRefreshKey((k) => k + 1);
             };
-            const Panel = selectedTask.vars.recordType === "reconciliation" ? ReconciliationTaskPanel : ReviewPanel;
+            const Panel = { reconciliation: ReconciliationTaskPanel, fraud_case: CaseReviewPanel, entity_match: EntityMatchPanel, recon_group: GroupReviewPanel }[selectedTask.vars.recordType] || ReviewPanel;
             return <Panel task={selectedTask} user={user} onClose={() => setSelectedTask(null)} onDone={onDone} />;
           })()}
         </Modal>

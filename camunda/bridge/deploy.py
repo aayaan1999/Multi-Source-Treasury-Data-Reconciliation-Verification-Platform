@@ -23,6 +23,7 @@ async def main() -> None:
         str(PROCESS_DIR / "review-outcome-form.form"),  # deploy the form first so the BPMN's formId resolves
         str(PROCESS_DIR / "transaction-review.bpmn"),
         str(PROCESS_DIR / "reconciliation-review.bpmn"),
+        str(PROCESS_DIR / "reconciliation-group-review.bpmn"),   # specs/reconciliation-groups.md
     )
     print(f"Deployed key {result.key}:")
     for resource in result.deployments:

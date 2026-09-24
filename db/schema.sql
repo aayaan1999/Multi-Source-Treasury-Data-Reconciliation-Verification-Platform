@@ -185,8 +185,9 @@ CREATE TABLE data_quality_exceptions (
 -- status is mutable (updated by review outcomes); everything else is written once by Notebook 5.
 CREATE TABLE flagged_transactions (
     transaction_id  text NOT NULL,
-    flag_label      text NOT NULL CHECK (flag_label IN
-                        ('LARGE_AMOUNT', 'VELOCITY_BREACH', 'STRUCTURING_PATTERN', 'DUPLICATE_TRANSACTION')),
+    flag_label      text NOT NULL CONSTRAINT flagged_transactions_flag_label_check CHECK (flag_label IN
+                        ('LARGE_AMOUNT', 'VELOCITY_BREACH', 'STRUCTURING_PATTERN', 'DUPLICATE_TRANSACTION',
+                         'DORMANT_REACTIVATION', 'PASS_THROUGH', 'UNUSUAL_FOR_SEGMENT', 'ROUND_AMOUNTS', 'SPLIT_ACROSS_ACCOUNTS')),
     -- THRESHOLD (reporting event) / SUSPICIOUS (worth investigating) / OPERATIONAL (processing
     -- fault): FLAG_TYPE_BY_LABEL in Notebook 5; replaced FRAUD / FAULT (migrations/006).
     flag_type       text NOT NULL CONSTRAINT flagged_transactions_flag_type_check
@@ -241,6 +242,7 @@ CREATE TABLE top_exposures (
     product           text,
     days_past_due     integer,
     pct_of_capital    double precision,
+    linked_customer_ids text,          -- confirmed duplicates folded into this exposure (specs/entity-matching.md)
     PRIMARY KEY (calculation_date, customer_id)
 );
 
@@ -368,13 +370,62 @@ CREATE TABLE reconciliation_exceptions (
     canonical_value   text,
     mismatch_type     text NOT NULL CHECK (mismatch_type IN
                           ('VALUE_MISMATCH', 'MISSING_IN_CANONICAL', 'MISSING_IN_SOURCE')),
-    status            text NOT NULL DEFAULT 'OPEN' CHECK (status IN
-                          ('OPEN', 'ACCEPTED', 'CORRECTED', 'DISMISSED')),
+    status            text NOT NULL DEFAULT 'OPEN' CONSTRAINT reconciliation_exceptions_status_check CHECK (status IN
+                          ('OPEN', 'ACCEPTED', 'CORRECTED', 'DISMISSED', 'AUTO_ACCEPTED')),
     detected_at       timestamptz NOT NULL,
     resolved_by       integer REFERENCES users (user_id),
     resolved_at       timestamptz,
     resolution_note   text,
-    UNIQUE (source_system, entity_type, entity_id, mismatch_type, field_name)
+    -- specs/reconciliation-groups.md (client point 1): the rule that cleared it automatically, its
+    -- group (one task per group), ageing and recurrence, and whether it was carved out of a group.
+    resolved_rule     text,
+    group_id          bigint,
+    first_seen        timestamptz,
+    last_seen         timestamptz,
+    times_seen        integer NOT NULL DEFAULT 1,
+    recurring         boolean NOT NULL DEFAULT false,
+    carved_out        boolean NOT NULL DEFAULT false,
+    -- NULLS NOT DISTINCT: missing-record breaks (field_name NULL) must not be re-inserted every load.
+    CONSTRAINT reconciliation_exceptions_break_key
+        UNIQUE NULLS NOT DISTINCT (source_system, entity_type, entity_id, mismatch_type, field_name)
+);
+
+CREATE TABLE reconciliation_groups (
+    group_id                  bigserial PRIMARY KEY,
+    group_key                 text NOT NULL,
+    source_system             text NOT NULL,
+    entity_type               text NOT NULL,
+    field_name                text,
+    mismatch_type             text NOT NULL,
+    pattern                   text NOT NULL,
+    important                 boolean NOT NULL DEFAULT false,
+    break_count               integer NOT NULL,
+    total_difference          double precision,
+    largest_difference        double precision,
+    requires_second_approval  boolean NOT NULL DEFAULT false,
+    team                      text NOT NULL,
+    status                    text NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'OPEN', 'CLOSED')),
+    decision                  text,
+    due_date                  date NOT NULL,
+    process_instance_key      bigint,
+    created_at                timestamptz NOT NULL DEFAULT now(),
+    decided_by                integer REFERENCES users (user_id),
+    approved_by               integer REFERENCES users (user_id),
+    closed_at                 timestamptz
+);
+
+-- 4. Run sign-off: one row per source system per day, prepared by one person, signed off by another.
+CREATE TABLE reconciliation_signoffs (
+    run_date       date NOT NULL,
+    source_system  text NOT NULL,
+    status         text NOT NULL CHECK (status IN ('SUBMITTED', 'SIGNED_OFF', 'RETURNED')),
+    prepared_by    integer REFERENCES users (user_id),
+    prepared_at    timestamptz,
+    prepare_note   text,
+    signed_by      integer REFERENCES users (user_id),
+    signed_at      timestamptz,
+    sign_note      text,
+    PRIMARY KEY (run_date, source_system)
 );
 
 -- specs/pipeline-reconciliation.md (FLOW-3): one row per run + source + country + table, received
@@ -574,7 +625,13 @@ CREATE TABLE limits (
     threshold_value  double precision NOT NULL,
     direction        text NOT NULL CHECK (direction IN ('ABOVE', 'BELOW')),
     owner_role       integer REFERENCES roles (role_id),
-    resolution_days  integer NOT NULL
+    resolution_days  integer NOT NULL,
+    -- specs/breach-levels.md: threshold_value is the internal-appetite level; early warning is a
+    -- notification only, regulatory an urgent task; a breach counts after consecutive_days days.
+    early_warning_value  double precision,
+    regulatory_value     double precision,
+    consecutive_days     integer NOT NULL DEFAULT 1,
+    is_placeholder       boolean NOT NULL DEFAULT true
 );
 
 CREATE TABLE breaches (
@@ -585,8 +642,24 @@ CREATE TABLE breaches (
     assigned_to   integer REFERENCES users (user_id),
     status        text NOT NULL DEFAULT 'OPEN',
     action_plan   text,
-    resolved_at   timestamptz
+    resolved_at   timestamptz,
+    level         text NOT NULL DEFAULT 'APPETITE' CONSTRAINT breaches_level_check
+                      CHECK (level IN ('EARLY_WARNING', 'APPETITE', 'REGULATORY')),
+    due_date      date
 );
+
+-- metric_name, early warning, appetite (threshold_value), regulatory, direction, resolution days
+INSERT INTO limits (metric_name, early_warning_value, threshold_value, regulatory_value, direction, resolution_days) VALUES
+    ('capital_adequacy_ratio',   15,   12.5, 12,   'BELOW', 14),
+    ('liquidity_coverage_ratio', 120,  100,  100,  'BELOW', 7),
+    ('npl_ratio',                3,    5,    NULL, 'ABOVE', 30),
+    ('net_interest_margin',      2.5,  1.5,  NULL, 'BELOW', 30),
+    ('cost_to_income_ratio',     50,   60,   NULL, 'ABOVE', 30),
+    ('return_on_equity',         10,   5,    NULL, 'BELOW', 30),
+    ('dollarization_ratio',      50,   70,   NULL, 'ABOVE', 30)
+ON CONFLICT (metric_name) DO UPDATE SET
+    early_warning_value = COALESCE(limits.early_warning_value, EXCLUDED.early_warning_value),
+    regulatory_value    = COALESCE(limits.regulatory_value, EXCLUDED.regulatory_value);
 
 -- Insert-only audit trail. The source doc says to "grant insert only, no update or delete"; a table
 -- owner ignores grants, so a trigger enforces it regardless of who connects (superusers can still
@@ -655,9 +728,98 @@ CREATE INDEX review_outcomes_reviewed_at_idx ON review_outcomes (reviewed_at);
 -- flagged rows already have a transaction-review process instance, without writing a tracking
 -- column onto data_quality_exceptions (owned/overwritten by the Databricks import job) or
 -- overloading flagged_transactions.status (the review outcome, not "was a process started").
+-- specs/task-cases.md (client point 6): settings shared by points 5, 6 and 8, and task cases.
+CREATE TABLE app_settings (
+    key             text PRIMARY KEY,
+    value           jsonb NOT NULL,
+    description     text NOT NULL,
+    is_placeholder  boolean NOT NULL DEFAULT true,   -- true until the bank confirms the value
+    updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO app_settings (key, value, description) VALUES
+    ('task.severity',
+     '{"base": {"SUSPICIOUS": 3, "THRESHOLD": 2, "OPERATIONAL": 1}, "many_flags_at": 3, "many_rules_at": 2, "high_min": 4, "medium_min": 2}',
+     'How a case''s severity is scored: base by flag type, +1 for many flags, +1 for several rules; High/Medium become tasks, Low goes to the daily digest'),
+    ('task.due_days',
+     '{"HIGH": 2, "MEDIUM": 5, "LOW": 10, "DATA_QUALITY": 5, "RECONCILIATION": 3, "DUPLICATE": 10, "RECON_GROUP": 3}',
+     'Days to resolve a task, by case severity or task type (breaches use their limit''s resolution_days)')
+ON CONFLICT (key) DO NOTHING;
+
+INSERT INTO app_settings (key, value, description) VALUES
+    ('fraud.rules',
+     '{"large_amount_usd": 50000, "velocity_count": 2, "structuring_lower": 8500, "structuring_upper": 10000,
+       "dormant_days": 180, "dormant_min_usd": 10000, "pass_through_window_days": 1, "pass_through_min_share": 0.9,
+       "pass_through_min_usd": 10000, "segment_multiplier": 10, "segment_min_usd": 5000, "round_step": 1000,
+       "round_min_usd": 5000, "round_min_count": 3, "split_min_accounts": 2}',
+     'Thresholds for Notebook 5''s transaction rules (large amount, velocity, structuring, dormant account, pass-through, unusual for segment, round amounts, split across accounts)')
+ON CONFLICT (key) DO NOTHING;
+
+INSERT INTO app_settings (key, value, description) VALUES
+    ('recon.rules',
+     '{"important_amount": 10000, "important_fields": ["name", "currency", "type", "segment"], "size_bands": [100, 1000, 10000], "same_difference_min": 3, "max_group_size": 1000, "second_approval_total": 100000, "owner_team": "OPERATIONS"}',
+     'Core-system reconciliation: which breaks are always individual (amount, key fields, missing records), how the rest are grouped by cause, the total above which a bulk decision needs a second approver, and the owning team')
+ON CONFLICT (key) DO NOTHING;
+
+CREATE TABLE task_cases (
+    case_id               bigserial PRIMARY KEY,
+    account_id            text NOT NULL,
+    case_date             date NOT NULL,
+    flag_type             text NOT NULL,
+    team                  text NOT NULL,
+    severity              text NOT NULL CHECK (severity IN ('HIGH', 'MEDIUM', 'LOW')),
+    severity_score        integer NOT NULL,
+    flag_count            integer NOT NULL,
+    due_date              date NOT NULL,
+    status                text NOT NULL CHECK (status IN ('PENDING', 'OPEN', 'DIGEST', 'CLOSED')),
+    outcome               text,
+    process_instance_key  bigint,
+    created_at            timestamptz NOT NULL DEFAULT now(),
+    closed_at             timestamptz
+);
+
+CREATE TABLE task_case_flags (
+    case_id         bigint NOT NULL REFERENCES task_cases (case_id),
+    transaction_id  text NOT NULL,
+    flag_label      text NOT NULL,
+    PRIMARY KEY (transaction_id, flag_label)          -- a flag is only ever in one case
+);
+
+CREATE INDEX task_case_flags_case_idx ON task_case_flags (case_id);
+
+-- specs/entity-matching.md (client point 3): possible duplicate customers and confirmed groups.
+CREATE TABLE entity_match_candidates (
+    candidate_id          bigserial PRIMARY KEY,
+    customer_a            text NOT NULL,
+    customer_b            text NOT NULL,
+    name_a                text NOT NULL,
+    name_b                text NOT NULL,
+    score                 double precision NOT NULL,
+    reasons               text[] NOT NULL,
+    status                text NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'CONFIRMED', 'REJECTED')),
+    process_instance_key  bigint,
+    created_at            timestamptz NOT NULL DEFAULT now(),
+    decided_by            integer REFERENCES users (user_id),
+    decided_at            timestamptz,
+    CHECK (customer_a < customer_b),
+    UNIQUE (customer_a, customer_b)
+);
+
+-- Rebuilt from CONFIRMED pairs after every decision: each linked customer -> its group's lead record.
+CREATE TABLE customer_entity (
+    customer_id         text PRIMARY KEY,
+    master_customer_id  text NOT NULL
+);
+
+INSERT INTO app_settings (key, value, description) VALUES
+    ('dedup.matching',
+     '{"min_score": 0.85, "legal_words": ["SAL", "SARL", "SAE", "LTD", "LIMITED", "INC", "LLC", "PVT", "PLC", "CO", "COMPANY", "CORP", "CORPORATION", "WLL", "FZE", "FZCO"], "abbreviations": {"TCS": "TATA CONSULTANCY SERVICES"}}',
+     'How possible duplicate customers are found: names compared after removing legal words (and expanding known abbreviations); pairs at or above min_score become a review task')
+ON CONFLICT (key) DO NOTHING;
+
 CREATE TABLE camunda_process_tracking (
     record_type           text NOT NULL CONSTRAINT camunda_process_tracking_record_type_check
-                              CHECK (record_type IN ('data_quality', 'fraud', 'breach', 'reconciliation')),
+                              CHECK (record_type IN ('data_quality', 'fraud', 'breach', 'reconciliation', 'entity_match', 'recon_group')),
     source_table          text NOT NULL,
     record_key            text NOT NULL,
     flag_label            text NOT NULL,

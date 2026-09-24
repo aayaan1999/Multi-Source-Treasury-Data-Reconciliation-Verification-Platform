@@ -15,6 +15,25 @@ def latest():
     return row
 
 
+# limits.metric_name -> KPI tile key (same mapping as camunda/bridge/breaches_db.KPI_COLUMN).
+METRIC_KPI = {
+    "capital_adequacy_ratio": "car_pct", "liquidity_coverage_ratio": "lcr_pct", "npl_ratio": "npl_ratio_pct",
+    "dollarization_ratio": "dollarization_ratio_pct", "net_interest_margin": "nim_pct",
+    "cost_to_income_ratio": "cost_to_income_pct", "return_on_equity": "roe_pct", "total_assets": "total_assets_usd",
+}
+
+
+@router.get("/limits")
+def limits():
+    """Every KPI's three levels (specs/breach-levels.md): the tiles colour themselves from these, the
+    same numbers the breach check uses, so the dashboard and the breach tasks can't disagree."""
+    rows = query(
+        """SELECT metric_name, early_warning_value, threshold_value, regulatory_value, direction,
+                  consecutive_days, resolution_days, is_placeholder FROM limits ORDER BY metric_name"""
+    )
+    return [{**r, "kpi_key": METRIC_KPI[r["metric_name"]]} for r in rows if r["metric_name"] in METRIC_KPI]
+
+
 @router.get("/countries")
 def countries():
     """The CFO's global view (specs/cfo-country-view.md): each country's latest customers, deposits,

@@ -37,6 +37,138 @@ def summary():
     )
     return {"by_status": by_status, "by_mismatch_type": by_mismatch, "by_entity_type": by_entity}
 
+# ---- Core-system reconciliation: groups, run sign-off (specs/reconciliation-groups.md) ------------
+
+@router.get("/groups")
+def groups(status: Optional[str] = None, limit: int = Query(500, le=5000)):
+    """Groups of breaks with the same cause (one task each), important ones first."""
+    where, params = ("WHERE status = %s", (status,)) if status else ("", ())
+    return query(
+        f"""SELECT group_id, source_system, entity_type, field_name, mismatch_type, pattern, important, break_count,
+                   total_difference, largest_difference, requires_second_approval, team, status, decision,
+                   due_date, created_at, closed_at
+            FROM reconciliation_groups {where}
+            ORDER BY (status = 'CLOSED'), important DESC, break_count DESC, group_id LIMIT %s""",
+        (*params, limit),
+    )
+
+
+@router.get("/groups/{group_id}")
+def group_detail(group_id: int):
+    """A group and every break in it, for the review popup (carve-outs are picked from this list).
+    Breaks decided in this group keep pointing at it; carved-out ones have left it."""
+    g = query_one("SELECT * FROM reconciliation_groups WHERE group_id = %s", (group_id,))
+    if g is None:
+        raise HTTPException(404, "No such group")
+    g["breaks"] = query(
+        """SELECT exception_id, entity_type, entity_id, field_name, source_value, canonical_value, mismatch_type,
+                  status, first_seen, last_seen, times_seen, recurring
+           FROM reconciliation_exceptions WHERE group_id = %s ORDER BY entity_id LIMIT 5000""",
+        (group_id,),
+    )
+    return g
+
+
+def _latest_run(source_system: str):
+    row = query_one("SELECT max(last_seen)::date AS run_date FROM reconciliation_exceptions WHERE source_system = %s", (source_system,))
+    return row["run_date"] if row else None
+
+
+@router.get("/run")
+def run_summary(source_system: str = "neon"):
+    """The latest run of a source: what it found, what cleared itself, what's still open, and its
+    sign-off. A run's date is the day its breaks were last seen."""
+    run_date = _latest_run(source_system)
+    if run_date is None:
+        return {"run_date": None, "source_system": source_system}
+    counts = query_one(
+        """SELECT count(*) FILTER (WHERE last_seen::date = %s) AS breaks_seen,
+                  count(*) FILTER (WHERE last_seen::date = %s AND status = 'AUTO_ACCEPTED') AS auto_cleared,
+                  count(*) FILTER (WHERE status = 'OPEN') AS open_breaks,
+                  count(*) FILTER (WHERE status = 'OPEN' AND recurring) AS recurring_open
+           FROM reconciliation_exceptions WHERE source_system = %s""",
+        (run_date, run_date, source_system),
+    )
+    group_counts = query_one(
+        """SELECT count(*) FILTER (WHERE status <> 'CLOSED') AS groups_open,
+                  count(*) FILTER (WHERE status <> 'CLOSED' AND important) AS important_open
+           FROM reconciliation_groups WHERE source_system = %s""",
+        (source_system,),
+    )
+    signoff = query_one(
+        """SELECT s.status, s.prepared_at, s.prepare_note, up.name AS prepared_by_name, s.prepared_by,
+                  s.signed_at, s.sign_note, us.name AS signed_by_name
+           FROM reconciliation_signoffs s LEFT JOIN users up ON up.user_id = s.prepared_by
+           LEFT JOIN users us ON us.user_id = s.signed_by
+           WHERE s.run_date = %s AND s.source_system = %s""",
+        (run_date, source_system),
+    )
+    return {"run_date": run_date, "source_system": source_system, **counts, **group_counts, "signoff": signoff}
+
+
+class SubmitRunRequest(BaseModel):
+    source_system: str = "neon"
+    note: Optional[str] = None
+
+
+@router.post("/run/submit")
+def submit_run(body: SubmitRunRequest, user: dict = Depends(current_user)):
+    """The preparer submits the latest run for sign-off. While important breaks are still open, a
+    note saying why is required."""
+    summary = run_summary(body.source_system)
+    if summary["run_date"] is None:
+        raise HTTPException(404, "No reconciliation run yet")
+    if summary["important_open"] and not (body.note or "").strip():
+        raise HTTPException(400, f"{summary['important_open']} important break(s) are still open - add a note explaining why the run can be signed off")
+    if summary["signoff"] and summary["signoff"]["status"] in ("SUBMITTED", "SIGNED_OFF"):
+        raise HTTPException(409, f"This run is already {summary['signoff']['status'].lower().replace('_', ' ')}")
+    write(
+        """WITH up AS (
+               INSERT INTO reconciliation_signoffs (run_date, source_system, status, prepared_by, prepared_at, prepare_note)
+               VALUES (%s, %s, 'SUBMITTED', %s, now(), %s)
+               ON CONFLICT (run_date, source_system) DO UPDATE SET status = 'SUBMITTED', prepared_by = EXCLUDED.prepared_by,
+                   prepared_at = now(), prepare_note = EXCLUDED.prepare_note, signed_by = NULL, signed_at = NULL, sign_note = NULL
+               RETURNING run_date)
+           INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value)
+           SELECT %s, 'RUN_SUBMITTED', 'reconciliation_run', %s, NULL, %s FROM up RETURNING log_id""",
+        (summary["run_date"], body.source_system, user["user_id"], body.note, user["user_id"],
+         f"{body.source_system}:{summary['run_date']}", body.note),
+    )
+    return {"status": "SUBMITTED"}
+
+
+class SignOffRequest(BaseModel):
+    source_system: str = "neon"
+    decision: Literal["SIGN_OFF", "RETURN"]
+    note: Optional[str] = None
+
+
+@router.post("/run/signoff")
+def sign_off_run(body: SignOffRequest, user: dict = Depends(current_user)):
+    """A second person (CFO/approver or admin, never the preparer) signs the run off or returns it."""
+    if user["role"] not in ("approver", "admin"):
+        raise HTTPException(403, "Only the CFO (approver) or an admin can sign off a run")
+    summary = run_summary(body.source_system)
+    signoff = summary.get("signoff")
+    if not signoff or signoff["status"] != "SUBMITTED":
+        raise HTTPException(409, "The run hasn't been submitted for sign-off")
+    if signoff["prepared_by"] == user["user_id"]:
+        raise HTTPException(409, "The person who prepared the run can't also sign it off")
+    if body.decision == "RETURN" and not (body.note or "").strip():
+        raise HTTPException(400, "Say why the run is being returned")
+    new_status = "SIGNED_OFF" if body.decision == "SIGN_OFF" else "RETURNED"
+    write(
+        """WITH up AS (
+               UPDATE reconciliation_signoffs SET status = %s, signed_by = %s, signed_at = now(), sign_note = %s
+               WHERE run_date = %s AND source_system = %s AND status = 'SUBMITTED' RETURNING run_date)
+           INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value)
+           SELECT %s, %s, 'reconciliation_run', %s, 'SUBMITTED', %s FROM up RETURNING log_id""",
+        (new_status, user["user_id"], body.note, summary["run_date"], body.source_system,
+         user["user_id"], "RUN_" + new_status, f"{body.source_system}:{summary['run_date']}", body.note),
+    )
+    return {"status": new_status}
+
+
 
 @router.get("")
 def list_exceptions(
@@ -58,7 +190,8 @@ def list_exceptions(
     return query(
         f"""SELECT r.exception_id, r.source_system, r.entity_type, r.entity_id, r.field_name,
                    r.source_value, r.canonical_value, r.mismatch_type, r.status, r.detected_at,
-                   r.resolved_by, u.name AS resolved_by_name, r.resolved_at, r.resolution_note
+                   r.resolved_by, u.name AS resolved_by_name, r.resolved_at, r.resolution_note,
+                   r.resolved_rule, r.group_id, r.first_seen, r.last_seen, r.times_seen, r.recurring
             FROM reconciliation_exceptions r LEFT JOIN users u ON u.user_id = r.resolved_by
             {where} ORDER BY r.detected_at DESC LIMIT %s""",
         tuple(params),
@@ -267,6 +400,10 @@ class ResolveRequest(BaseModel):
 
 @router.post("/{exception_id}/resolve")
 def resolve(exception_id: int, body: ResolveRequest, user: dict = Depends(current_user)):
+    # Decisions are made in the group's task (specs/reconciliation-groups.md): a single break can
+    # only be resolved here by an admin, as an override - still audited below.
+    if user["role"] != "admin":
+        raise HTTPException(403, "Reconciliation breaks are decided in their group's task on the Tasks screen")
     if body.status == "CORRECTED" and not body.resolution_note:
         raise HTTPException(400, "resolution_note is required when correcting a value")
     row = write(

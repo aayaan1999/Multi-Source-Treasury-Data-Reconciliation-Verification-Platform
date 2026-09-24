@@ -57,3 +57,26 @@ export const KPIS = [
 export const TREND_KEYS = ["car_pct", "lcr_pct", "npl_ratio_pct", "dollarization_ratio_pct"];
 
 export const KPI_BY_KEY = Object.fromEntries(KPIS.map((k) => [k.key, k]));
+
+/**
+ * One source of truth for thresholds (specs/breach-levels.md, BRC-4): the limits table the breach
+ * check uses. Applied to the objects above in place, once after login, so every screen that reads
+ * KPI_BY_KEY (tiles, trend lines, alerts, KPI detail, portfolio) uses the same numbers as the breach
+ * tasks. amber = early warning, red = internal appetite, limit line = regulatory (else appetite).
+ * The values above stay as the fallback when the limits can't be loaded.
+ */
+export function applyLimits(limits) {
+  for (const l of limits || []) {
+    const kpi = KPI_BY_KEY[l.kpi_key];
+    if (!kpi) continue;
+    if (l.early_warning_value != null) kpi.amber = l.early_warning_value;
+    if (l.threshold_value != null) kpi.red = l.threshold_value;
+    const line = l.regulatory_value ?? l.threshold_value;
+    if (line != null) {
+      kpi.limit = line;
+      kpi.limitLabel = l.regulatory_value != null ? "regulatory minimum" : "internal limit";
+      if (l.regulatory_value != null && kpi.direction === "lower") kpi.limitLabel = "regulatory maximum";
+    }
+    kpi.limitsFromDatabase = true;
+  }
+}

@@ -142,14 +142,14 @@ complicate the shared one. All types appear in the same Tasks screen, labelled b
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| REC-1 | Automatic clearing: rules step after the comparison (tolerance, formatting-only; timing once REC-6 exists); rules + limits in a settings table; `resolved_by` = system + `rule` columns; "auto-cleared" filter on screen | M | Tolerances, which harmless causes to accept | todo |
-| REC-2 | Group by cause across accounts: `reconciliation_groups` table + group id on each break; group view (summary, full list, filters, export) with Accept all / all-except-selected / Correct / Dismiss, reason required; carve-outs split out; one audit row per break | L | - | todo |
-| REC-3 | Safety rules: important breaks (amount, key fields, missing accounts) never grouped for bulk, bulk accept blocked in the backend too; optional second approval above a total | M | Amount limits, key fields, second-approval rule | todo |
-| REC-4 | Tasks: `reconciliation-review` Camunda process; bridge starts one task per group (idempotent, reusing TSK-1's case tracking); outcome worker writes the decision to every break in the group; due dates via TSK-3 | M | Owning team (placeholder: Operations), deadlines | todo |
-| REC-5 | Ageing and recurring breaks: first/last seen + times seen; a rerun reopens a previously accepted break as "Recurring" (new task, never silently re-accepted); age buckets on screen | S-M | Escalation age | todo |
+| REC-1 | Automatic clearing: rules step after the comparison (tolerance, formatting-only; timing once REC-6 exists); rules + limits in a settings table; `resolved_by` = system + `rule` columns; "auto-cleared" filter on screen | M | Tolerances, which harmless causes to accept | built 2026-09-24 (code + tests), not yet run live - `specs/reconciliation-groups.md` |
+| REC-2 | Group by cause across accounts: `reconciliation_groups` table + group id on each break; group view (summary, full list, filters, export) with Accept all / all-except-selected / Correct / Dismiss, reason required; carve-outs split out; one audit row per break | L | - | built 2026-09-24 (code + tests), not yet run live |
+| REC-3 | Safety rules: important breaks (amount, key fields, missing accounts) never grouped for bulk, bulk accept blocked in the backend too; optional second approval above a total | M | Amount limits, key fields, second-approval rule | built 2026-09-24 (code + tests), not yet run live |
+| REC-4 | Tasks: `reconciliation-review` Camunda process; bridge starts one task per group (idempotent, reusing TSK-1's case tracking); outcome worker writes the decision to every break in the group; due dates via TSK-3 | M | Owning team (placeholder: Operations), deadlines | built 2026-09-24 (code + tests), not yet run live |
+| REC-5 | Ageing and recurring breaks: first/last seen + times seen; a rerun reopens a previously accepted break as "Recurring" (new task, never silently re-accepted); age buckets on screen | S-M | Escalation age | built 2026-09-24 (code + tests), not yet run live |
 | REC-6 | Transaction-level matching (1:1, then 1:many): transaction feed from core banking, matching notebook (exact → near → one-to-many), matched-pairs table, side-by-side matching screen; runs in Databricks, screens read results only | L | **Transaction export + matching fields** | blocked (bank) |
-| REC-7 | Run sign-off: `reconciliation_runs` table; preparer submits (no open important breaks, or a written explanation), reviewer signs off or returns; signed-off run locked; both logged | M | Whether required; who prepares / signs | todo |
-| REC-8 | Reconciliation tab as the overview: run summary, groups list with "Open task", all-breaks explorer with the new filters, ageing and recurring views, export; resolve popup replaced by the task link | M | Admin override wanted? | todo |
+| REC-7 | Run sign-off: `reconciliation_runs` table; preparer submits (no open important breaks, or a written explanation), reviewer signs off or returns; signed-off run locked; both logged | M | Whether required; who prepares / signs | built 2026-09-24 (code + tests), not yet run live |
+| REC-8 | Reconciliation tab as the overview: run summary, groups list with "Open task", all-breaks explorer with the new filters, ageing and recurring views, export; resolve popup replaced by the task link | M | Admin override wanted? | built 2026-09-24 (code + tests), not yet run live |
 
 Suggested order inside this point: REC-1 → REC-2 → REC-3 → REC-4 → REC-8 → REC-5 → REC-7; REC-6 once the bank provides a transaction feed.
 
@@ -173,7 +173,7 @@ Five `multi_source_*` ingestion notebooks exist; only Neon is verified live.
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| SRC-1 | Add `source_system` + `ingest_batch_id` (file/run reference) to every entity, from Notebook 1 through `load_to_postgres.py` into Neon | M | - | in progress: same work as FLOW-1a |
+| SRC-1 | Add `source_system` + `ingest_batch_id` (file/run reference) to every entity, from Notebook 1 through `load_to_postgres.py` into Neon | M | - | done: same work as FLOW-1a, live since the 2026-09-24 run |
 | SRC-2 | Show source on drill-downs (KPI detail, portfolio, task source record) | S | - | todo |
 | SRC-3 | Lineage view: Source X file → raw → clean → Gold KPI → screen, with row counts and rejects per step | M | - | todo |
 | SRC-4 | `transaction_code_mapping`: map each source's own transaction codes to our `type` | M | **Real code lists per source system** | blocked (bank) |
@@ -192,10 +192,10 @@ show as two exposures (top-20 exposures, concentration, segment totals).
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| DUP-1 | Name normalisation (drop Ltd / SAL / Pvt / Inc, case, punctuation) + known-abbreviation list | S | Abbreviation list (optional) | todo |
-| DUP-2 | Candidate matching: fuzzy name + shared registration/tax ID, phone, address → `entity_match_candidates` | M | **A reliable ID, e.g. commercial registration no.** | todo |
-| DUP-3 | Review queue: each candidate pair becomes a task; a human confirms or rejects (never auto-merge) | M | - | todo |
-| DUP-4 | `master_entity_id` on customers; exposure/concentration aggregates group by it; originals untouched | M | - | todo |
+| DUP-1 | Name normalisation (drop Ltd / SAL / Pvt / Inc, case, punctuation) + known-abbreviation list | S | Abbreviation list (optional) | built 2026-09-24 (code + tests), not yet run live - `specs/entity-matching.md` |
+| DUP-2 | Candidate matching: fuzzy name + shared registration/tax ID, phone, address → `entity_match_candidates` | M | **A reliable ID, e.g. commercial registration no.** | built 2026-09-24 (code + tests), not yet run live - name-based until a registration number exists |
+| DUP-3 | Review queue: each candidate pair becomes a task; a human confirms or rejects (never auto-merge) | M | - | built 2026-09-24 (code + tests), not yet run live |
+| DUP-4 | `master_entity_id` on customers; exposure/concentration aggregates group by it; originals untouched | M | - | built 2026-09-24 (code + tests), not yet run live - top exposures per group (Notebook 6) |
 
 **Done when:** confirmed duplicates roll up into one exposure; nothing is merged without a human decision.
 
@@ -230,9 +230,9 @@ structuring = **genuine AML red flag**; duplicate = **operational fault**.
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| FRD-1 | Reclassify flags into **THRESHOLD** (reporting) / **SUSPICIOUS** (AML or fraud pattern) / **OPERATIONAL**; update routing + UI labels | S | - | in progress: code + tests done 2026-09-24; migration 006 not yet applied to Neon, Notebook 5 not yet run on the cluster |
-| FRD-2 | New suspicious patterns possible with current data: dormant account reactivated; pass-through (in and out same day); activity too big for segment; many round amounts; splitting across a customer's accounts | M | - | todo |
-| FRD-3 | Thresholds and typologies from config, not hard-coded constants | S | **Bank's AML typologies + reporting thresholds** | todo |
+| FRD-1 | Reclassify flags into **THRESHOLD** (reporting) / **SUSPICIOUS** (AML or fraud pattern) / **OPERATIONAL**; update routing + UI labels | S | - | done: live since the 2026-09-24 run (94 Suspicious / 2 Threshold / 2 Operational) |
+| FRD-2 | New suspicious patterns possible with current data: dormant account reactivated; pass-through (in and out same day); activity too big for segment; many round amounts; splitting across a customer's accounts | M | - | built 2026-09-24 (code + tests), not yet run live - five patterns, `specs/notebook-05-fraud-business-rules.md` 3a |
+| FRD-3 | Thresholds and typologies from config, not hard-coded constants | S | **Bank's AML typologies + reporting thresholds** | built 2026-09-24 (code + tests), not yet run live - `app_settings['fraud.rules']`, migration 013 |
 | FRD-4 | Real fraud signals (account takeover, new device/IP, new beneficiary) - future Notebook 7 | L | **Device/login/beneficiary data** | blocked (bank) |
 
 **Done when:** nothing is called "fraud" just for being large; each flag says *why* it's suspicious.
@@ -249,10 +249,10 @@ transaction hit by two rules = two tasks; no priority, severity or due date; rec
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| TSK-1 | Case grouping: one task per account + day (or per pattern) listing all related flags | M | - | todo |
-| TSK-2 | Severity score per case; only above a threshold becomes a task, the rest go to a daily digest | M | Severity rules | todo |
-| TSK-3 | Due date by severity/team; overdue badge on Tasks and Audit & Oversight | S | **SLA per team** | todo |
-| TSK-4 | Written task-creation policy (what, who, how fast) shown in the UI | S | **Sign-off** | todo |
+| TSK-1 | Case grouping: one task per account + day (or per pattern) listing all related flags | M | - | built 2026-09-24 (code + tests), not yet run live - `specs/task-cases.md` |
+| TSK-2 | Severity score per case; only above a threshold becomes a task, the rest go to a daily digest | M | Severity rules | built 2026-09-24 (code + tests), not yet run live - daily digest for Low |
+| TSK-3 | Due date by severity/team; overdue badge on Tasks and Audit & Oversight | S | **SLA per team** | built 2026-09-24 (code + tests), not yet run live - due dates + overdue on Tasks |
+| TSK-4 | Written task-creation policy (what, who, how fast) shown in the UI | S | **Sign-off** | built 2026-09-24 (code + tests), not yet run live - policy shown on Tasks from settings; bank sign-off pending |
 
 **Done when:** the queue holds cases, not raw flags, each with a priority and a deadline.
 
@@ -291,10 +291,10 @@ breach creates a Compliance task. Two **placeholder** limits set 2026-09-23: cap
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| BRC-1 | Three levels per limit: regulatory minimum / internal risk appetite / early warning (early warning = notification, not a task) | M | **Official values per level** | todo |
-| BRC-2 | Consecutive-days rule per limit (e.g. breached 3 days running) in `breach_check.py` | S | **Rule per limit** | todo |
-| BRC-3 | Deadline from `resolution_days`; due date + overdue shown on breach tasks and Audit & Oversight | S | Deadlines | todo |
-| BRC-4 | Tiles read thresholds from `limits` via the API - one source of truth, remove the copy in `kpiConfig.js` | M | - | todo |
+| BRC-1 | Three levels per limit: regulatory minimum / internal risk appetite / early warning (early warning = notification, not a task) | M | **Official values per level** | built 2026-09-24 (code + tests), not yet run live - `specs/breach-levels.md` |
+| BRC-2 | Consecutive-days rule per limit (e.g. breached 3 days running) in `breach_check.py` | S | **Rule per limit** | built 2026-09-24 (code + tests), not yet run live |
+| BRC-3 | Deadline from `resolution_days`; due date + overdue shown on breach tasks and Audit & Oversight | S | Deadlines | built 2026-09-24 (code + tests), not yet run live |
+| BRC-4 | Tiles read thresholds from `limits` via the API - one source of truth, remove the copy in `kpiConfig.js` | M | - | built 2026-09-24 (code + tests), not yet run live - tiles read /kpi-summary/limits |
 
 **Done when:** the bank's own limits drive both the tiles and the breach tasks, at the right level, with deadlines.
 

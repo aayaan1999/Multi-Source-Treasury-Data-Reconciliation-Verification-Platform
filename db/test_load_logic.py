@@ -260,6 +260,30 @@ w = merge()
 check("load 8: before its migration the new table is skipped and the rest still loads",
       "country_performance_summary" not in w and scalar("SELECT car_pct FROM kpi_daily_summary WHERE calculation_date=%s", d2) == 14.0)
 
+# ---- Load 9: core-system breaks - no duplicates, seen-again refresh, recurring reopen ---------
+REX = ("source_system text, entity_type text, entity_id text, field_name text, source_value text, canonical_value text, "
+       "mismatch_type text, status text, detected_at timestamp, resolved_by text, resolved_at timestamp, "
+       "resolution_note text, resolved_rule text, first_seen timestamp, last_seen timestamp, times_seen integer")
+t1, t2 = datetime(2026, 9, 23, 6), datetime(2026, 9, 24, 6)
+def rex(eid, field, mismatch, last_seen, times, status="OPEN", rule=None):
+    return ("neon", "account", eid, field, "1015", "1000", mismatch, status, t1, None, None, None, rule, t1, last_seen, times)
+stage({"reconciliation_exceptions": (REX, [rex("A1", "balance", "VALUE_MISMATCH", t1, 1),
+                                           rex("A2", None, "MISSING_IN_SOURCE", t1, 1),
+                                           rex("A3", "name", "VALUE_MISMATCH", t1, 1, "AUTO_ACCEPTED", "FORMATTING_ONLY")])})
+merge()
+cur.execute("UPDATE reconciliation_exceptions SET status = 'ACCEPTED', resolved_at = %s WHERE entity_id = 'A1'", (datetime(2026, 9, 23, 12),))
+cur.execute("UPDATE reconciliation_exceptions SET resolved_at = %s WHERE entity_id = 'A3'", (datetime(2026, 9, 23, 12),))
+stage({"reconciliation_exceptions": (REX, [rex("A1", "balance", "VALUE_MISMATCH", t2, 2),
+                                           rex("A2", None, "MISSING_IN_SOURCE", t2, 2),
+                                           rex("A3", "name", "VALUE_MISMATCH", t2, 2, "AUTO_ACCEPTED", "FORMATTING_ONLY")])})
+merge()
+check("load 9: a missing-record break (no field) is never inserted twice",
+      scalar("SELECT count(*) FROM reconciliation_exceptions WHERE entity_id = 'A2'") == 1)
+check("load 9: a resolved break seen again is reopened and marked recurring",
+      scalar("SELECT status || '/' || recurring || '/' || times_seen FROM reconciliation_exceptions WHERE entity_id = 'A1'") == "OPEN/true/2")
+check("load 9: an auto-cleared break stays cleared (its formatting difference persists by nature)",
+      scalar("SELECT status || '/' || recurring FROM reconciliation_exceptions WHERE entity_id = 'A3'") == "AUTO_ACCEPTED/false")
+
 # ---- Report ---------------------------------------------------------------------------------
 for name, ok, detail in results:
     print(f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  -- {detail}" if detail and not ok else ""))

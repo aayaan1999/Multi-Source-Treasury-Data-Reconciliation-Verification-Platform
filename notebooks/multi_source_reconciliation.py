@@ -201,6 +201,14 @@ parts = [e for e in [customer_exceptions, account_exceptions] if e is not None]
 # MAGIC `(source_system, entity_type, entity_id, field_name, mismatch_type)` combinations - a rerun
 # MAGIC must not reset a row a reviewer has already actioned, same discipline as
 # MAGIC `flagged_transactions` (`specs/notebook-05-fraud-business-rules.md`).
+# MAGIC
+# MAGIC Added for client point 1 (`specs/reconciliation-groups.md`):
+# MAGIC * **Automatic clearing:** a text difference that disappears once case, spaces and punctuation are
+# MAGIC   ignored ("AL-HASSAN TRADING" vs "Al Hassan Trading") is recorded as `AUTO_ACCEPTED` with the
+# MAGIC   rule that cleared it, never sent to a person. (Numeric differences within the tolerance above
+# MAGIC   aren't recorded at all.)
+# MAGIC * **Ageing / recurring:** a break found again updates `last_seen` and `times_seen`; the Postgres
+# MAGIC   load reopens one a reviewer had resolved (`recurring`) rather than letting it pass silently.
 
 # COMMAND ----------
 
@@ -211,16 +219,31 @@ else:
     for p in parts[1:]:
         all_exceptions = all_exceptions.unionByName(p)
 
+    # Formatting-only: the same text once upper-cased and stripped of spaces and punctuation.
+    def letters_and_digits(col):
+        return F.regexp_replace(F.upper(F.col(col)), "[^A-Z0-9]", "")
+
+    formatting_only = (
+        (F.col("mismatch_type") == "VALUE_MISMATCH")
+        & F.col("source_value").isNotNull() & F.col("canonical_value").isNotNull()
+        & (letters_and_digits("source_value") == letters_and_digits("canonical_value"))
+    )
+    now = F.current_timestamp()
     all_exceptions = (
         all_exceptions.withColumn("source_system", F.lit("neon"))
-        .withColumn("status", F.lit("OPEN"))
-        .withColumn("detected_at", F.current_timestamp())
+        .withColumn("status", F.when(formatting_only, F.lit("AUTO_ACCEPTED")).otherwise(F.lit("OPEN")))
+        .withColumn("resolved_rule", F.when(formatting_only, F.lit("FORMATTING_ONLY")))
+        .withColumn("detected_at", now)
+        .withColumn("first_seen", now)
+        .withColumn("last_seen", now)
+        .withColumn("times_seen", F.lit(1))
         .withColumn("resolved_by", F.lit(None).cast("string"))
-        .withColumn("resolved_at", F.lit(None).cast("timestamp"))
-        .withColumn("resolution_note", F.lit(None).cast("string"))
+        .withColumn("resolved_at", F.when(formatting_only, now).otherwise(F.lit(None).cast("timestamp")))
+        .withColumn("resolution_note", F.when(formatting_only, F.lit("Cleared automatically: formatting only")))
         .select("source_system", "entity_type", "entity_id", "field_name", "source_value",
                 "canonical_value", "mismatch_type", "status", "detected_at",
-                "resolved_by", "resolved_at", "resolution_note")
+                "resolved_by", "resolved_at", "resolution_note", "resolved_rule",
+                "first_seen", "last_seen", "times_seen")
     )
 
     merge_key = (
@@ -230,8 +253,22 @@ else:
     )
 
     if spark.catalog.tableExists("reconciliation_exceptions"):
+        # Tables created before these columns existed get them added (older rows: first/last seen =
+        # when they were detected, seen once).
+        existing = set(spark.table("reconciliation_exceptions").columns)
+        for col, sql_type in [("resolved_rule", "STRING"), ("first_seen", "TIMESTAMP"), ("last_seen", "TIMESTAMP"), ("times_seen", "INT")]:
+            if col not in existing:
+                spark.sql(f"ALTER TABLE reconciliation_exceptions ADD COLUMNS ({col} {sql_type})")
+        if "first_seen" not in existing:
+            spark.sql("UPDATE reconciliation_exceptions SET first_seen = detected_at, last_seen = detected_at, times_seen = 1")
         target = DeltaTable.forName(spark, "reconciliation_exceptions")
-        target.alias("t").merge(all_exceptions.alias("s"), merge_key).whenNotMatchedInsertAll().execute()
+        (
+            target.alias("t").merge(all_exceptions.alias("s"), merge_key)
+            # Seen again: when, and how many runs it has appeared in. Status stays the app's.
+            .whenMatchedUpdate(set={"last_seen": "s.last_seen", "times_seen": "t.times_seen + 1"})
+            .whenNotMatchedInsertAll()
+            .execute()
+        )
     else:
         all_exceptions.write.format("delta").mode("overwrite").saveAsTable("reconciliation_exceptions")
 

@@ -80,10 +80,12 @@ def seed(cur, today: date | None = None) -> dict:
                ON CONFLICT (product, risk_rating) DO UPDATE SET weight_pct = EXCLUDED.weight_pct""",
             (product, weight),
         )
+    # The capital limit's levels (specs/breach-levels.md): the return's minimum is the regulatory
+    # level (12%); the internal-appetite threshold and early warning are left as the bank sets them.
     cur.execute(
-        """INSERT INTO limits (metric_name, threshold_value, direction, resolution_days)
-           VALUES (%s, 12, 'BELOW', 30)
-           ON CONFLICT (metric_name) DO UPDATE SET threshold_value = EXCLUDED.threshold_value""",
+        """INSERT INTO limits (metric_name, early_warning_value, threshold_value, regulatory_value, direction, resolution_days)
+           VALUES (%s, 15, 12.5, 12, 'BELOW', 14)
+           ON CONFLICT (metric_name) DO UPDATE SET regulatory_value = EXCLUDED.regulatory_value""",
         (capital_adequacy.LIMIT_METRIC,),
     )
     for key, name, severity, message, expression in RULES:

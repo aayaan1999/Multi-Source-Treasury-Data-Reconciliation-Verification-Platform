@@ -88,7 +88,7 @@ export const CANDIDATE_GROUPS = ["fraud-investigation", "compliance", "operation
  */
 // Requested inline via includeVariables rather than a separate getVariables call per row - one
 // Tasklist round trip for the whole list instead of N+1.
-const LIST_VARIABLES = ["recordType", "sourceTable", "recordKey", "flagLabel", "title"];
+const LIST_VARIABLES = ["recordType", "sourceTable", "recordKey", "flagLabel", "title", "severity", "dueDate", "accountId"];
 
 export async function searchTasks({ state = "CREATED", candidateGroups = CANDIDATE_GROUPS } = {}) {
   const tasks = await call("/tasks/search", {

@@ -170,11 +170,25 @@ def run_merge(cur):
     # 4b. Reconciliation exceptions (specs/multi-source-reconciliation.md): same insert-only
     #     discipline as flagged_transactions - status/resolved_* are owned by the application
     #     after first load, never reset by a rerun.
+    #     With migration 016 (specs/reconciliation-groups.md) a break found again refreshes its
+    #     last_seen / times_seen / values, and one a reviewer had resolved is reopened as recurring
+    #     (an auto-cleared one isn't: its formatting difference persists by nature).
     if "reconciliation_exceptions" in staged:
-        written["reconciliation_exceptions"] = _insert_from_staging(
-            cur, "reconciliation_exceptions",
-            "ON CONFLICT (source_system, entity_type, entity_id, mismatch_type, field_name) DO NOTHING",
-        )
+        cols = {n for n, _ in _columns(cur, "public.reconciliation_exceptions")}
+        if {"last_seen", "times_seen", "recurring", "group_id"} <= cols:
+            reopen = ("(reconciliation_exceptions.status IN ('ACCEPTED', 'CORRECTED', 'DISMISSED') "
+                      "AND EXCLUDED.last_seen > reconciliation_exceptions.resolved_at)")
+            tail = (
+                "ON CONFLICT (source_system, entity_type, entity_id, mismatch_type, field_name) DO UPDATE SET "
+                "last_seen = EXCLUDED.last_seen, times_seen = EXCLUDED.times_seen, "
+                "source_value = EXCLUDED.source_value, canonical_value = EXCLUDED.canonical_value, "
+                f"recurring = reconciliation_exceptions.recurring OR {reopen}, "
+                f"status = CASE WHEN {reopen} THEN 'OPEN' ELSE reconciliation_exceptions.status END, "
+                f"group_id = CASE WHEN {reopen} THEN NULL ELSE reconciliation_exceptions.group_id END"
+            )
+        else:
+            tail = "ON CONFLICT (source_system, entity_type, entity_id, mismatch_type, field_name) DO NOTHING"
+        written["reconciliation_exceptions"] = _insert_from_staging(cur, "reconciliation_exceptions", tail)
 
     # 4c. Pipeline reconciliation items (specs/pipeline-reconciliation.md): insert-only on
     #     recon_key - the key includes the run, so each run adds its own items, and the status the

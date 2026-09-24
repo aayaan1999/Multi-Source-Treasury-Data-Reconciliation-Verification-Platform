@@ -183,17 +183,54 @@ loan_stage_summary = loans_joined.groupBy("stage").agg(
 
 # COMMAND ----------
 
-customer_totals = loans_joined.groupBy("customer_id", "customer_name").agg(F.sum("outstanding_usd").alias("outstanding_usd"))
+# Confirmed duplicates (client point 3, specs/entity-matching.md): customer records a person has
+# confirmed are the same company share a group, led by one record, and their exposure is added up as
+# one customer. Read from Neon's customer_entity; best-effort - without it each record stands alone.
+def read_customer_groups():
+    try:
+        return (
+            spark.read.format("postgresql")
+            .option("host", dbutils.secrets.get("neon", "host")).option("port", "5432")
+            .option("database", dbutils.secrets.get("neon", "database"))
+            .option("user", dbutils.secrets.get("neon", "user")).option("password", dbutils.secrets.get("neon", "password"))
+            .option("dbtable", "public.customer_entity")
+            .load()
+            .select("customer_id", "master_customer_id")
+        )
+    except Exception as e:  # no table yet (migration 015), no secrets, Neon asleep
+        print(f"Top exposures per record, not per group - couldn't read customer_entity from Neon: {type(e).__name__}: {str(e)[:200]}")
+        return None
 
-largest_loan_window = Window.partitionBy("customer_id").orderBy(F.col("outstanding_usd").desc())
-largest_loan_per_customer = (
-    loans_joined.withColumn("rn", F.row_number().over(largest_loan_window))
+
+customer_groups = read_customer_groups()
+loans_by_group = (
+    loans_joined.join(customer_groups, "customer_id", "left")
+    .withColumn("group_id", F.coalesce(F.col("master_customer_id"), F.col("customer_id")))
+    if customer_groups is not None else loans_joined.withColumn("group_id", F.col("customer_id"))
+)
+
+# One row per group (a customer on its own is a group of one), named after its lead record.
+group_totals = loans_by_group.groupBy("group_id").agg(
+    F.sum("outstanding_usd").alias("outstanding_usd"),
+    F.array_sort(F.collect_set("customer_id")).alias("members"),
+)
+group_names = customers_clean.select(F.col("customer_id").alias("group_id"), F.col("name").alias("customer_name"))
+
+largest_loan_window = Window.partitionBy("group_id").orderBy(F.col("outstanding_usd").desc())
+largest_loan_per_group = (
+    loans_by_group.withColumn("rn", F.row_number().over(largest_loan_window))
     .filter(F.col("rn") == 1)
-    .select("customer_id", "product", "days_past_due")
+    .select("group_id", "product", "days_past_due")
 )
 
 top_exposures = (
-    customer_totals.join(largest_loan_per_customer, "customer_id")
+    group_totals.join(group_names, "group_id", "left")
+    .join(largest_loan_per_group, "group_id")
+    # The other records folded into this exposure, e.g. "CN0107" (null for a customer on its own).
+    .withColumn("linked_customer_ids", F.array_join(F.array_remove(F.col("members"), F.col("group_id")), ","))
+    .withColumn("linked_customer_ids", F.when(F.col("linked_customer_ids") == "", None).otherwise(F.col("linked_customer_ids")))
+    .withColumnRenamed("group_id", "customer_id")
+    .drop("members")
     .withColumn("pct_of_capital", F.col("outstanding_usd") / F.lit(total_capital_usd) * 100)
     .withColumn("calculation_date", CALCULATION_DATE)
     .orderBy(F.col("outstanding_usd").desc())

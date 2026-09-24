@@ -120,6 +120,7 @@ export const api = {
   kpiLatest: () => request("/kpi-summary/latest"),
   kpiHistory: (days = 730) => request(`/kpi-summary/history?days=${days}`),
   kpiCountries: () => request("/kpi-summary/countries"),   // specs/cfo-country-view.md
+  kpiLimits: () => request("/kpi-summary/limits"),         // specs/breach-levels.md
   kpiBreakdown: (key) => request(`/kpi-summary/${key}/breakdown`),
 
   // Screen 2 and the drill-downs from Screen 5
@@ -164,6 +165,12 @@ export const api = {
   // Reconciliation tab (specs/multi-source-reconciliation.md) - standalone from Screen 6/Camunda
   reconciliationExceptions: (params) => request(`/reconciliation${query(params)}`),
   reconciliationSummary: () => request("/reconciliation/summary"),
+  // Core-system reconciliation groups and run sign-off (specs/reconciliation-groups.md)
+  reconGroups: (params) => request(`/reconciliation/groups${query(params)}`),
+  reconGroup: (groupId) => request(`/reconciliation/groups/${groupId}`),
+  reconRun: () => request("/reconciliation/run"),
+  submitReconRun: (body) => request("/reconciliation/run/submit", { method: "POST", body }),
+  signOffReconRun: (body) => request("/reconciliation/run/signoff", { method: "POST", body }),
   // Received vs kept per source, country and table (specs/pipeline-reconciliation.md)
   pipelineReconciliation: (params) => request(`/reconciliation/pipeline${query(params)}`),
   pipelineRecords: (reconId) => request(`/reconciliation/pipeline/${reconId}/records`),
@@ -172,6 +179,12 @@ export const api = {
   proposeCorrection: (reconId, body) => request(`/reconciliation/pipeline/${reconId}/corrections`, { method: "POST", body }),
   pipelineEvent: (reconId, body) => request(`/reconciliation/pipeline/${reconId}/events`, { method: "POST", body }),
   assignees: () => request("/reconciliation/assignees"),
+  // Task cases, digest and policy (specs/task-cases.md)
+  caseDetail: (caseId) => request(`/workflow/cases/${caseId}`),
+  entityMatch: (candidateId) => request(`/workflow/entity-matches/${candidateId}`),   // specs/entity-matching.md
+  digest: () => request("/workflow/digest"),
+  raiseDigestCase: (caseId) => request(`/workflow/digest/${caseId}/raise`, { method: "POST" }),
+  taskPolicy: () => request("/workflow/policy"),
   // Refresh Now (specs/refresh-now.md)
   refreshStatus: () => request("/refresh/status"),
   refreshNow: () => request("/refresh", { method: "POST" }),

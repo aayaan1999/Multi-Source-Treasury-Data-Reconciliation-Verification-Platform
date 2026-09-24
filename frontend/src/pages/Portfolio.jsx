@@ -207,7 +207,11 @@ export default function Portfolio() {
         <DataTable
           caption="Top exposures"
           columns={[
-            { key: "customer_name", header: "Customer", render: (r) => `${r.customer_name} (${r.customer_id})` },
+            {
+              key: "customer_name", header: "Customer",
+              // Confirmed duplicates are added up into one exposure (specs/entity-matching.md).
+              render: (r) => `${r.customer_name} (${r.customer_id})${r.linked_customer_ids ? ` + linked record${r.linked_customer_ids.includes(",") ? "s" : ""} ${r.linked_customer_ids.replaceAll(",", ", ")}` : ""}`,
+            },
             { key: "product", header: "Product" },
             { key: "outstanding_usd", header: "Outstanding", align: "right", render: (r) => formatUsd(r.outstanding_usd) },
             { key: "days_past_due", header: "Days late", align: "right" },

@@ -1,138 +1,13 @@
-import { useState } from "react";
-import { api } from "../api";
-import DataTable from "../components/DataTable";
-import Modal from "../components/Modal";
-import PageShell, { Loading, LoadError } from "../components/PageShell";
-import Section from "../components/Section";
-import StatBox from "../components/StatBox";
-import useAsync from "../hooks/useAsync";
+import PageShell from "../components/PageShell";
+import CoreSystemSection from "../reconciliation/CoreSystemSection";
 import PipelineSection from "../reconciliation/PipelineSection";
 
-function fmtDateTime(iso) {
-  return iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
-}
-
-const MISMATCH_LABEL = {
-  VALUE_MISMATCH: "Value mismatch",
-  MISSING_IN_CANONICAL: "Missing in our data",
-  MISSING_IN_SOURCE: "Missing in source system",
-};
-
-/** Approve/Dismiss/Correct one open exception, with a note required for a correction. Rendered
- * inside a Modal popup, matching the Tasks tab's review flow. */
-function ResolvePanel({ row, onDone, onClose }) {
-  const [status, setStatus] = useState("");
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function submit() {
-    setError("");
-    if (!status) return setError("Pick Accept, Correct or Dismiss.");
-    if (status === "CORRECTED" && !note.trim()) return setError("A note is required when correcting a value.");
-    setBusy(true);
-    try {
-      await api.resolveReconciliation(row.exception_id, { status, resolution_note: note || undefined });
-      onDone();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <h3 className="text-sm font-semibold tracking-tight text-ink">
-        {row.entity_type} {row.entity_id}{row.field_name ? ` — ${row.field_name}` : ""}
-      </h3>
-      <p className="mt-0.5 text-sm text-ink2">{MISMATCH_LABEL[row.mismatch_type] || row.mismatch_type}</p>
-
-      <div className="card mb-5 mt-4 rounded-xl border border-hair bg-surface p-4">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
-          <div><dt className="text-ink2">Source system value</dt><dd className="font-medium text-ink">{row.source_value ?? "—"}</dd></div>
-          <div><dt className="text-ink2">Our recorded value</dt><dd className="font-medium text-ink">{row.canonical_value ?? "—"}</dd></div>
-          <div><dt className="text-ink2">Detected</dt><dd className="font-medium text-ink">{fmtDateTime(row.detected_at)}</dd></div>
-        </dl>
-      </div>
-
-      <h3 className="mb-2 text-sm font-medium text-ink2">Action</h3>
-      <div className="card rounded-xl border border-hair bg-surface p-4">
-        <div className="mb-3 flex flex-wrap gap-2">
-          {[["ACCEPTED", "Accept"], ["CORRECTED", "Correct"], ["DISMISSED", "Dismiss"]].map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setStatus(value)}
-              className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
-                status === value ? "border-accent bg-accent text-white" : "border-hair text-ink hover:border-accent/40 hover:bg-page"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <input
-          type="text"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder={status === "CORRECTED" ? "What's the correct value, and why? (required)" : "Note (optional)"}
-          className="mb-3 w-full rounded-md border border-hair bg-surface px-3 py-1.5 text-sm text-ink"
-        />
-        {error && <p role="alert" className="mb-3 text-sm" style={{ color: "var(--critical)" }}>{error}</p>}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink disabled:opacity-60"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={busy}
-            className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
-          >
-            {busy ? "Submitting…" : "Submit decision"}
-          </button>
-        </div>
-      </div>
-    </>
-  );
-}
-
-const TYPE_TABS = [["", "All types"], ...Object.entries(MISMATCH_LABEL)];
-
+/**
+ * Two checks (specs/pipeline-reconciliation.md, specs/reconciliation-groups.md): did every source's
+ * data survive our cleaning, and does our data match the bank's core system? Each section loads on its
+ * own, so one failing never blanks the other. Decisions happen in Tasks; this tab is the overview.
+ */
 export default function Reconciliation() {
-  const [typeFilter, setTypeFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("OPEN");
-  const [selected, setSelected] = useState(null);
-  // Fetched once, unfiltered: the whole table is a few hundred rows, so the type tabs and status
-  // dropdown filter in the browser. Refetching per click cost 4 Neon round trips (~1-3 s) each time.
-  // Only a resolve (reload) goes back to the server.
-  const { status, data, error, reload } = useAsync(
-    () => Promise.all([api.reconciliationExceptions({ limit: 5000 }), api.reconciliationSummary()]),
-    [],
-  );
-
-  if (status === "loading") return <PageShell title="Reconciliation"><Loading what="reconciliation exceptions" /></PageShell>;
-  if (status === "error" && !data) return <PageShell title="Reconciliation"><LoadError error={error} onRetry={reload} /></PageShell>;
-
-  const [allRows, summary] = data;
-  const rows = allRows.filter(
-    (r) => (!statusFilter || r.status === statusFilter) && (!typeFilter || r.mismatch_type === typeFilter),
-  );
-  const openCount = summary.by_status.find((s) => s.status === "OPEN")?.count ?? 0;
-  const resolvedCount = summary.by_status.filter((s) => s.status !== "OPEN").reduce((n, s) => n + s.count, 0);
-  const openCountByType = Object.fromEntries(summary.by_mismatch_type.map((m) => [m.mismatch_type, m.count]));
-
-  function selectType(value) {
-    setTypeFilter(value);
-    setSelected(null);
-  }
-
   return (
     <PageShell
       title="Reconciliation"
@@ -144,89 +19,12 @@ export default function Reconciliation() {
       <div className="mt-14 border-t border-hair pt-8">
         <h2 className="text-lg font-semibold tracking-tight text-ink">Our data vs the core banking system</h2>
         <p className="mt-0.5 text-sm text-ink2">
-          Differences between our own records and the bank's core system feed. Review each one and decide whether to accept it, correct our data, or dismiss it.
+          Differences between our own records and the bank's core system. Harmless ones clear themselves; the rest are grouped by
+          cause and decided in Tasks, with important ones always on their own. Each run is signed off by two people.
         </p>
       </div>
 
-      <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Reconciliation summary">
-        <StatBox label="Open exceptions" value={openCount} status={openCount > 0 ? "action" : "good"} />
-        <StatBox label="Resolved" value={resolvedCount} />
-        {summary.by_mismatch_type.slice(0, 2).map((m) => (
-          <StatBox key={m.mismatch_type} label={MISMATCH_LABEL[m.mismatch_type] || m.mismatch_type} value={m.count} hint="Open, by type" />
-        ))}
-      </ul>
-
-      <div role="tablist" aria-label="Filter by mismatch type" className="mt-8 flex flex-wrap gap-1 border-b border-hair pb-2.5">
-        {TYPE_TABS.map(([value, label]) => (
-          <button
-            key={value || "all"}
-            type="button"
-            role="tab"
-            aria-selected={typeFilter === value}
-            onClick={() => selectType(value)}
-            className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-all ${
-              typeFilter === value
-                ? "bg-accent font-medium text-white shadow-[0_4px_12px_-2px_var(--series-1-soft)]"
-                : "text-ink2 hover:bg-page hover:text-ink"
-            }`}
-          >
-            {label}
-            {value && openCountByType[value] > 0 && <span className="ml-1.5 opacity-80">({openCountByType[value]})</span>}
-          </button>
-        ))}
-      </div>
-
-      <Section
-        id="exceptions"
-        title="Exceptions"
-        description="Click a row to accept, correct, or dismiss it."
-        action={
-          <select
-            value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setSelected(null); }}
-            className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40"
-          >
-            <option value="OPEN">Open</option>
-            <option value="ACCEPTED">Accepted</option>
-            <option value="CORRECTED">Corrected</option>
-            <option value="DISMISSED">Dismissed</option>
-            <option value="">All</option>
-          </select>
-        }
-      >
-        <DataTable
-          caption="Reconciliation exceptions"
-          columns={[
-            { key: "entity", header: "Record", render: (r) => `${r.entity_type} ${r.entity_id}` },
-            { key: "field_name", header: "Field", render: (r) => r.field_name || "(whole record)" },
-            { key: "mismatch_type", header: "Type", render: (r) => MISMATCH_LABEL[r.mismatch_type] || r.mismatch_type },
-            { key: "source_value", header: "Source value" },
-            { key: "canonical_value", header: "Canonical value" },
-            { key: "detected_at", header: "Detected", render: (r) => fmtDateTime(r.detected_at) },
-            { key: "status", header: "Status" },
-            { key: "resolved_by_name", header: "Resolved by", render: (r) => r.resolved_by_name || "—" },
-          ]}
-          rows={rows}
-          rowKey={(r) => r.exception_id}
-          rowFlag={(r) => (r.status === "OPEN" ? { kind: "watch", label: "Open" } : null)}
-          selectedKey={selected?.exception_id}
-          onRowClick={(r) => (r.status === "OPEN" ? setSelected(r) : null)}
-          emptyText="No exceptions for this filter."
-        />
-      </Section>
-
-      {selected && (
-        <Modal title="Resolve exception" onClose={() => setSelected(null)}>
-          <ResolvePanel
-            row={selected}
-            onClose={() => setSelected(null)}
-            onDone={() => {
-              setSelected(null);
-              reload();
-            }}
-          />
-        </Modal>
-      )}
+      <CoreSystemSection />
     </PageShell>
   );
 }

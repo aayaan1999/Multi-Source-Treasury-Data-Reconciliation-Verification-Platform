@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  specs/reconciliation-groups.md (client point 1). Hand-authored: validate the layout in Camunda
+  Modeler / web.camunda.io before relying on the diagram.
+
+  Review group (the owning team, from teamGroup): decision ACCEPT / DISMISS / CORRECT for every break
+  in the group, excludedIds carved out. If requiresSecondApproval (a bulk decision over the total
+  limit), a second person approves or returns it to the reviewer; then the outcome is written.
+  No forms: the React Tasks screen completes these tasks through Tasklist's REST API.
+-->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+                   xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   id="Definitions_reconciliation-group-review"
+                   targetNamespace="http://bankx.example/camunda"
+                   exporter="hand-authored" exporterVersion="1.0">
+
+  <bpmn:process id="reconciliation-group-review" name="Reconciliation Group Review" isExecutable="true">
+
+    <bpmn:startEvent id="StartEvent_GroupFound" name="Group of breaks found">
+      <bpmn:outgoing>Flow_ToReview</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:sequenceFlow id="Flow_ToReview" sourceRef="StartEvent_GroupFound" targetRef="UserTask_ReviewGroup" />
+
+    <!-- Completed with decision, excludedIds, decidedByUserId. Entered again after a return. -->
+    <bpmn:userTask id="UserTask_ReviewGroup" name="Review group">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="=teamGroup" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToReview</bpmn:incoming>
+      <bpmn:incoming>Flow_Returned</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToApprovalCheck</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_ToApprovalCheck" sourceRef="UserTask_ReviewGroup" targetRef="Gateway_NeedsApproval" />
+
+    <bpmn:exclusiveGateway id="Gateway_NeedsApproval" name="Second approval needed?" default="Flow_NoApprovalNeeded">
+      <bpmn:incoming>Flow_ToApprovalCheck</bpmn:incoming>
+      <bpmn:outgoing>Flow_NeedsApproval</bpmn:outgoing>
+      <bpmn:outgoing>Flow_NoApprovalNeeded</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_NeedsApproval" sourceRef="Gateway_NeedsApproval" targetRef="UserTask_SecondApproval">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=requiresSecondApproval = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_NoApprovalNeeded" sourceRef="Gateway_NeedsApproval" targetRef="ServiceTask_WriteOutcome" />
+
+    <!-- Completed with approvalDecision = "APPROVE" | "RETURN", approvedByUserId. -->
+    <bpmn:userTask id="UserTask_SecondApproval" name="Second approval">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="cfo" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_NeedsApproval</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToApprovalDecision</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_ToApprovalDecision" sourceRef="UserTask_SecondApproval" targetRef="Gateway_ApprovalDecision" />
+
+    <bpmn:exclusiveGateway id="Gateway_ApprovalDecision" name="Approve or return?" default="Flow_Approved">
+      <bpmn:incoming>Flow_ToApprovalDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_Returned</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Approved</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_Returned" sourceRef="Gateway_ApprovalDecision" targetRef="UserTask_ReviewGroup">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=approvalDecision = "RETURN"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Approved" sourceRef="Gateway_ApprovalDecision" targetRef="ServiceTask_WriteOutcome" />
+
+    <!-- camunda/bridge/outcome_worker.py: applies the decision to every break in the group. -->
+    <bpmn:serviceTask id="ServiceTask_WriteOutcome" name="Write decision to Postgres">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="write-recon-group-outcome" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_NoApprovalNeeded</bpmn:incoming>
+      <bpmn:incoming>Flow_Approved</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToEnd</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_ToEnd" sourceRef="ServiceTask_WriteOutcome" targetRef="EndEvent_Decided" />
+
+    <bpmn:endEvent id="EndEvent_Decided" name="Decided">
+      <bpmn:incoming>Flow_ToEnd</bpmn:incoming>
+    </bpmn:endEvent>
+
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="reconciliation-group-review">
+      <bpmndi:BPMNShape id="StartEvent_GroupFound_di" bpmnElement="StartEvent_GroupFound"><omgdc:Bounds x="152" y="102" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_ReviewGroup_di" bpmnElement="UserTask_ReviewGroup"><omgdc:Bounds x="240" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_NeedsApproval_di" bpmnElement="Gateway_NeedsApproval" isMarkerVisible="true"><omgdc:Bounds x="395" y="95" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_SecondApproval_di" bpmnElement="UserTask_SecondApproval"><omgdc:Bounds x="370" y="230" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ApprovalDecision_di" bpmnElement="Gateway_ApprovalDecision" isMarkerVisible="true"><omgdc:Bounds x="525" y="245" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_WriteOutcome_di" bpmnElement="ServiceTask_WriteOutcome"><omgdc:Bounds x="620" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Decided_di" bpmnElement="EndEvent_Decided"><omgdc:Bounds x="782" y="102" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_ToReview_di" bpmnElement="Flow_ToReview"><omgdi:waypoint x="188" y="120" /><omgdi:waypoint x="240" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToApprovalCheck_di" bpmnElement="Flow_ToApprovalCheck"><omgdi:waypoint x="340" y="120" /><omgdi:waypoint x="395" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_NeedsApproval_di" bpmnElement="Flow_NeedsApproval"><omgdi:waypoint x="420" y="145" /><omgdi:waypoint x="420" y="230" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_NoApprovalNeeded_di" bpmnElement="Flow_NoApprovalNeeded"><omgdi:waypoint x="445" y="120" /><omgdi:waypoint x="620" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToApprovalDecision_di" bpmnElement="Flow_ToApprovalDecision"><omgdi:waypoint x="470" y="270" /><omgdi:waypoint x="525" y="270" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Returned_di" bpmnElement="Flow_Returned"><omgdi:waypoint x="550" y="295" /><omgdi:waypoint x="550" y="340" /><omgdi:waypoint x="290" y="340" /><omgdi:waypoint x="290" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Approved_di" bpmnElement="Flow_Approved"><omgdi:waypoint x="575" y="270" /><omgdi:waypoint x="670" y="270" /><omgdi:waypoint x="670" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToEnd_di" bpmnElement="Flow_ToEnd"><omgdi:waypoint x="720" y="120" /><omgdi:waypoint x="782" y="120" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -62,9 +62,11 @@ def build(cur, instance_id: int, now: datetime | None = None) -> dict:
     month = cap["month"]
     tier1, tier2, rwa = (Decimal(cap[k]) for k in ("tier1_capital", "tier2_capital", "risk_weighted_assets"))
 
-    cur.execute("SELECT threshold_value FROM limits WHERE metric_name = %s", (LIMIT_METRIC,))
+    # The regulatory minimum (specs/breach-levels.md: limits has early warning / internal appetite /
+    # regulatory levels); a limit without a regulatory level falls back to its threshold.
+    cur.execute("SELECT COALESCE(regulatory_value, threshold_value) AS minimum FROM limits WHERE metric_name = %s", (LIMIT_METRIC,))
     limit_row = cur.fetchone()
-    minimum = Decimal(str(limit_row["threshold_value"])) if limit_row else DEFAULT_MINIMUM_PCT
+    minimum = Decimal(str(limit_row["minimum"])) if limit_row else DEFAULT_MINIMUM_PCT
 
     values = {"A.5": tier1, "A.8": tier2, "B.4": rwa}
     for total_code, weights in ALLOCATION.items():
@@ -106,7 +108,7 @@ def build(cur, instance_id: int, now: datetime | None = None) -> dict:
                 "Real figure from the source table."),
         "C.1": ("A.5 / B.4 x 100", ["capital_positions"], src_cap, 1, None),
         "C.2": ("A.9 / B.4 x 100", ["capital_positions"], src_cap, 1, None),
-        "C.3": (f"limits.threshold_value where metric_name = '{LIMIT_METRIC}'", ["limits"],
+        "C.3": (f"limits.regulatory_value (else threshold_value) where metric_name = '{LIMIT_METRIC}'", ["limits"],
                 "metric_name = " + LIMIT_METRIC, 1 if limit_row else 0,
                 None if limit_row else f"No `limits` row for {LIMIT_METRIC}; the default of {DEFAULT_MINIMUM_PCT}% was used."),
         "C.4": ("A.9 - C.3 / 100 x B.4", ["capital_positions", "limits"], src_cap, 1, None),

@@ -66,6 +66,32 @@ not just unusual in absolute terms), cross-account/cross-entity pattern detectio
 anomaly scoring — all explicitly out of scope here. This notebook demonstrates the *mechanism*
 (flag → type → status → task), not a production fraud engine.
 
+### 3a. Suspicious patterns and settings-driven thresholds (FRD-2 / FRD-3, 2026-09-24)
+
+Client point 5 asked for "other such examples" of genuinely suspicious behaviour. Five rules, all
+`SUSPICIOUS`, using data already in the schema (USD via the live conversion above):
+
+| Flag | Fires when | Default threshold |
+|---|---|---|
+| `DORMANT_REACTIVATION` | the account's previous transaction was long ago, and this one is large | ≥ 180 days quiet, ≥ 10,000 USD |
+| `PASS_THROUGH` | money comes in and ≥ 90% of it goes out again within a day (both flagged) | inflow ≥ 10,000 USD |
+| `UNUSUAL_FOR_SEGMENT` | far above the customer segment's median transaction | > 10× median and ≥ 5,000 USD |
+| `ROUND_AMOUNTS` | several exactly-round, sizeable amounts on one account in a day | ≥ 3 multiples of 1,000, each ≥ 5,000 USD |
+| `SPLIT_ACROSS_ACCOUNTS` | one customer has structuring-band amounts on several accounts the same day | ≥ 2 accounts |
+
+**All thresholds** (these and the four original rules') are read from Neon's
+`app_settings['fraud.rules']` (migration 013, marked as placeholders until the bank provides its AML
+typologies and reporting thresholds), with the same values built into the notebook as a fallback when
+Neon isn't reachable. Changing a value changes the next run — no code change.
+
+Notes:
+- `DORMANT_REACTIVATION` needs history longer than the dormancy gap; on the 1-23 Sep 2026 demo
+  data it can't fire (correctly). The planted demo dataset includes older activity for it.
+- None of the five fires on the small `bank-data/` sample; they're exercised by the planted demo
+  dataset (hand-traced there), not verified by a live run yet.
+- Task cases (`specs/task-cases.md`) count distinct rules, so a transaction hit by several patterns
+  raises its case's severity.
+
 ## 4. Schema Gap: No Transaction Timestamp
 
 `transactions.date` is a **date**, not a datetime (see `Middle East bank data cleaning and

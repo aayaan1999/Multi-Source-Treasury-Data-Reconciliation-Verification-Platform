@@ -24,6 +24,9 @@ import _env  # sets the Windows event-loop policy - must be imported before pyze
 import psycopg2
 from pyzeebe import ZeebeWorker, Job, create_insecure_channel
 
+import cases_db
+import duplicates_db
+import recon_groups_db
 import reconciliation_db
 from _env import database_url, zeebe_address
 
@@ -33,6 +36,24 @@ BREACH_STATUS = {"APPROVED": "ACKNOWLEDGED", "REJECTED": "DISMISSED", "CORRECTED
 
 async def write_review_outcome(job: Job) -> dict:
     v = job.variables
+    if v["recordType"] == duplicates_db.RECORD_TYPE:
+        # A possible duplicate (specs/entity-matching.md): Approved = same company, Rejected =
+        # different; the customer groups are rebuilt from every confirmed pair.
+        conn = psycopg2.connect(database_url(), connect_timeout=45)
+        try:
+            duplicates_db.decide(conn, int(v["recordKey"]), v["outcome"], v["reviewedByUserId"])
+        finally:
+            conn.close()
+        return {}
+    if v["recordType"] == cases_db.RECORD_TYPE:
+        # A case (specs/task-cases.md): one decision for every flag in it, each with its own
+        # review_outcomes row and status update.
+        conn = psycopg2.connect(database_url(), connect_timeout=45)
+        try:
+            cases_db.close_case(conn, int(v["recordKey"]), v["outcome"], v["reviewedByUserId"])
+        finally:
+            conn.close()
+        return {}
     raw_corrected = v.get("correctedValue") or None  # plain text, for breaches.action_plan
     corrected_value = raw_corrected
     if corrected_value:
@@ -86,6 +107,19 @@ async def write_reconciliation_outcome(job: Job) -> dict:
     return {}
 
 
+async def write_recon_group_outcome(job: Job) -> dict:
+    """reconciliation-group-review's service task (specs/reconciliation-groups.md): the decision for
+    every break in the group except the carve-outs, with the second approver when there was one."""
+    v = job.variables
+    conn = psycopg2.connect(database_url(), connect_timeout=45)
+    try:
+        recon_groups_db.decide(conn, int(v["recordKey"]), v["decision"], v.get("excludedIds") or [],
+                               v["decidedByUserId"], v.get("approvedByUserId"))
+    finally:
+        conn.close()
+    return {}
+
+
 async def main() -> None:
     # Built inside main(), not at module scope: a grpc.aio channel created before asyncio.run()
     # starts its loop binds to a throwaway loop instance, distinct from the one main() actually
@@ -95,6 +129,7 @@ async def main() -> None:
     worker = ZeebeWorker(channel)
     worker.task(task_type="write-review-outcome")(write_review_outcome)
     worker.task(task_type="write-reconciliation-outcome")(write_reconciliation_outcome)
+    worker.task(task_type="write-recon-group-outcome")(write_recon_group_outcome)
     print(f"write-review-outcome + write-reconciliation-outcome workers listening on {zeebe_address()}...")
     await worker.work()
 
