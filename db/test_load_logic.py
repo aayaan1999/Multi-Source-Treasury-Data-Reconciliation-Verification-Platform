@@ -201,6 +201,29 @@ merge()
 check("load 5: an untagged (older Notebook 2) load still works",
       scalar("SELECT description FROM data_quality_exceptions WHERE record_key='C9'") == "untagged run")
 
+# ---- Load 6: pipeline reconciliation items (specs/pipeline-reconciliation.md) are insert-only --
+PREC = ("recon_key text, ingest_batch_id text, source_system text, source_country text, source_table text, "
+        "received_rows bigint, clean_rows bigint, rejected_rows bigint, amount_column text, "
+        "unreadable_amount_rows bigint, amounts_by_currency text, has_gap boolean, status text, detected_at timestamp")
+item = ("R1|CORE_CSV|Lebanon|transactions", "R1", "CORE_CSV", "Lebanon", "transactions", 6, 5, 1, "amount", 0,
+        '{"USD": {"received": 64800.0, "clean": 63800.0, "gap": 1000.0}}', True, "OPEN", ts)
+stage({"pipeline_reconciliation": (PREC, [item])})
+w = merge()
+check("load 6: item loaded, amounts queryable as jsonb",
+      w["pipeline_reconciliation"] == 1
+      and float(scalar("SELECT (amounts_by_currency->'USD'->>'gap')::float FROM pipeline_reconciliation")) == 1000.0)
+cur.execute("ALTER TABLE pipeline_reconciliation DROP CONSTRAINT pipeline_reconciliation_status_check")
+cur.execute("UPDATE pipeline_reconciliation SET status = 'IN_REVIEW'")   # as FLOW-5 will
+stage({"pipeline_reconciliation": (PREC, [item, ("R2|CORE_CSV|Lebanon|transactions", "R2") + item[2:]])})
+w = merge()
+check("load 6: rerun adds only the new run's item and keeps the app-set status",
+      w["pipeline_reconciliation"] == 1 and scalar("SELECT count(*) FROM pipeline_reconciliation") == 2
+      and scalar("SELECT status FROM pipeline_reconciliation WHERE ingest_batch_id='R1'") == "IN_REVIEW")
+cur.execute("DROP TABLE pipeline_reconciliation")
+stage({"pipeline_reconciliation": (PREC, [item])})
+w = merge()
+check("load 6: skipped, not failed, before migration 008 creates the table", "pipeline_reconciliation" not in w)
+
 # ---- Report ---------------------------------------------------------------------------------
 for name, ok, detail in results:
     print(f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  -- {detail}" if detail and not ok else ""))

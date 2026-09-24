@@ -362,6 +362,28 @@ CREATE TABLE reconciliation_exceptions (
     UNIQUE (source_system, entity_type, entity_id, mismatch_type, field_name)
 );
 
+-- specs/pipeline-reconciliation.md (FLOW-3): one row per run + source + country + table, received
+-- (raw_*) vs kept (*_clean). Insert-only from the load; status owned by the app after first load.
+CREATE TABLE pipeline_reconciliation (
+    recon_id                bigserial PRIMARY KEY,
+    recon_key               text NOT NULL UNIQUE,
+    ingest_batch_id         text NOT NULL,
+    source_system           text NOT NULL,
+    source_country          text NOT NULL,
+    source_table            text NOT NULL,
+    received_rows           bigint NOT NULL,
+    clean_rows              bigint NOT NULL,
+    rejected_rows           bigint NOT NULL,
+    amount_column           text,
+    unreadable_amount_rows  bigint NOT NULL DEFAULT 0,
+    amounts_by_currency     jsonb,              -- {"USD": {"received", "clean", "gap"}, ...}
+    has_gap                 boolean NOT NULL,
+    status                  text NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'MATCHED')),
+    detected_at             timestamptz NOT NULL
+);
+
+CREATE INDEX pipeline_reconciliation_source_idx ON pipeline_reconciliation (source_system, detected_at DESC);
+
 -- INFERRED: source doc lists purpose only ("name, frequency, due-day rule, owner").
 CREATE TABLE report_definitions (
     report_id      serial PRIMARY KEY,

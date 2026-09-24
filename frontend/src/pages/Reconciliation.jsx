@@ -6,6 +6,7 @@ import PageShell, { Loading, LoadError } from "../components/PageShell";
 import Section from "../components/Section";
 import StatBox from "../components/StatBox";
 import useAsync from "../hooks/useAsync";
+import PipelineSection from "../reconciliation/PipelineSection";
 
 function fmtDateTime(iso) {
   return iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -136,8 +137,17 @@ export default function Reconciliation() {
     <PageShell
       title="Reconciliation"
       eyebrow="Multi-source reconciliation"
-      subtitle="Differences found between our own records and the bank's core system feed. Review each one and decide whether to accept it, correct our data, or dismiss it."
+      subtitle="Two checks: did every source's data survive our cleaning (received vs kept), and does our data match the bank's core system?"
     >
+      <PipelineSection />
+
+      <div className="mt-14 border-t border-hair pt-8">
+        <h2 className="text-lg font-semibold tracking-tight text-ink">Our data vs the core banking system</h2>
+        <p className="mt-0.5 text-sm text-ink2">
+          Differences between our own records and the bank's core system feed. Review each one and decide whether to accept it, correct our data, or dismiss it.
+        </p>
+      </div>
+
       <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Reconciliation summary">
         <StatBox label="Open exceptions" value={openCount} status={openCount > 0 ? "action" : "good"} />
         <StatBox label="Resolved" value={resolvedCount} />

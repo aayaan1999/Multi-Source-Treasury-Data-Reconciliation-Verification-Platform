@@ -84,6 +84,13 @@ resources:
           notebook_task:
             notebook_path: ./notebooks/06_portfolio_branch_scenario_snapshot.py
 
+        - task_key: pipeline_reconciliation
+          description: Received vs kept per source, country and table (specs/pipeline-reconciliation.md).
+          depends_on:
+            - task_key: quality
+          notebook_task:
+            notebook_path: ./notebooks/pipeline_reconciliation.py
+
         - task_key: load_postgres
           description: Merge Silver/Gold into Neon Postgres in one transaction.
           depends_on:
@@ -91,6 +98,7 @@ resources:
             - task_key: exception_summary
             - task_key: fraud_rules
             - task_key: portfolio_snapshot
+            - task_key: pipeline_reconciliation
           # Neon can be suspended and take a moment to wake; one retry covers a slow first connect.
           max_retries: 1
           notebook_task:

@@ -163,5 +163,8 @@ export const api = {
   // Reconciliation tab (specs/multi-source-reconciliation.md) - standalone from Screen 6/Camunda
   reconciliationExceptions: (params) => request(`/reconciliation${query(params)}`),
   reconciliationSummary: () => request("/reconciliation/summary"),
+  // Received vs kept per source, country and table (specs/pipeline-reconciliation.md)
+  pipelineReconciliation: (params) => request(`/reconciliation/pipeline${query(params)}`),
+  pipelineRecords: (reconId) => request(`/reconciliation/pipeline/${reconId}/records`),
   resolveReconciliation: (id, body) => request(`/reconciliation/${id}/resolve`, { method: "POST", body }),
 };

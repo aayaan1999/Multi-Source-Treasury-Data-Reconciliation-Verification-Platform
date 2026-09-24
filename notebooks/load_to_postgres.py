@@ -167,6 +167,16 @@ def run_merge(cur):
             "ON CONFLICT (source_system, entity_type, entity_id, mismatch_type, field_name) DO NOTHING",
         )
 
+    # 4c. Pipeline reconciliation items (specs/pipeline-reconciliation.md): insert-only on
+    #     recon_key - the key includes the run, so each run adds its own items, and the status the
+    #     application sets (FLOW-5's review) is never reset by a rerun. Skipped (not failed) until
+    #     migration 008 creates the Neon table, so deploying and migrating can happen in any order.
+    cur.execute("SELECT to_regclass('public.pipeline_reconciliation')")
+    if "pipeline_reconciliation" in staged and cur.fetchone()[0] is not None:
+        written["pipeline_reconciliation"] = _insert_from_staging(
+            cur, "pipeline_reconciliation", "ON CONFLICT (recon_key) DO NOTHING"
+        )
+
     # 5. FX usage log: the Delta table is the append-only source of truth, so mirror it in full.
     if "fx_rate_usage_log" in staged:
         cur.execute("DELETE FROM public.fx_rate_usage_log")
@@ -235,6 +245,7 @@ STAGE_JOBS = (
     + [("data_quality_exceptions", "data_quality_exceptions"),
        ("flagged_transactions", "flagged_transactions"),
        ("reconciliation_exceptions", "reconciliation_exceptions"),
+       ("pipeline_reconciliation", "pipeline_reconciliation"),
        ("fx_rate_usage_log", "fx_rate_usage_log")]
 )
 
@@ -306,13 +317,13 @@ conn.close()
 # MAGIC %md
 # MAGIC ## Verify
 # MAGIC
-# MAGIC Rows merged must equal rows staged. `flagged_transactions` and `reconciliation_exceptions`
-# MAGIC are exempt: both are insert-only, so rows already in Postgres are deliberately not
-# MAGIC re-inserted.
+# MAGIC Rows merged must equal rows staged. `flagged_transactions`, `reconciliation_exceptions` and
+# MAGIC `pipeline_reconciliation` are exempt: all three are insert-only, so rows already in Postgres
+# MAGIC are deliberately not re-inserted.
 
 # COMMAND ----------
 
-INSERT_ONLY_TABLES = {"flagged_transactions", "reconciliation_exceptions"}
+INSERT_ONLY_TABLES = {"flagged_transactions", "reconciliation_exceptions", "pipeline_reconciliation"}
 
 problems = []
 for pg_name, n in expected_rows.items():
