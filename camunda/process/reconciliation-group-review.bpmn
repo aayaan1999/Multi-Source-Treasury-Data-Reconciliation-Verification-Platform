@@ -29,7 +29,9 @@
     <!-- Completed with decision, excludedIds, decidedByUserId. Entered again after a return. -->
     <bpmn:userTask id="UserTask_ReviewGroup" name="Review group">
       <bpmn:extensionElements>
-        <zeebe:assignmentDefinition candidateGroups="=teamGroup" />
+        <!-- candidateGroups must evaluate to a list; teamGroup is one team's name, so wrap it
+             (a bare =teamGroup raised an EXTRACT_VALUE_ERROR incident on every group, live 2026-09-25). -->
+        <zeebe:assignmentDefinition candidateGroups="=[teamGroup]" />
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_ToReview</bpmn:incoming>
       <bpmn:incoming>Flow_Returned</bpmn:incoming>

@@ -90,11 +90,22 @@ export const CANDIDATE_GROUPS = ["fraud-investigation", "compliance", "operation
 // Tasklist round trip for the whole list instead of N+1.
 const LIST_VARIABLES = ["recordType", "sourceTable", "recordKey", "flagLabel", "title", "severity", "dueDate", "accountId"];
 
+// Tasklist returns 50 tasks per search unless asked otherwise, so page through with searchAfter
+// until a short page: with more than 50 open tasks the rest were silently missing (live, 2026-09-25).
+const PAGE_SIZE = 200;
+
 export async function searchTasks({ state = "CREATED", candidateGroups = CANDIDATE_GROUPS } = {}) {
-  const tasks = await call("/tasks/search", {
-    method: "POST",
-    body: { state, candidateGroups, includeVariables: LIST_VARIABLES.map((name) => ({ name })) },
-  });
+  const tasks = [];
+  let searchAfter;
+  for (;;) {
+    const page = await call("/tasks/search", {
+      method: "POST",
+      body: { state, candidateGroups, pageSize: PAGE_SIZE, includeVariables: LIST_VARIABLES.map((name) => ({ name })), ...(searchAfter && { searchAfter }) },
+    });
+    tasks.push(...page);
+    if (page.length < PAGE_SIZE) break;
+    searchAfter = page[page.length - 1].sortValues;
+  }
   return tasks.map((t) => {
     const vars = {};
     for (const v of t.variables || []) {
