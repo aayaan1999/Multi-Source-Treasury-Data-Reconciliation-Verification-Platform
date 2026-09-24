@@ -59,16 +59,23 @@ async def main() -> None:
 
     channel = create_insecure_channel(grpc_address=zeebe_address())
     client = ZeebeClient(channel)
-    conn = psycopg2.connect(database_url(), connect_timeout=45)
-    try:
-        while True:
+    # A fresh connection every pass: Neon suspends an idle database and drops open connections, which
+    # killed a long-running worker holding one connection (live, 2026-09-24). A dropped connection mid-pass
+    # is logged and retried next pass rather than stopping the loop.
+    while True:
+        conn = psycopg2.connect(database_url(), connect_timeout=45)
+        try:
             started = await run_once(client, conn)
             print(f"Check complete: {started} new breach(es).")
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
             if not args.loop:
-                break
-            time.sleep(args.loop)
-    finally:
-        conn.close()
+                raise
+            print(f"Database connection lost ({str(e).strip().splitlines()[0]}) - retrying next pass.")
+        finally:
+            conn.close()
+        if not args.loop:
+            break
+        time.sleep(args.loop)
 
 
 if __name__ == "__main__":

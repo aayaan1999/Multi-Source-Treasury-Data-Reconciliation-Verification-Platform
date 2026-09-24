@@ -93,7 +93,10 @@ exception_summary_by_table = (
     raw_row_counts
     .join(flagged_counts, on="source_table", how="left")
     .withColumn("flagged_record_count", F.coalesce(F.col("flagged_record_count"), F.lit(0)))
-    .withColumn("exception_rate_pct", F.col("flagged_record_count") / F.col("raw_row_count") * 100)
+    # try_divide: a table that received no rows (an empty delivery - flagged separately by the
+    # completeness check, specs/pipeline-reconciliation.md section 9) has no rate (null) instead of
+    # failing the whole run with a division by zero (it did, live, 2026-09-24).
+    .withColumn("exception_rate_pct", F.expr("try_divide(flagged_record_count, raw_row_count)") * 100)
     .withColumn("calculation_date", CALCULATION_DATE)
     .select("calculation_date", "source_table", "raw_row_count", "flagged_record_count", "exception_rate_pct")
 )
