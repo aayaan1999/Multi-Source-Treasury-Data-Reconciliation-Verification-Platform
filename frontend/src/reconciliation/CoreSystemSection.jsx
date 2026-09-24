@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import DataTable from "../components/DataTable";
@@ -113,15 +114,67 @@ function RunPanel() {
   );
 }
 
+function groupCause(g) {
+  return `${g.entity_type} ${g.field_name || ""} ${g.pattern}`.replace(/\s+/g, " ");
+}
+
+/** Read-only look inside one group: its summary and every break in it. Decisions stay in the group's task. */
+function GroupDetail({ groupId, onClose }) {
+  const { status, data, error, reload } = useAsync(() => api.reconGroup(groupId), [groupId]);
+  return (
+    <Modal title={`Group #${groupId}`} onClose={onClose}>
+      {status === "loading" && <Loading what="the group" />}
+      {status === "error" && !data && <LoadError error={error} onRetry={reload} />}
+      {data && (
+        <>
+          <h3 className="text-sm font-semibold tracking-tight text-ink">{groupCause(data)}</h3>
+          <dl className="card mt-4 grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-xl border border-hair bg-surface p-4 text-sm sm:grid-cols-3">
+            <div><dt className="text-ink2">Breaks</dt><dd className="font-medium text-ink">{data.break_count}</dd></div>
+            <div><dt className="text-ink2">Total difference</dt><dd className="font-medium text-ink">{data.total_difference == null ? "—" : fmtAmount(data.total_difference)}</dd></div>
+            <div><dt className="text-ink2">Kind</dt><dd className="font-medium text-ink">{data.important ? "Important, on its own" : data.requires_second_approval ? "Bulk, needs second approval" : "Bulk"}</dd></div>
+            <div><dt className="text-ink2">Team</dt><dd className="font-medium text-ink">{data.team || "—"}</dd></div>
+            <div><dt className="text-ink2">Due</dt><dd className="font-medium text-ink">{data.due_date || "—"}</dd></div>
+            <div><dt className="text-ink2">Status</dt><dd className="font-medium text-ink">{data.status === "CLOSED" ? `Decided: ${data.decision?.toLowerCase()}` : "Open"}</dd></div>
+          </dl>
+          <div className="mt-4">
+            <DataTable
+              caption="Breaks in this group"
+              columns={[
+                { key: "entity", header: "Record", render: (r) => `${r.entity_type} ${r.entity_id}` },
+                { key: "field_name", header: "Field", render: (r) => r.field_name || "(whole record)" },
+                { key: "source_value", header: "Core system" },
+                { key: "canonical_value", header: "Ours" },
+                { key: "status", header: "Status", render: (r) => STATUS_LABEL[r.status] || r.status },
+              ]}
+              rows={data.breaks}
+              rowKey={(r) => r.exception_id}
+              emptyText="No breaks in this group."
+            />
+          </div>
+          {data.status !== "CLOSED" && (
+            <p className="mt-3 text-sm text-ink2">
+              To decide this group (accept, correct or dismiss, optionally leaving some breaks out), open its task in{" "}
+              <Link to="/tasks" className="text-accent underline">Tasks</Link>.
+            </p>
+          )}
+        </>
+      )}
+    </Modal>
+  );
+}
+
 function GroupsTable() {
   const { status, data, error, reload } = useAsync(() => api.reconGroups(), []);
+  const [selectedId, setSelectedId] = useState(null);
   if (status === "loading") return <Loading what="the groups" />;
   if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
   return (
+    <>
     <DataTable
       caption="Groups of breaks"
       columns={[
-        { key: "pattern", header: "Cause", render: (g) => `${g.entity_type} ${g.field_name || ""} ${g.pattern}`.replace(/\s+/g, " ") },
+        { key: "group_id", header: "Group", render: (g) => `#${g.group_id}` },
+        { key: "pattern", header: "Cause", render: groupCause },
         { key: "break_count", header: "Breaks", align: "right" },
         { key: "total_difference", header: "Total difference", align: "right", render: (g) => (g.total_difference == null ? "—" : fmtAmount(g.total_difference)) },
         { key: "important", header: "Kind", render: (g) => (g.important ? "Important, on its own" : g.requires_second_approval ? "Bulk, needs second approval" : "Bulk") },
@@ -131,8 +184,12 @@ function GroupsTable() {
       rows={data}
       rowKey={(g) => g.group_id}
       rowFlag={(g) => (g.important && g.status !== "CLOSED" ? { kind: "loss", label: "Important" } : null)}
+      selectedKey={selectedId}
+      onRowClick={(g) => setSelectedId(g.group_id)}
       emptyText="No groups yet: open breaks are grouped when the task bridge next runs."
     />
+    {selectedId && <GroupDetail groupId={selectedId} onClose={() => setSelectedId(null)} />}
+    </>
   );
 }
 
@@ -176,11 +233,14 @@ export default function CoreSystemSection() {
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("OPEN");
   const [recurringOnly, setRecurringOnly] = useState(false);
+  const [groupFilter, setGroupFilter] = useState("");
   const [selected, setSelected] = useState(null);
   const { status, data, error, reload } = useAsync(() => api.reconciliationExceptions({ limit: 5000 }), []);
 
+  const groupIds = [...new Set((data || []).map((r) => r.group_id).filter((g) => g != null))].sort((a, b) => a - b);
   const rows = (data || [])
     .filter((r) => (!statusFilter || r.status === statusFilter) && (!typeFilter || r.mismatch_type === typeFilter) && (!recurringOnly || r.recurring))
+    .filter((r) => !groupFilter || (groupFilter === "none" ? r.group_id == null : String(r.group_id) === groupFilter))
     .map((r) => ({ ...r, age: ageDays(r.first_seen || r.detected_at) }));
 
   const exportColumns = [
@@ -222,6 +282,11 @@ export default function CoreSystemSection() {
               <option value="">All statuses</option>
               {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
+            <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} aria-label="Group" className={INPUT}>
+              <option value="">All groups</option>
+              {groupIds.map((g) => <option key={g} value={String(g)}>Group #{g}</option>)}
+              <option value="none">Not in a group</option>
+            </select>
             <label className="flex items-center gap-1.5 text-sm text-ink2">
               <input type="checkbox" checked={recurringOnly} onChange={(e) => setRecurringOnly(e.target.checked)} />
               Recurring only
@@ -236,6 +301,7 @@ export default function CoreSystemSection() {
           <DataTable
             caption="Reconciliation exceptions"
             columns={[
+              { key: "group_id", header: "Group", render: (r) => (r.group_id != null ? `#${r.group_id}` : "—") },
               { key: "entity", header: "Record", render: (r) => `${r.entity_type} ${r.entity_id}` },
               { key: "field_name", header: "Field", render: (r) => r.field_name || "(whole record)" },
               { key: "mismatch_type", header: "Type", render: (r) => MISMATCH_LABEL[r.mismatch_type] || r.mismatch_type },
