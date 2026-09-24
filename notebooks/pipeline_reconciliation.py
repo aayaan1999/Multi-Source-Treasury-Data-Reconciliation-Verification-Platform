@@ -65,6 +65,17 @@ AMOUNT_TOLERANCE = 0.005
 
 AMOUNTS_TYPE = "map<string,struct<received:double,clean:double,gap:double>>"
 
+# Completeness check (FLOW-1b, spec section 9): which countries each source is expected to deliver
+# every run. Today's demo source is one CSV set covering three countries; each new source (a CSV
+# folder per country, later other systems) gets its own entry. A source not listed here is still
+# reconciled, just not checked for missing countries.
+EXPECTED_DELIVERIES = {
+    "CORE_CSV": ["Lebanon", "Saudi Arabia", "Qatar"],
+}
+# Bank-wide tables carry no branch, so they're expected once per run under "Group".
+BANK_WIDE_TABLES = {"capital_positions", "liquidity_daily", "fx_rates"}
+NO_ROWS_NOTE = "No rows delivered"
+
 # COMMAND ----------
 
 # Fail early with a clear message if Notebook 1 predates source tagging: without the tags there is
@@ -157,6 +168,45 @@ items = None
 for table in SOURCE_TABLES:
     part = reconcile_table(table)
     items = part if items is None else items.unionByName(part)
+items = items.withColumn("note", F.lit(None).cast("string"))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Completeness: anything expected but not delivered (FLOW-1b)
+# MAGIC
+# MAGIC Items only exist for rows that arrived, so an empty file, or a country missing from a file,
+# MAGIC would otherwise leave no trace. For every run of a source in `EXPECTED_DELIVERIES`, each
+# MAGIC expected country x table (bank-wide tables: `Group`) with no item gets a "No rows delivered"
+# MAGIC item — a gap, OPEN, and handled like any other. (A missing CSV file already stops Notebook 1
+# MAGIC with an error, so it can't pass silently.)
+
+# COMMAND ----------
+
+runs = None
+for table in SOURCE_TABLES:
+    part = spark.table(f"raw_{table}").select("ingest_batch_id", "source_system").distinct()
+    runs = part if runs is None else runs.union(part)
+expected = [
+    (row.ingest_batch_id, row.source_system, country, table)
+    for row in runs.distinct().collect()
+    for table in SOURCE_TABLES
+    for country in (["Group"] if table in BANK_WIDE_TABLES else EXPECTED_DELIVERIES.get(row.source_system, []))
+]
+if expected:
+    missing = (
+        spark.createDataFrame(expected, "ingest_batch_id string, source_system string, source_country string, source_table string")
+        .join(items.select(*ITEM_KEYS, "source_table"), ITEM_KEYS + ["source_table"], "left_anti")
+    )
+    missing_items = (
+        missing.withColumn("received_rows", F.lit(0).cast("long"))
+        .withColumn("clean_rows", F.lit(0).cast("long"))
+        .withColumn("unreadable_amount_rows", F.lit(0).cast("long"))
+        .withColumn("amounts_by_currency", F.lit(None).cast(AMOUNTS_TYPE))
+        .withColumn("amount_column", F.create_map([F.lit(x) for t, (a, _) in AMOUNT_COLUMNS.items() for x in (t, a)])[F.col("source_table")])
+        .withColumn("note", F.lit(NO_ROWS_NOTE))
+    )
+    items = items.unionByName(missing_items)
 
 amount_moved = F.coalesce(
     F.exists(F.map_values("amounts_by_currency"), lambda v: F.abs(v["gap"]) > AMOUNT_TOLERANCE),
@@ -165,7 +215,7 @@ amount_moved = F.coalesce(
 
 pipeline_reconciliation = (
     items.withColumn("rejected_rows", (F.col("received_rows") - F.col("clean_rows")).cast("long"))
-    .withColumn("has_gap", (F.col("rejected_rows") > 0) | amount_moved)
+    .withColumn("has_gap", (F.col("rejected_rows") > 0) | amount_moved | F.col("note").isNotNull())
     .withColumn("status", F.when(F.col("has_gap"), F.lit("OPEN")).otherwise(F.lit("MATCHED")))
     .withColumn("recon_key", F.concat_ws("|", "ingest_batch_id", "source_system", "source_country", "source_table"))
     .withColumn("detected_at", F.current_timestamp())
@@ -174,7 +224,7 @@ pipeline_reconciliation = (
         F.col("received_rows").cast("long").alias("received_rows"),
         F.col("clean_rows").cast("long").alias("clean_rows"),
         "rejected_rows", "amount_column", "unreadable_amount_rows", "amounts_by_currency",
-        "has_gap", "status", "detected_at",
+        "has_gap", "status", "detected_at", "note",
     )
 )
 

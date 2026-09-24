@@ -67,7 +67,7 @@ def list_exceptions(
 
 PIPELINE_COLUMNS = """p.recon_id, p.ingest_batch_id, p.source_system, p.source_country, p.source_table,
        p.received_rows, p.clean_rows, p.rejected_rows, p.amount_column, p.unreadable_amount_rows,
-       p.amounts_by_currency, p.has_gap, p.status, p.detected_at,
+       p.amounts_by_currency, p.has_gap, p.status, p.detected_at, p.note,
        p.assigned_to, ua.name AS assigned_to_name, p.approved_by, p.approved_at"""
 PIPELINE_FROM = "pipeline_reconciliation p LEFT JOIN users ua ON ua.user_id = p.assigned_to"
 
@@ -192,6 +192,12 @@ def propose_correction(recon_id: int, body: CorrectionRequest, user: dict = Depe
         raise HTTPException(400, f"{body.field_name} identifies the record and can't be corrected here")
     old = data[body.field_name]
     old_value = None if old is None else str(old)
+    # A numeric field must get a number: Databricks casts the value into the column's type (5b).
+    if isinstance(old, (int, float)) and not isinstance(old, bool):
+        try:
+            float(body.new_value.replace(",", ""))
+        except ValueError:
+            raise HTTPException(400, f"{body.field_name} is a number - enter a number")
     row = write(
         """WITH ins AS (
                INSERT INTO reconciliation_corrections (recon_id, source_table, record_key, field_name, old_value, new_value, entered_by)

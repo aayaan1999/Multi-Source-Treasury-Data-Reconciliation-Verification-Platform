@@ -452,6 +452,54 @@ scenario_row = spark.createDataFrame([{
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ## Country performance (FLOW-4, `specs/cfo-country-view.md`)
+# MAGIC
+# MAGIC The CFO dashboard's global view: one row per country — customers, deposits, loans, bad loans
+# MAGIC and transaction activity, all in USD (the platform's reporting currency: every other Gold table
+# MAGIC here is USD too). The country is FLOW-1a's `source_country` tag on each record
+# MAGIC (`specs/source-tagging.md`); data loaded before tagging shows as `Unknown`. Bank-wide figures
+# MAGIC (capital, liquidity) belong to no country and stay on the KPI tiles.
+
+# COMMAND ----------
+
+def country_of(df):
+    return F.col("source_country") if "source_country" in df.columns else F.lit("Unknown")
+
+
+country_customers = customers_clean.groupBy(country_of(customers_clean).alias("country")).agg(
+    F.countDistinct("customer_id").alias("customer_count")
+)
+country_deposits = accounts_joined.groupBy(country_of(accounts_joined).alias("country")).agg(
+    F.sum("balance_usd").alias("deposits_usd")
+)
+country_loans = loans_joined.groupBy(country_of(loans_joined).alias("country")).agg(
+    F.sum("outstanding_usd").alias("loans_usd"),
+    F.sum(F.when(F.col("days_past_due") >= NPL_DAYS_PAST_DUE_THRESHOLD, F.col("outstanding_usd")).otherwise(0)).alias("npl_loans_usd"),
+)
+# Volume = absolute amounts: withdrawals are negative, and activity is what's being measured here.
+country_transactions = transactions_joined.groupBy(country_of(transactions_joined).alias("country")).agg(
+    F.count("*").alias("transaction_count"),
+    F.sum(F.abs("amount_usd")).alias("transaction_volume_usd"),
+)
+
+# Full outer joins: a country with customers but no loans (or the reverse) still gets its row.
+country_performance_summary = (
+    country_customers.join(country_deposits, "country", "full")
+    .join(country_loans, "country", "full")
+    .join(country_transactions, "country", "full")
+    .na.fill(0, ["customer_count", "transaction_count"])
+    .na.fill(0.0, ["deposits_usd", "loans_usd", "npl_loans_usd", "transaction_volume_usd"])
+    .withColumn("npl_ratio_pct", F.lit(None).cast("double"))   # set safely by DIVISION_PATCHES below
+    .withColumn("calculation_date", CALCULATION_DATE)
+    .select(
+        "calculation_date", "country", "customer_count", "deposits_usd", "loans_usd", "npl_loans_usd",
+        "npl_ratio_pct", "transaction_count", "transaction_volume_usd",
+    )
+)
+
+# COMMAND ----------
+
 DIVISION_PATCHES = {
     "loan_stage_summary": {
         "coverage_pct": F.expr("try_divide(provisions_usd, outstanding_usd)") * 100,
@@ -462,6 +510,9 @@ DIVISION_PATCHES = {
     },
     "segment_performance_summary": {
         "revenue_per_customer_usd": F.expr("try_divide(revenue_usd, CAST(customer_count AS DOUBLE))"),
+    },
+    "country_performance_summary": {
+        "npl_ratio_pct": F.expr("try_divide(npl_loans_usd, loans_usd)") * 100,
     },
     # product_performance_summary.npl_pct: npl_outstanding_usd is dropped by Cell 26's
     # .select() so try_divide cannot be applied here; safe with sample data since
@@ -478,6 +529,7 @@ OUTPUT_TABLES = {
     "segment_performance_summary": segment_performance_summary,
     "product_performance_summary": product_performance_summary,
     "scenario_snapshot": scenario_row,
+    "country_performance_summary": country_performance_summary,
 }
 
 for table_name, df in OUTPUT_TABLES.items():

@@ -81,6 +81,7 @@ SNAPSHOT_TABLES = [
     "segment_performance_summary",
     "product_performance_summary",
     "scenario_snapshot",
+    "country_performance_summary",   # specs/cfo-country-view.md (FLOW-4)
 ]
 
 
@@ -106,6 +107,11 @@ def _insert_from_staging(cur, table, tail=""):
     return cur.rowcount
 
 
+def _exists(cur, table):
+    cur.execute("SELECT to_regclass(%s)", (f"public.{table}",))
+    return cur.fetchone()[0] is not None
+
+
 def run_merge(cur):
     """Merges every staged table into public. Caller owns the transaction (commit/rollback).
     Returns {postgres_table: rows written}."""
@@ -122,8 +128,10 @@ def run_merge(cur):
         written[pg] = _insert_from_staging(cur, pg)
 
     # 2. Gold snapshot tables: replace only the calculation_date(s) being loaded, keep older history.
+    #    A table Neon doesn't have yet (its migration not applied) is skipped, not failed, so a new
+    #    Gold table can be deployed before or after its migration.
     for pg in SNAPSHOT_TABLES:
-        if pg in staged:
+        if pg in staged and _exists(cur, pg):
             cur.execute(
                 f'DELETE FROM public."{pg}" WHERE calculation_date IN '
                 f'(SELECT DISTINCT calculation_date FROM staging."{pg}")'
@@ -177,6 +185,18 @@ def run_merge(cur):
         written["pipeline_reconciliation"] = _insert_from_staging(
             cur, "pipeline_reconciliation", "ON CONFLICT (recon_key) DO NOTHING"
         )
+
+    # 4d. Approved corrections Notebook 1 applied this run (specs/cfo-reconciliation-workflow.md
+    #     section 7): mark them synced - the first time only, so synced_at says when a correction
+    #     first reached the data. Not a table of its own in Postgres.
+    cur.execute("SELECT to_regclass('public.reconciliation_corrections')")
+    if "applied_corrections" in staged and cur.fetchone()[0] is not None:
+        cur.execute(
+            """UPDATE public.reconciliation_corrections c SET synced_at = now()
+               FROM staging.applied_corrections s
+               WHERE c.correction_id = s.correction_id::bigint AND c.synced_at IS NULL"""
+        )
+        written["applied_corrections"] = cur.rowcount
 
     # 5. FX usage log: the Delta table is the append-only source of truth, so mirror it in full.
     if "fx_rate_usage_log" in staged:
@@ -247,6 +267,7 @@ STAGE_JOBS = (
        ("flagged_transactions", "flagged_transactions"),
        ("reconciliation_exceptions", "reconciliation_exceptions"),
        ("pipeline_reconciliation", "pipeline_reconciliation"),
+       ("applied_corrections", "applied_corrections"),
        ("fx_rate_usage_log", "fx_rate_usage_log")]
 )
 
@@ -325,11 +346,16 @@ conn.close()
 # COMMAND ----------
 
 INSERT_ONLY_TABLES = {"flagged_transactions", "reconciliation_exceptions", "pipeline_reconciliation"}
+# Staged only to mark rows elsewhere (Notebook 1's applied corrections): no rows of their own to compare.
+SYNC_ONLY_TABLES = {"applied_corrections"}
 
 problems = []
 for pg_name, n in expected_rows.items():
     if pg_name in INSERT_ONLY_TABLES:
         print(f"{pg_name}: {written.get(pg_name, 0)} new of {n} staged")
+        continue
+    if pg_name in SYNC_ONLY_TABLES:
+        print(f"{pg_name}: {n} applied this run, {written.get(pg_name, 0)} newly marked synced")
         continue
     ok = written.get(pg_name) == n
     print(f"{'OK  ' if ok else 'FAIL'} {pg_name}: staged {n}, merged {written.get(pg_name)}")

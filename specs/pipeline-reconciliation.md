@@ -138,3 +138,18 @@ The accounts USD line shows why gaps are signed: dropping a negative balance mak
 3. Received counts come from `raw_*`, i.e. after Notebook 1 has parsed the file. A line the CSV
    reader couldn't parse at all would not be counted; a file-level row count (before parsing) is a
    later addition if a source can send malformed files.
+
+## 9. Completeness check (FLOW-1b)
+
+Items only exist for rows that arrived, so an empty file, or a country missing from a file, would
+leave no trace. `EXPECTED_DELIVERIES` in the notebook lists the countries each source must deliver
+every run (today: `CORE_CSV` → Lebanon, Saudi Arabia, Qatar); bank-wide tables are expected once
+under `Group`. Every expected country × table with no item gets an item with 0 rows,
+`note` = "No rows delivered", `has_gap` true → OPEN → a CFO task like any other gap
+(migration 011 adds `note`).
+
+- A **missing CSV file** already stops Notebook 1 with an error, so it can't pass silently.
+- A source not in `EXPECTED_DELIVERIES` is still reconciled, just not checked for missing countries.
+- Not covered yet: a source that doesn't deliver **at all** in a run (no run id to attach an item
+  to) and delivery **cut-off times** — both matter once several sources deliver separately (for the
+  demo every source is a CSV drop in one folder).

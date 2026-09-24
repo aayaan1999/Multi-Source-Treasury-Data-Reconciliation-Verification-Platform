@@ -91,6 +91,12 @@ def test_bridge_starts_one_process_per_gap_item_for_the_cfo(conn, item, users):
     assert reconciliation_db.fetch_unstarted(conn) == []
 
 
+def test_a_missing_delivery_gets_a_task_title_that_says_so():
+    missing = {"source_system": "CORE_CSV", "source_country": "Qatar", "source_table": "transactions",
+               "received_rows": 0, "rejected_rows": 0, "note": "No rows delivered"}
+    assert reconciliation_db.title(missing) == "CORE_CSV · Qatar · transactions: No rows delivered"
+
+
 def test_the_item_is_now_with_the_cfo(client, auth, item):
     assert _status(client, auth, item)["status"] == "WITH_CFO"
 
@@ -113,6 +119,7 @@ def test_a_correction_keeps_the_old_value_and_a_second_one_replaces_the_first(cl
     ({"record_key": "T0009", "field_name": "colour", "new_value": "red"}, "no field"),
     ({"record_key": "T0009", "field_name": "transaction_id", "new_value": "T9999"}, "identifies the record"),
     ({"record_key": "T0009", "field_name": "channel", "new_value": "  "}, "Enter the corrected value"),
+    ({"record_key": "T0009", "field_name": "amount", "new_value": "a thousand"}, "enter a number"),
 ])
 def test_corrections_are_refused_for_anything_but_a_real_field_of_a_rejected_record(client, auth, item, body, message):
     r = _correct(client, auth, item, **body)

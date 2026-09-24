@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "../api";
 import AlertStrip from "../components/AlertStrip";
+import CountryBreakdown from "../components/CountryBreakdown";
 import KpiTile from "../components/KpiTile";
+import RefreshNow from "../components/RefreshNow";
 import TopBar from "../components/TopBar";
 import TrendPanel from "../components/TrendPanel";
 import { buildAlerts } from "../kpi/alerts";
@@ -62,6 +64,7 @@ export default function Dashboard() {
   const [data, setData] = useState({ status: "loading" });
   const [selected, setSelected] = useState(null);
   const [tableView, setTableView] = useState(false);
+  const [refreshCount, setRefreshCount] = useState(0);   // bumped by Refresh Now so the country view reloads too
 
   const load = useCallback(async () => {
     setData({ status: "loading" });
@@ -139,7 +142,10 @@ export default function Dashboard() {
       <TopBar asOf={row.calculation_date} dates={dates} selected={row.calculation_date} onSelect={setSelected} />
       <main className="mx-auto max-w-7xl px-4 pb-16 pt-6">
         <span className="kicker mb-2">Executive overview</span>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">Executive summary</h1>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">Executive summary</h1>
+          <RefreshNow onRefreshed={() => { load(); setRefreshCount((n) => n + 1); }} />
+        </div>
 
         <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Key indicators">
           {KPIS.map((kpi) => (
@@ -193,6 +199,10 @@ export default function Dashboard() {
 
         <Section title="What needs attention">
           <AlertStrip alerts={alerts} />
+        </Section>
+
+        <Section title="By country">
+          <CountryBreakdown reloadKey={refreshCount} />
         </Section>
       </main>
     </>

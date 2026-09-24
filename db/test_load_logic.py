@@ -224,6 +224,42 @@ stage({"pipeline_reconciliation": (PREC, [item])})
 w = merge()
 check("load 6: skipped, not failed, before migration 008 creates the table", "pipeline_reconciliation" not in w)
 
+# ---- Load 7: corrections Notebook 1 applied are marked synced, once (spec cfo-reconciliation-workflow 7)
+cur.execute("INSERT INTO roles (name) VALUES ('approver') RETURNING role_id")
+role = cur.fetchone()[0]
+cur.execute("INSERT INTO users (name, email, role_id) VALUES ('CFO', 'cfo@x', %s) RETURNING user_id", (role,))
+cfo = cur.fetchone()[0]
+cur.execute("""INSERT INTO reconciliation_corrections (recon_id, source_table, record_key, field_name, old_value, new_value,
+               entered_by, status) VALUES (1, 'transactions', 'T0009', 'channel', 'Cheque', 'Branch', %s, 'APPROVED'),
+               (1, 'transactions', 'T0010', 'account_id', 'ACC999', 'ACC001', %s, 'APPROVED') RETURNING correction_id""", (cfo, cfo))
+c1, c2 = [r[0] for r in cur.fetchall()]
+APPLIED = "correction_id bigint, source_table text, record_key text, field_name text, ingest_batch_id text, applied_at timestamp"
+stage({"applied_corrections": (APPLIED, [(c1, "transactions", "T0009", "channel", "R1", ts)])})
+w = merge()
+first = scalar("SELECT synced_at FROM reconciliation_corrections WHERE correction_id = %s", c1)
+check("load 7: an applied correction is marked synced, the other isn't",
+      w["applied_corrections"] == 1 and first is not None
+      and scalar("SELECT synced_at FROM reconciliation_corrections WHERE correction_id = %s", c2) is None)
+stage({"applied_corrections": (APPLIED, [(c1, "transactions", "T0009", "channel", "R2", ts)])})
+w = merge()
+check("load 7: re-applied on a later run, synced_at keeps the first time",
+      w["applied_corrections"] == 0 and scalar("SELECT synced_at FROM reconciliation_corrections WHERE correction_id = %s", c1) == first)
+
+# ---- Load 8: a snapshot table Neon doesn't have yet is skipped, not failed ---------------------
+COUNTRY = ("calculation_date date, country text, customer_count bigint, deposits_usd double precision, "
+           "loans_usd double precision, npl_loans_usd double precision, npl_ratio_pct double precision, "
+           "transaction_count bigint, transaction_volume_usd double precision")
+stage({"country_performance_summary": (COUNTRY, [(d2, "Lebanon", 5, 100.0, 900.0, 90.0, 10.0, 6, 70000.0)])})
+w = merge()
+check("load 8: country view loaded like the other snapshots",
+      w["country_performance_summary"] == 1 and scalar("SELECT npl_ratio_pct FROM country_performance_summary") == 10.0)
+cur.execute("DROP TABLE country_performance_summary")
+stage({"country_performance_summary": (COUNTRY, [(d2, "Lebanon", 5, 100.0, 900.0, 90.0, 10.0, 6, 70000.0)]),
+       "kpi_daily_summary": (KPI, [(d2, 14.0, ["z"])])})
+w = merge()
+check("load 8: before its migration the new table is skipped and the rest still loads",
+      "country_performance_summary" not in w and scalar("SELECT car_pct FROM kpi_daily_summary WHERE calculation_date=%s", d2) == 14.0)
+
 # ---- Report ---------------------------------------------------------------------------------
 for name, ok, detail in results:
     print(f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  -- {detail}" if detail and not ok else ""))

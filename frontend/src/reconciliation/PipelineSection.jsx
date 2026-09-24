@@ -25,6 +25,11 @@ function ItemDetail({ item }) {
       <p className="mt-0.5 text-sm text-ink2">
         {item.received_rows} rows received, {item.clean_rows} kept, {item.rejected_rows} rejected · run {item.ingest_batch_id}
       </p>
+      {item.note && (
+        <p className="mt-2 text-sm font-medium" style={{ color: "var(--critical)" }}>
+          {item.note}: this source was expected to send {item.source_table} for {item.source_country} in this run and sent none.
+        </p>
+      )}
       <p className="mt-0.5 text-sm text-ink2">
         Status: {statusText(item)}{item.status !== "MATCHED" && item.status !== "APPROVED" ? " · handled in Tasks (CFO review)" : ""}
       </p>
@@ -137,7 +142,7 @@ export default function PipelineSection() {
             { key: "received_rows", header: "Received", align: "right" },
             { key: "clean_rows", header: "Kept", align: "right" },
             { key: "rejected_rows", header: "Rejected", align: "right" },
-            { key: "amount_gap", header: "Amount gap", render: (r) => gapSummary(r.amounts_by_currency) },
+            { key: "amount_gap", header: "Amount gap", render: (r) => r.note || gapSummary(r.amounts_by_currency) },
             { key: "status", header: "Status", render: statusText },
             { key: "detected_at", header: "Run", render: (r) => fmtDateTime(r.detected_at) },
           ]}

@@ -119,6 +119,7 @@ export const api = {
   // Screen 1
   kpiLatest: () => request("/kpi-summary/latest"),
   kpiHistory: (days = 730) => request(`/kpi-summary/history?days=${days}`),
+  kpiCountries: () => request("/kpi-summary/countries"),   // specs/cfo-country-view.md
   kpiBreakdown: (key) => request(`/kpi-summary/${key}/breakdown`),
 
   // Screen 2 and the drill-downs from Screen 5
@@ -171,5 +172,8 @@ export const api = {
   proposeCorrection: (reconId, body) => request(`/reconciliation/pipeline/${reconId}/corrections`, { method: "POST", body }),
   pipelineEvent: (reconId, body) => request(`/reconciliation/pipeline/${reconId}/events`, { method: "POST", body }),
   assignees: () => request("/reconciliation/assignees"),
+  // Refresh Now (specs/refresh-now.md)
+  refreshStatus: () => request("/refresh/status"),
+  refreshNow: () => request("/refresh", { method: "POST" }),
   resolveReconciliation: (id, body) => request(`/reconciliation/${id}/resolve`, { method: "POST", body }),
 };

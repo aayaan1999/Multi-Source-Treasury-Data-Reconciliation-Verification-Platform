@@ -45,6 +45,16 @@ describe("Received vs kept, per source", () => {
     expect(within(screen.getByRole("table", { name: "Received vs kept, per source" })).getByText("Saudi Arabia")).toBeTruthy();
   });
 
+  it("shows a missing delivery (completeness check) as a gap with its note", async () => {
+    const missing = { ...ITEMS[1], recon_id: 3, source_country: "Qatar", received_rows: 0, clean_rows: 0, rejected_rows: 0,
+      amounts_by_currency: null, has_gap: true, status: "OPEN", note: "No rows delivered" };
+    const { api } = await import("../api");
+    api.pipelineReconciliation.mockResolvedValueOnce([...ITEMS, missing]);
+    render(<PipelineSection />);
+    const table = await screen.findByRole("table", { name: "Received vs kept, per source" });
+    expect(within(table).getByText("No rows delivered")).toBeTruthy();
+  });
+
   it("opens an item onto its amounts per currency and the records that were dropped", async () => {
     render(<PipelineSection />);
     const table = await screen.findByRole("table", { name: "Received vs kept, per source" });

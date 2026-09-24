@@ -288,6 +288,20 @@ CREATE TABLE segment_performance_summary (
     PRIMARY KEY (calculation_date, segment)
 );
 
+-- specs/cfo-country-view.md (FLOW-4): the CFO dashboard's per-country view, from Notebook 6, in USD.
+CREATE TABLE country_performance_summary (
+    calculation_date        date NOT NULL,
+    country                 text NOT NULL,
+    customer_count          bigint,
+    deposits_usd            double precision,
+    loans_usd               double precision,
+    npl_loans_usd           double precision,
+    npl_ratio_pct           double precision,
+    transaction_count       bigint,
+    transaction_volume_usd  double precision,
+    PRIMARY KEY (calculation_date, country)
+);
+
 CREATE TABLE product_performance_summary (
     calculation_date      date NOT NULL,
     product               text NOT NULL,
@@ -383,6 +397,7 @@ CREATE TABLE pipeline_reconciliation (
     status                  text NOT NULL DEFAULT 'OPEN' CONSTRAINT pipeline_reconciliation_status_check
                                 CHECK (status IN ('OPEN', 'MATCHED', 'WITH_CFO', 'ASSIGNED', 'SUBMITTED', 'APPROVED')),
     detected_at             timestamptz NOT NULL,
+    note                    text,               -- completeness check: "No rows delivered" (FLOW-1b)
     assigned_to             integer REFERENCES users (user_id),
     approved_by             integer REFERENCES users (user_id),
     approved_at             timestamptz

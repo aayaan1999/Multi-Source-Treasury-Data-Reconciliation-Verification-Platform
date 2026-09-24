@@ -22,7 +22,8 @@
 # MAGIC
 # MAGIC Every output row is tagged with where it came from — `source_system`, `source_country`,
 # MAGIC `ingest_batch_id`, `source_file` (`specs/source-tagging.md`) — so reconciliation can compare
-# MAGIC each source's delivery with what survives cleaning.
+# MAGIC each source's delivery with what survives cleaning. Values the CFO approved for rejected records
+# MAGIC (`specs/cfo-reconciliation-workflow.md`) are applied before the tables are written.
 
 # COMMAND ----------
 
@@ -277,6 +278,96 @@ else:
     raw_capital_positions = raw_capital_positions.withColumn("source_country", F.lit("Group"))
     raw_liquidity_daily = raw_liquidity_daily.withColumn("source_country", F.lit("Group"))
     raw_fx_rates = raw_fx_rates.withColumn("source_country", F.lit("Group"))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Approved corrections (FLOW-5b, `specs/cfo-reconciliation-workflow.md` section 7)
+# MAGIC
+# MAGIC Values the CFO approved for rejected records are applied here, before Notebook 2's checks, so
+# MAGIC a corrected record passes, its reconciliation gap closes, and the dashboards include it. A
+# MAGIC correction is applied only while the record **still holds the old (broken) value**: if the source
+# MAGIC has since sent something else, the source wins and the correction no longer applies — so it's
+# MAGIC safe to apply every approved correction on every run. Each run records exactly which corrections
+# MAGIC it applied in `applied_corrections`; the Postgres load marks them synced.
+# MAGIC
+# MAGIC The raw tables therefore hold "what the source sent, plus approved corrections". Reading from
+# MAGIC Neon is best-effort: if the table or the `neon` secrets aren't there, nothing is applied and the
+# MAGIC run carries on, saying so.
+
+# COMMAND ----------
+
+from pyspark.sql.types import LongType, StringType, StructField, StructType, TimestampType
+
+# Same record_key Notebook 2 writes for each table (fx_rates has a composite key).
+RECORD_KEY = {
+    "branches": F.col("branch_id"), "customers": F.col("customer_id"), "accounts": F.col("account_id"),
+    "loans": F.col("loan_id"), "transactions": F.col("transaction_id"), "capital_positions": F.col("month"),
+    "liquidity_daily": F.col("date"),
+    "fx_rates": F.concat_ws("_", F.col("date").cast("string"), F.col("currency_pair")),
+}
+
+
+def read_approved_corrections() -> list:
+    try:
+        return (
+            spark.read.format("postgresql")
+            .option("host", dbutils.secrets.get("neon", "host")).option("port", "5432")
+            .option("database", dbutils.secrets.get("neon", "database"))
+            .option("user", dbutils.secrets.get("neon", "user")).option("password", dbutils.secrets.get("neon", "password"))
+            .option("dbtable", "public.reconciliation_corrections")
+            .load()
+            .filter(F.col("status") == "APPROVED")
+            .select("correction_id", "source_table", "record_key", "field_name", "old_value", "new_value")
+            .orderBy("correction_id")
+            .collect()
+        )
+    except Exception as e:  # no table yet (migration 009), no secrets, Neon asleep: never block ingestion
+        print(f"No approved corrections applied - couldn't read them from Neon: {type(e).__name__}: {str(e)[:200]}")
+        return []
+
+
+raw_by_table = {
+    "branches": raw_branches, "customers": raw_customers, "accounts": raw_accounts, "loans": raw_loans,
+    "transactions": raw_transactions, "capital_positions": raw_capital_positions,
+    "liquidity_daily": raw_liquidity_daily, "fx_rates": raw_fx_rates,
+}
+applied = []
+for c in read_approved_corrections():
+    df = raw_by_table.get(c.source_table)
+    if df is None or c.field_name not in df.columns:
+        continue
+    current = F.col(c.field_name)
+    # Still broken = the field still holds exactly the value the correction replaced.
+    still_broken = current.isNull() if c.old_value is None else (current.cast("string") == c.old_value)
+    match = (RECORD_KEY[c.source_table].cast("string") == c.record_key) & still_broken
+    if df.filter(match).limit(1).count() == 0:
+        continue  # the source has changed the value (or no longer sends the record): the correction is spent
+    # try_cast: a value that doesn't fit the column's type becomes null rather than failing the run
+    # (the record then stays rejected by Notebook 2, visible again on the Reconciliation tab).
+    corrected = F.lit(c.new_value).try_cast(df.schema[c.field_name].dataType)
+    raw_by_table[c.source_table] = df.withColumn(c.field_name, F.when(match, corrected).otherwise(current))
+    applied.append((c.correction_id, c.source_table, c.record_key, c.field_name, INGEST_BATCH_ID))
+
+(raw_branches, raw_customers, raw_accounts, raw_loans, raw_transactions,
+ raw_capital_positions, raw_liquidity_daily, raw_fx_rates) = (
+    raw_by_table[t] for t in ("branches", "customers", "accounts", "loans", "transactions",
+                              "capital_positions", "liquidity_daily", "fx_rates")
+)
+
+# Overwritten every run: exactly what this run applied (empty when nothing did).
+APPLIED_SCHEMA = StructType([
+    StructField("correction_id", LongType()), StructField("source_table", StringType()),
+    StructField("record_key", StringType()), StructField("field_name", StringType()),
+    StructField("ingest_batch_id", StringType()),
+])
+(
+    spark.createDataFrame(applied, APPLIED_SCHEMA)
+    .withColumn("applied_at", F.current_timestamp())
+    .write.format("delta").mode("overwrite").option("overwriteSchema", "true")
+    .saveAsTable("applied_corrections")
+)
+print(f"approved corrections applied this run: {len(applied)}")
 
 # COMMAND ----------
 

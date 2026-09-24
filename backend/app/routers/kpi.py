@@ -15,6 +15,17 @@ def latest():
     return row
 
 
+@router.get("/countries")
+def countries():
+    """The CFO's global view (specs/cfo-country-view.md): each country's latest customers, deposits,
+    loans, bad loans and activity in USD, biggest loan book first."""
+    return query(
+        """SELECT * FROM country_performance_summary
+           WHERE calculation_date = (SELECT max(calculation_date) FROM country_performance_summary)
+           ORDER BY loans_usd DESC NULLS LAST, country"""
+    )
+
+
 @router.get("/history")
 def history(days: int = Query(30, ge=1, le=730)):
     """Trend data. Returns however many days exist (a fresh demo has one)."""

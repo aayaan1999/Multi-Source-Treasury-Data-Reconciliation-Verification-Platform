@@ -26,7 +26,7 @@ def fetch_unstarted(conn) -> list[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """SELECT p.recon_id, p.source_system, p.source_country, p.source_table,
-                      p.received_rows, p.rejected_rows
+                      p.received_rows, p.rejected_rows, p.note
                FROM pipeline_reconciliation p
                WHERE p.status = 'OPEN' AND p.has_gap
                  AND NOT EXISTS (
@@ -40,9 +40,10 @@ def fetch_unstarted(conn) -> list[dict]:
 
 
 def title(item: dict) -> str:
-    """One line for the task list, e.g. "CORE_CSV · Lebanon · transactions: 1 of 6 rows rejected"."""
-    return (f"{item['source_system']} · {item['source_country']} · {item['source_table']}: "
-            f"{item['rejected_rows']} of {item['received_rows']} rows rejected")
+    """One line for the task list, e.g. "CORE_CSV · Lebanon · transactions: 1 of 6 rows rejected",
+    or the completeness check's note ("... : No rows delivered")."""
+    what = item.get("note") or f"{item['rejected_rows']} of {item['received_rows']} rows rejected"
+    return f"{item['source_system']} · {item['source_country']} · {item['source_table']}: {what}"
 
 
 def process_variables(item: dict, cfo_id: int) -> dict:

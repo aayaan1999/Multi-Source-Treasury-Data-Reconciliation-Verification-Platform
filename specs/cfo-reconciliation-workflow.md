@@ -4,7 +4,8 @@
 backend endpoints, Tasks screen; Notebook 2 stores each rejected row's values. Tested locally
 (pytest, vitest, load test); **the Camunda process has not been deployed or run against a live
 stack, migration 009 is not yet on Neon, and Notebook 2's change has not run on a cluster.**
-5b (Databricks applying approved corrections) is **not built** — see section 7.
+5b (Databricks applying approved corrections) implemented 2026-09-24 in Notebook 1 and the load —
+see section 7; **not yet run on a cluster.**
 **Backlog:** FLOW-5 in `project-docs/CLIENT-FEEDBACK-BACKLOG.md`.
 **Depends on:** `specs/pipeline-reconciliation.md` (FLOW-3 items), `specs/source-tagging.md`.
 
@@ -83,13 +84,29 @@ correction one more. The load stays insert-only, so a rerun never resets these s
 - [x] Tasks screen: reconciliation tasks show the item, its rejected records, corrections and the step's actions (vitest)
 - [ ] Deployed and run live; screen checked in a browser
 
-## 7. Not in 5a: applying corrections (5b)
+## 7. Applying corrections (5b)
 
-Approved corrections sit in `reconciliation_corrections` (`synced_at` null). 5b: Notebook 1 (or a
-step before Notebook 2) reads them from Neon, patches the matching raw rows before the checks,
-and marks them synced — so on the next run (or Refresh Now) the corrected records pass, the gap
-closes, and the dashboard numbers include them. Until 5b, approval is recorded but the numbers
-don't change.
+Notebook 1 reads every `APPROVED` correction from Neon (Spark's `postgresql` reader, `neon`
+secrets) and applies it to the raw table **before** Notebook 2's checks, so the corrected record
+passes, the reconciliation gap closes on that run, and the dashboards include it.
+
+- **Applied only while the record still holds the old value** (`old_value`). If the source has
+  since sent a different value, the source wins and the correction is spent. This makes it safe to
+  apply every approved correction on every run, with no "already applied" bookkeeping.
+- **Typed like the column** with `try_cast`: a value that doesn't fit becomes null, the record stays
+  rejected, and it shows up again on the Reconciliation tab instead of failing the run. The backend
+  also refuses a non-number for a numeric field.
+- **Recorded:** Notebook 1 overwrites the Delta table `applied_corrections` each run with exactly
+  what it applied; the load sets `synced_at` on those corrections the first time only.
+- **Best-effort read:** if the Neon table or secrets aren't there, nothing is applied and the run
+  says so and carries on.
+- Consequence: `raw_*` holds "what the source sent, plus approved corrections", so the next
+  run's received-vs-kept compares against corrected data (applying at the raw stage is what stops
+  an approved correction from reopening a gap every run). `applied_corrections` and the audit log
+  keep what changed.
+
+Tests: the load's synced marking is in `db/test_load_logic.py` (load 7); the Spark code is not run
+locally (no PySpark here).
 
 ## 8. Open items
 
