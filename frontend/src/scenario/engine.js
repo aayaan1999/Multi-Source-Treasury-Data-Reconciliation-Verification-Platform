@@ -55,7 +55,7 @@ export const ASSUMPTION_DEFS = [
 
 // Shown read-only next to the editable ones: assumptions already baked into the pipeline's snapshot (notebooks/06).
 export const PIPELINE_ASSUMPTIONS = [
-  { label: "PRODUCT_RATE_TYPE", value: "Mortgage: fixed · Personal: fixed · SME: floating · Corporate: floating",
+  { label: "PRODUCT_RATE_TYPE", value: "Mortgage: fixed · Personal: fixed · Auto: fixed · SME: floating · Corporate: floating",
     why: "Decides which loans reprice when rates move. An assumption, not sourced from the schema or the brief: confirm with the client." },
   { label: "ACCOUNT_RATE_TYPE", value: "Current: floating · Savings: floating · Term deposit: fixed",
     why: "Decides which deposits reprice. Same caveat." },

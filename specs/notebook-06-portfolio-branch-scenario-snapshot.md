@@ -34,9 +34,11 @@ same non-negotiable performance requirement as Notebook 3.
 
 - **`PRODUCT_RATE_TYPE`** (for Screen 4's "rate type" slicing, which needs a
   `floating_rate_flag` the schema doesn't have — same category of gap as Notebook 3's
-  deposit-rate/branch-currency ones): `{"Mortgage": "fixed", "Personal": "fixed", "SME":
-  "floating", "Corporate": "floating"}` — retail-style lending conventionally fixed-rate,
-  commercial lending more often floating/negotiated. **Assumption, not sourced from the schema or
+  deposit-rate/branch-currency ones): `{"Mortgage": "fixed", "Personal": "fixed", "Auto":
+  "fixed", "SME": "floating", "Corporate": "floating"}` — retail-style lending conventionally
+  fixed-rate, commercial lending more often floating/negotiated. (`Auto` added 2026-09-23: the
+  synthetic loan book has Auto loans, and an unmapped product crashed the scenario snapshot with a
+  null map key - every product in `loans.csv` must appear here.) **Assumption, not sourced from the schema or
   the brief — confirm with the client.**
 - **`ACCOUNT_RATE_TYPE`**: `{"Current": "floating", "Savings": "floating", "Term deposit":
   "fixed"}` — a term deposit locks a rate for its term; current/savings typically float with a

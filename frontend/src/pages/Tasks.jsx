@@ -7,7 +7,8 @@ import PageShell, { Loading, LoadError } from "../components/PageShell";
 import Section from "../components/Section";
 import { useAuth } from "../auth";
 import useAsync from "../hooks/useAsync";
-import { formatDateTime } from "../kpi/format";
+import { KPI_BY_KEY } from "../kpi/kpiConfig";
+import { formatDateTime, formatValue } from "../kpi/format";
 import ApprovalChain from "../workflow/ApprovalChain";
 import { claimTask, completeTask, getVariables, searchTasks } from "../workflow/tasklistApi";
 
@@ -215,13 +216,50 @@ function ReviewPanel({ task, user, onDone, onClose }) {
 
 const RECORD_TYPE_LABEL = { data_quality: "Data quality", fraud: "Fraud", breach: "Breach" };
 
+const SOURCE_TABLE_LABEL = {
+  customers: "Customer", accounts: "Account", loans: "Loan", branches: "Branch",
+  capital_positions: "Capital position", liquidity_daily: "Liquidity", fx_rates: "FX rate",
+};
+
+// limits.metric_name -> KPI tile, the same mapping as camunda/bridge/breach_check.py's KPI_COLUMN.
+const BREACH_METRIC_KPI = {
+  capital_adequacy_ratio: "car_pct", liquidity_coverage_ratio: "lcr_pct", npl_ratio: "npl_ratio_pct",
+  dollarization_ratio: "dollarization_ratio_pct", net_interest_margin: "nim_pct",
+  cost_to_income_ratio: "cost_to_income_pct", return_on_equity: "roe_pct", total_assets: "total_assets_usd",
+};
+
+/** What a task is about, in one cell: the transaction ID, "Loan LN0059" for a data-quality flag on
+ * another table, or "Capital ratio 12.4% (limit 12.5%)" for a breach - a bank-wide KPI, which has
+ * no transaction or account behind it. */
+export function recordLabel(task) {
+  const { sourceTable, recordKey } = task.vars;
+  if (sourceTable === "transactions") return recordKey;
+  if (sourceTable === "breaches") {
+    const b = task.breach;
+    const kpi = b && KPI_BY_KEY[BREACH_METRIC_KPI[b.metric_name]];
+    if (!kpi) return `Breach #${recordKey}`;
+    return `${kpi.short} ${formatValue(kpi, b.actual_value)} (limit ${formatValue(kpi, b.threshold_value)})`;
+  }
+  return `${SOURCE_TABLE_LABEL[sourceTable] || sourceTable} ${recordKey}`;
+}
+
 async function loadTasks() {
   const tasks = await searchTasks({ state: "CREATED" });
   // account_id isn't a Camunda variable (only recordKey=transaction_id is, for fraud tasks) - one
-  // batched Postgres lookup for the whole list instead of a call per row.
+  // batched Postgres lookup for the whole list instead of a call per row. Breach figures likewise
+  // come from one /workflow/breaches call; if it fails the Record cell falls back to "Breach #id".
   const txnIds = [...new Set(tasks.filter((t) => t.vars.sourceTable === "transactions").map((t) => t.vars.recordKey))];
-  const accountIds = txnIds.length ? await api.lookupAccountIds(txnIds) : {};
-  return tasks.map((t) => ({ ...t, accountId: accountIds[t.vars.recordKey] }));
+  const hasBreaches = tasks.some((t) => t.vars.sourceTable === "breaches");
+  const [accountIds, breaches] = await Promise.all([
+    txnIds.length ? api.lookupAccountIds(txnIds) : {},
+    hasBreaches ? api.breaches().catch(() => []) : [],
+  ]);
+  const breachById = Object.fromEntries(breaches.map((b) => [String(b.breach_id), b]));
+  return tasks.map((t) => ({
+    ...t,
+    accountId: accountIds[t.vars.recordKey],
+    breach: t.vars.sourceTable === "breaches" ? breachById[t.vars.recordKey] : undefined,
+  }));
 }
 
 function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
@@ -267,7 +305,7 @@ function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
       <DataTable
         caption="My tasks"
         columns={[
-          { key: "transactionId", header: "Transaction ID", render: (t) => (t.vars.sourceTable === "transactions" ? t.vars.recordKey : "—") },
+          { key: "record", header: "Record", render: recordLabel },
           { key: "accountId", header: "Account ID", render: (t) => t.accountId || "—" },
           { key: "name", header: "Name" },
           { key: "group", header: "Group", render: (t) => (t.candidateGroups || []).join(", ") },

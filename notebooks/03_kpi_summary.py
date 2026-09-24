@@ -56,7 +56,13 @@ REGION_CURRENCY = {"Beirut": "USD", "North": "USD", "South": "USD", "KSA": "SAR"
 NPL_DAYS_PAST_DUE_THRESHOLD = 90
 
 NOTEBOOK_RUN_ID = str(uuid.uuid4())
-CALCULATION_DATE = F.current_date()
+# Optional `calculation_date` parameter (YYYY-MM-DD): stamps this run's output with that business
+# date instead of today, so loading several days' data one after another (e.g. a demo backfill)
+# lands as separate dated rows. Blank - the default, and what the scheduled job passes - keeps
+# the original behaviour: today's date.
+dbutils.widgets.text("calculation_date", "", "Calculation date (YYYY-MM-DD, blank = today)")
+_calculation_date_param = dbutils.widgets.get("calculation_date").strip()
+CALCULATION_DATE = F.to_date(F.lit(_calculation_date_param)) if _calculation_date_param else F.current_date()
 
 # COMMAND ----------
 

@@ -210,7 +210,7 @@ conn.commit()
 # MAGIC ## Stage each Delta table into Postgres
 # MAGIC
 # MAGIC Spark's JDBC writer can't write map columns, so they are serialised to JSON text (the merge
-# MAGIC casts them to `jsonb`). Snapshot tables keep only their latest `calculation_date`.
+# MAGIC casts them to `jsonb`). Snapshot tables keep only their latest `calculation_date` (or the one passed as a parameter).
 
 # COMMAND ----------
 
@@ -227,6 +227,11 @@ STAGE_JOBS = (
        ("fx_rate_usage_log", "fx_rate_usage_log")]
 )
 
+# Same optional parameter as Notebooks 3, 4 and 6: when set, stage that date's Gold rows rather
+# than the newest ones (loading an earlier day after a later one already exists in Delta).
+dbutils.widgets.text("calculation_date", "", "Calculation date (YYYY-MM-DD, blank = latest)")
+CALCULATION_DATE_PARAM = dbutils.widgets.get("calculation_date").strip() or None
+
 expected_rows = {}
 
 for delta_name, pg_name in STAGE_JOBS:
@@ -240,8 +245,10 @@ for delta_name, pg_name in STAGE_JOBS:
             df = df.withColumn(field.name, F.to_json(F.col(field.name)))
 
     if pg_name in SNAPSHOT_TABLES:
-        latest = df.agg(F.max("calculation_date")).collect()[0][0]
-        df = df.filter(F.col("calculation_date") == latest)
+        # The date this run just calculated: the job's `calculation_date` parameter when given (a
+        # backfill of an earlier day), otherwise the newest date in the table.
+        load_date = CALCULATION_DATE_PARAM or df.agg(F.max("calculation_date")).collect()[0][0]
+        df = df.filter(F.col("calculation_date") == load_date)
 
     if pg_name == "data_quality_exceptions":
         # Records with no key (e.g. a blank-month row) have record_key NULL, but Postgres needs a
