@@ -58,6 +58,14 @@ NPL_DAYS_PAST_DUE_THRESHOLD = 90
 # source, country, run and file it came from (reconciliation per source counts rejects by these).
 SOURCE_TAG_COLS = ["source_system", "source_country", "ingest_batch_id", "source_file"]
 
+
+def record_data(df: DataFrame, exclude=()):
+    """The rejected row's own values as one JSON string (tags and helper columns left out), so the
+    CFO workflow can show what the record said and what to correct
+    (specs/cfo-reconciliation-workflow.md). Rejected rows otherwise exist only in Delta."""
+    skip = set(SOURCE_TAG_COLS) | {"flags"} | set(exclude)
+    return F.to_json(F.struct(*[c for c in df.columns if c not in skip])).alias("record_data")
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -77,7 +85,7 @@ def flag_struct(condition, flag_label: str, description):
     )
 
 
-def finalize(df: DataFrame, table_name: str, key_col: str, check_cols: list):
+def finalize(df: DataFrame, table_name: str, key_col: str, check_cols: list, record_exclude=()):
     """Combines the named check columns into a `flags` array, splits the table into
     (clean_df, exceptions_df), and returns both. `exceptions_df` is already shaped to match
     the central `data_quality_exceptions` log."""
@@ -88,13 +96,17 @@ def finalize(df: DataFrame, table_name: str, key_col: str, check_cols: list):
 
     exceptions_df = (
         df.filter(F.size("flags") > 0)
-        .select(F.col(key_col).cast("string").alias("record_key"), F.explode("flags").alias("flag"), *SOURCE_TAG_COLS)
+        .select(
+            F.col(key_col).cast("string").alias("record_key"), F.explode("flags").alias("flag"),
+            *SOURCE_TAG_COLS, record_data(df, record_exclude),
+        )
         .select(
             F.lit(table_name).alias("source_table"),
             "record_key",
             F.col("flag.flag_label").alias("flag_label"),
             F.col("flag.description").alias("description"),
             *SOURCE_TAG_COLS,
+            "record_data",
         )
     )
     return clean_df, exceptions_df
@@ -120,6 +132,7 @@ def orphan_flags(child_df: DataFrame, child_key_col: str, child_fk_col: str, par
         F.lit(flag_label).alias("flag_label"),
         F.concat(F.lit(f"{child_fk_col} '"), F.col(child_fk_col), F.lit(f"' has no matching {parent_key_col} in the clean parent table")).alias("description"),
         *SOURCE_TAG_COLS,
+        record_data(child_df),
     )
 
 # COMMAND ----------
@@ -384,7 +397,7 @@ fx_checked = fx_with_dups.select(
     ).alias("chk_2"),
 ).drop("dup_count")
 
-fx_rates_clean, fx_rates_exceptions = finalize(fx_checked, "fx_rates", "fx_key", ["chk_1", "chk_2"])
+fx_rates_clean, fx_rates_exceptions = finalize(fx_checked, "fx_rates", "fx_key", ["chk_1", "chk_2"], record_exclude=["fx_key"])
 fx_rates_clean = fx_rates_clean.drop("fx_key")
 exception_frames.append(fx_rates_exceptions)
 

@@ -11,6 +11,7 @@ import { KPI_BY_KEY } from "../kpi/kpiConfig";
 import { formatDateTime, formatValue } from "../kpi/format";
 import ApprovalChain from "../workflow/ApprovalChain";
 import { TRANSACTION_FLAGS, alertType } from "../workflow/flagTypes";
+import ReconciliationTaskPanel from "../reconciliation/ReconciliationTaskPanel";
 import { claimTask, completeTask, getVariables, searchTasks } from "../workflow/tasklistApi";
 
 // Provenance columns stamped by Notebook 1 (specs/source-tagging.md): shown with the source record,
@@ -226,7 +227,7 @@ function ReviewPanel({ task, user, onDone, onClose }) {
   );
 }
 
-const RECORD_TYPE_LABEL = { data_quality: "Data quality", fraud: "Transaction alert", breach: "Breach" };
+const RECORD_TYPE_LABEL = { data_quality: "Data quality", fraud: "Transaction alert", breach: "Breach", reconciliation: "Reconciliation" };
 
 const SOURCE_TABLE_LABEL = {
   customers: "Customer", accounts: "Account", loans: "Loan", branches: "Branch",
@@ -246,6 +247,8 @@ const BREACH_METRIC_KPI = {
 export function recordLabel(task) {
   const { sourceTable, recordKey } = task.vars;
   if (sourceTable === "transactions") return recordKey;
+  // A CFO reconciliation item (specs/cfo-reconciliation-workflow.md): the bridge sets a one-line title.
+  if (sourceTable === "pipeline_reconciliation") return task.vars.title || `Reconciliation item #${recordKey}`;
   if (sourceTable === "breaches") {
     const b = task.breach;
     const kpi = b && KPI_BY_KEY[BREACH_METRIC_KPI[b.metric_name]];
@@ -362,17 +365,16 @@ export default function Tasks() {
 
       {selectedTask && (
         <Modal title="Review task" onClose={() => setSelectedTask(null)}>
-          <ReviewPanel
-            task={selectedTask}
-            user={user}
-            onClose={() => setSelectedTask(null)}
-            onDone={() => {
+          {(() => {
+            const onDone = () => {
               const doneId = selectedTask.id;
               setCompletedIds((ids) => new Set(ids).add(doneId));
               setSelectedTask(null);
               setRefreshKey((k) => k + 1);
-            }}
-          />
+            };
+            const Panel = selectedTask.vars.recordType === "reconciliation" ? ReconciliationTaskPanel : ReviewPanel;
+            return <Panel task={selectedTask} user={user} onClose={() => setSelectedTask(null)} onDone={onDone} />;
+          })()}
         </Modal>
       )}
     </PageShell>

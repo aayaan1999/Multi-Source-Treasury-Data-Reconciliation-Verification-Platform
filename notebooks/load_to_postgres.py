@@ -137,7 +137,8 @@ def run_merge(cur):
     if "data_quality_exceptions" in staged:
         both = ({n for n, _ in _columns(cur, "staging.data_quality_exceptions")}
                 & {n for n, _ in _columns(cur, "public.data_quality_exceptions")})
-        updates = ["description"] + [c for c in SOURCE_TAG_COLS if c in both]
+        # record_data (the rejected row's values, specs/cfo-reconciliation-workflow.md) likewise.
+        updates = ["description"] + [c for c in SOURCE_TAG_COLS + ["record_data"] if c in both]
         written["data_quality_exceptions"] = _insert_from_staging(
             cur, "data_quality_exceptions",
             "ON CONFLICT (source_table, record_key, flag_label) DO UPDATE SET "

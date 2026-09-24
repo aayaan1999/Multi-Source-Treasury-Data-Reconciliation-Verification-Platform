@@ -123,7 +123,8 @@ class CommentRequest(BaseModel):
 
 @router.post("/exceptions/comments")
 def add_comment(body: CommentRequest, user: dict = Depends(current_user)):
-    if body.source_table not in SOURCE_TABLES:
+    # pipeline_reconciliation: comments on a CFO reconciliation item (specs/cfo-reconciliation-workflow.md).
+    if body.source_table not in SOURCE_TABLES | {"pipeline_reconciliation"}:
         raise HTTPException(400, f"Unknown source_table: {body.source_table}")
     row = write(
         """INSERT INTO comments (source_table, record_key, flag_label, user_id, comment_text, parent_comment_id)

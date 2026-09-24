@@ -6,7 +6,7 @@ import { Loading, LoadError } from "../components/PageShell";
 import Section from "../components/Section";
 import StatBox from "../components/StatBox";
 import useAsync from "../hooks/useAsync";
-import { currencyLines, fmtAmount, gapSummary } from "./pipeline";
+import { currencyLines, fmtAmount, gapSummary, statusText } from "./pipeline";
 
 function fmtDateTime(iso) {
   return iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -24,6 +24,9 @@ function ItemDetail({ item }) {
       </h3>
       <p className="mt-0.5 text-sm text-ink2">
         {item.received_rows} rows received, {item.clean_rows} kept, {item.rejected_rows} rejected · run {item.ingest_batch_id}
+      </p>
+      <p className="mt-0.5 text-sm text-ink2">
+        Status: {statusText(item)}{item.status !== "MATCHED" && item.status !== "APPROVED" ? " · handled in Tasks (CFO review)" : ""}
       </p>
 
       {lines.length > 0 && (
@@ -76,8 +79,9 @@ function ItemDetail({ item }) {
 
 /**
  * "Received vs kept, per source" (FLOW-3): for each source's latest run, what it sent against what
- * survived cleaning, per country and table. Read-only here; acting on an item comes with the CFO
- * workflow (FLOW-5). Loads on its own, so the core-system comparison below still works if this fails.
+ * survived cleaning, per country and table. Read-only here: gap items are acted on in Tasks, through
+ * the CFO workflow (specs/cfo-reconciliation-workflow.md). Loads on its own, so the core-system
+ * comparison below still works if this fails.
  */
 export default function PipelineSection() {
   const [country, setCountry] = useState("");
@@ -134,6 +138,7 @@ export default function PipelineSection() {
             { key: "clean_rows", header: "Kept", align: "right" },
             { key: "rejected_rows", header: "Rejected", align: "right" },
             { key: "amount_gap", header: "Amount gap", render: (r) => gapSummary(r.amounts_by_currency) },
+            { key: "status", header: "Status", render: statusText },
             { key: "detected_at", header: "Run", render: (r) => fmtDateTime(r.detected_at) },
           ]}
           rows={rows}

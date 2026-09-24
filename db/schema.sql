@@ -178,6 +178,7 @@ CREATE TABLE data_quality_exceptions (
     source_country  text,
     ingest_batch_id text,
     source_file     text,
+    record_data     jsonb,          -- the rejected row's own values (Notebook 2), for the CFO workflow
     UNIQUE (source_table, record_key, flag_label)
 );
 
@@ -378,11 +379,37 @@ CREATE TABLE pipeline_reconciliation (
     unreadable_amount_rows  bigint NOT NULL DEFAULT 0,
     amounts_by_currency     jsonb,              -- {"USD": {"received", "clean", "gap"}, ...}
     has_gap                 boolean NOT NULL,
-    status                  text NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'MATCHED')),
-    detected_at             timestamptz NOT NULL
+    -- OPEN/MATCHED from the load; the rest from the CFO workflow (specs/cfo-reconciliation-workflow.md).
+    status                  text NOT NULL DEFAULT 'OPEN' CONSTRAINT pipeline_reconciliation_status_check
+                                CHECK (status IN ('OPEN', 'MATCHED', 'WITH_CFO', 'ASSIGNED', 'SUBMITTED', 'APPROVED')),
+    detected_at             timestamptz NOT NULL,
+    assigned_to             integer REFERENCES users (user_id),
+    approved_by             integer REFERENCES users (user_id),
+    approved_at             timestamptz
 );
 
 CREATE INDEX pipeline_reconciliation_source_idx ON pipeline_reconciliation (source_system, detected_at DESC);
+
+-- specs/cfo-reconciliation-workflow.md (FLOW-5): values proposed for the rejected records behind a
+-- pipeline_reconciliation item; approved by the CFO, then applied by Databricks (synced_at, 5b).
+CREATE TABLE reconciliation_corrections (
+    correction_id  bigserial PRIMARY KEY,
+    recon_id       bigint NOT NULL REFERENCES pipeline_reconciliation (recon_id),
+    source_table   text NOT NULL,
+    record_key     text NOT NULL,
+    field_name     text NOT NULL,
+    old_value      text,
+    new_value      text NOT NULL,
+    entered_by     integer NOT NULL REFERENCES users (user_id),
+    entered_at     timestamptz NOT NULL DEFAULT now(),
+    status         text NOT NULL DEFAULT 'PROPOSED' CHECK (status IN ('PROPOSED', 'APPROVED')),
+    approved_by    integer REFERENCES users (user_id),
+    approved_at    timestamptz,
+    synced_at      timestamptz
+);
+
+CREATE UNIQUE INDEX reconciliation_corrections_one_per_field
+    ON reconciliation_corrections (recon_id, source_table, record_key, field_name) WHERE status = 'PROPOSED';
 
 -- INFERRED: source doc lists purpose only ("name, frequency, due-day rule, owner").
 CREATE TABLE report_definitions (
@@ -614,7 +641,8 @@ CREATE INDEX review_outcomes_reviewed_at_idx ON review_outcomes (reviewed_at);
 -- column onto data_quality_exceptions (owned/overwritten by the Databricks import job) or
 -- overloading flagged_transactions.status (the review outcome, not "was a process started").
 CREATE TABLE camunda_process_tracking (
-    record_type           text NOT NULL CHECK (record_type IN ('data_quality', 'fraud', 'breach')),
+    record_type           text NOT NULL CONSTRAINT camunda_process_tracking_record_type_check
+                              CHECK (record_type IN ('data_quality', 'fraud', 'breach', 'reconciliation')),
     source_table          text NOT NULL,
     record_key            text NOT NULL,
     flag_label            text NOT NULL,

@@ -1,7 +1,9 @@
 """Reconciliation tab: reads/resolves specs/multi-source-reconciliation.md's
 `reconciliation_exceptions` (Neon-slice bronze_neon_* vs this app's own canonical *_clean data), and
 reads specs/pipeline-reconciliation.md's `pipeline_reconciliation` items (received vs kept per
-source, country and table - FLOW-3), with the rejected records behind each one.
+source, country and table - FLOW-3), with the rejected records behind each one. Pipeline items also
+carry the CFO workflow (specs/cfo-reconciliation-workflow.md, FLOW-5): the Camunda process decides
+the steps; these endpoints record what happens at each one (reassign, corrections, submit, return).
 
 Standalone from Screen 6 - not routed through Camunda. Both handle "a flagged discrepancy needs a
 human decision," but this one is data-layer verification (does our copy of the data match the
@@ -65,7 +67,9 @@ def list_exceptions(
 
 PIPELINE_COLUMNS = """p.recon_id, p.ingest_batch_id, p.source_system, p.source_country, p.source_table,
        p.received_rows, p.clean_rows, p.rejected_rows, p.amount_column, p.unreadable_amount_rows,
-       p.amounts_by_currency, p.has_gap, p.status, p.detected_at"""
+       p.amounts_by_currency, p.has_gap, p.status, p.detected_at,
+       p.assigned_to, ua.name AS assigned_to_name, p.approved_by, p.approved_at"""
+PIPELINE_FROM = "pipeline_reconciliation p LEFT JOIN users ua ON ua.user_id = p.assigned_to"
 
 # The newest run of each source: a run is one delivery, and older runs' items stay as history.
 LATEST_RUN_PER_SOURCE = """(p.source_system, p.ingest_batch_id) IN (
@@ -95,7 +99,7 @@ def pipeline_items(
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     params.append(limit)
     return query(
-        f"""SELECT {PIPELINE_COLUMNS} FROM pipeline_reconciliation p {where}
+        f"""SELECT {PIPELINE_COLUMNS} FROM {PIPELINE_FROM} {where}
             ORDER BY p.has_gap DESC, p.rejected_rows DESC, p.source_table, p.source_country LIMIT %s""",
         tuple(params),
     )
@@ -106,11 +110,9 @@ def pipeline_item_records(recon_id: int):
     """The rejected records behind one item, from data_quality_exceptions (same table, source,
     country and run). The exceptions log only holds the latest run's rejects, so an older run's
     item says the detail is gone rather than showing a different run's records."""
-    item = query_one(f"SELECT {PIPELINE_COLUMNS} FROM pipeline_reconciliation p WHERE p.recon_id = %s", (recon_id,))
-    if item is None:
-        raise HTTPException(404, "No such reconciliation item")
+    item = _item(recon_id)
     records = query(
-        """SELECT record_key, flag_label, description FROM data_quality_exceptions
+        """SELECT record_key, flag_label, description, record_data FROM data_quality_exceptions
            WHERE source_table = %s AND source_system = %s AND source_country = %s AND ingest_batch_id = %s
            ORDER BY record_key, flag_label""",
         (item["source_table"], item["source_system"], item["source_country"], item["ingest_batch_id"]),
@@ -118,6 +120,138 @@ def pipeline_item_records(recon_id: int):
     # Every rejected row of the run the log holds has at least one exception, so rejected rows with
     # no records means the item is from an older run whose detail has been replaced.
     return {"item": item, "records": records, "records_available": bool(records) or item["rejected_rows"] == 0}
+
+
+def _item(recon_id: int) -> dict:
+    item = query_one(f"SELECT {PIPELINE_COLUMNS} FROM {PIPELINE_FROM} WHERE p.recon_id = %s", (recon_id,))
+    if item is None:
+        raise HTTPException(404, "No such reconciliation item")
+    return item
+
+
+# ---- CFO workflow (specs/cfo-reconciliation-workflow.md) --------------------------------------
+
+# Corrections can be proposed while the item is with the CFO (handling it directly) or the assignee.
+EDITABLE_STATUSES = ("WITH_CFO", "ASSIGNED")
+
+# Key columns identify the record; correcting one would detach the correction from the record.
+KEY_COLUMNS = {
+    "branches": {"branch_id"}, "customers": {"customer_id"}, "accounts": {"account_id"},
+    "loans": {"loan_id"}, "transactions": {"transaction_id"}, "capital_positions": {"month"},
+    "liquidity_daily": {"date"}, "fx_rates": {"date", "currency_pair"},
+}
+
+
+@router.get("/assignees")
+def assignees():
+    """Who the CFO can reassign an item to."""
+    return query(
+        "SELECT u.user_id, u.name, r.name AS role FROM users u JOIN roles r ON r.role_id = u.role_id ORDER BY u.name"
+    )
+
+
+@router.get("/pipeline/{recon_id}/corrections")
+def list_corrections(recon_id: int):
+    _item(recon_id)
+    return query(
+        """SELECT c.correction_id, c.source_table, c.record_key, c.field_name, c.old_value, c.new_value,
+                  c.status, c.entered_at, ue.name AS entered_by_name, c.approved_at, c.synced_at
+           FROM reconciliation_corrections c JOIN users ue ON ue.user_id = c.entered_by
+           WHERE c.recon_id = %s ORDER BY c.entered_at""",
+        (recon_id,),
+    )
+
+
+class CorrectionRequest(BaseModel):
+    record_key: str
+    field_name: str
+    new_value: str
+
+
+@router.post("/pipeline/{recon_id}/corrections")
+def propose_correction(recon_id: int, body: CorrectionRequest, user: dict = Depends(current_user)):
+    """A proposed value for one field of one rejected record behind this item. A second proposal for
+    the same field replaces the first. Kept as PROPOSED until the CFO approves the item."""
+    item = _item(recon_id)
+    if item["status"] not in EDITABLE_STATUSES:
+        raise HTTPException(409, f"Corrections can only be added while the item is with the CFO or the assignee (it is {item['status']})")
+    if not body.new_value.strip():
+        raise HTTPException(400, "Enter the corrected value")
+    rejected = query_one(
+        """SELECT record_data FROM data_quality_exceptions
+           WHERE source_table = %s AND record_key = %s AND source_system = %s AND source_country = %s
+             AND ingest_batch_id = %s AND record_data IS NOT NULL LIMIT 1""",
+        (item["source_table"], body.record_key, item["source_system"], item["source_country"], item["ingest_batch_id"]),
+    )
+    if rejected is None:
+        raise HTTPException(400, f"{body.record_key} is not a rejected record of this item")
+    data = rejected["record_data"]
+    if body.field_name not in data:
+        raise HTTPException(400, f"{item['source_table']} has no field {body.field_name!r}")
+    if body.field_name in KEY_COLUMNS.get(item["source_table"], set()):
+        raise HTTPException(400, f"{body.field_name} identifies the record and can't be corrected here")
+    old = data[body.field_name]
+    old_value = None if old is None else str(old)
+    row = write(
+        """WITH ins AS (
+               INSERT INTO reconciliation_corrections (recon_id, source_table, record_key, field_name, old_value, new_value, entered_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (recon_id, source_table, record_key, field_name) WHERE status = 'PROPOSED'
+               DO UPDATE SET new_value = EXCLUDED.new_value, entered_by = EXCLUDED.entered_by, entered_at = now()
+               RETURNING correction_id, old_value, new_value),
+           aud AS (
+               INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value)
+               SELECT %s, 'CORRECTION_PROPOSED', 'reconciliation_correction', %s, old_value, new_value FROM ins)
+           SELECT correction_id FROM ins""",
+        (recon_id, item["source_table"], body.record_key, body.field_name, old_value, body.new_value.strip(), user["user_id"],
+         user["user_id"], f"{item['source_table']}:{body.record_key}:{body.field_name}"),
+    )
+    return {"correction_id": row["correction_id"]}
+
+
+# event -> (status it must be in, status it moves to). Approval is written by the outcome worker when
+# the Camunda process reaches its service task, not here (spec section 5).
+TRANSITIONS = {
+    "REASSIGNED": ("WITH_CFO", "ASSIGNED"),
+    "SUBMITTED": ("ASSIGNED", "SUBMITTED"),
+    "RETURNED": ("SUBMITTED", "ASSIGNED"),
+}
+
+
+class EventRequest(BaseModel):
+    event: Literal["REASSIGNED", "SUBMITTED", "RETURNED"]
+    assignee_user_id: Optional[int] = None
+    comment: Optional[str] = None
+
+
+@router.post("/pipeline/{recon_id}/events")
+def workflow_event(recon_id: int, body: EventRequest, user: dict = Depends(current_user)):
+    """Records a step the Tasks screen just completed in Camunda: status change + one audit row, in
+    one statement. Refused when the item isn't at the step the event belongs to."""
+    item = _item(recon_id)
+    before, after = TRANSITIONS[body.event]
+    detail = body.comment
+    if body.event == "REASSIGNED":
+        assignee = query_one("SELECT user_id, name FROM users WHERE user_id = %s", (body.assignee_user_id,)) if body.assignee_user_id else None
+        if assignee is None:
+            raise HTTPException(400, "Pick who to assign it to")
+        detail = f"assigned to {assignee['name']}" + (f": {body.comment}" if body.comment else "")
+    if body.event == "RETURNED" and not (body.comment or "").strip():
+        raise HTTPException(400, "Say why it's being returned")
+    row = write(
+        """WITH upd AS (
+               UPDATE pipeline_reconciliation SET status = %s, assigned_to = COALESCE(%s, assigned_to)
+               WHERE recon_id = %s AND status = %s RETURNING recon_id),
+           aud AS (
+               INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value)
+               SELECT %s, %s, 'reconciliation_item', recon_id::text, %s, %s FROM upd)
+           SELECT recon_id FROM upd""",
+        (after, body.assignee_user_id if body.event == "REASSIGNED" else None, recon_id, before,
+         user["user_id"], body.event, before, detail),
+    )
+    if row is None:
+        raise HTTPException(409, f"The item isn't at that step (it is {item['status']})")
+    return {"status": after}
 
 
 class ResolveRequest(BaseModel):

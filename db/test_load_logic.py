@@ -219,7 +219,7 @@ w = merge()
 check("load 6: rerun adds only the new run's item and keeps the app-set status",
       w["pipeline_reconciliation"] == 1 and scalar("SELECT count(*) FROM pipeline_reconciliation") == 2
       and scalar("SELECT status FROM pipeline_reconciliation WHERE ingest_batch_id='R1'") == "IN_REVIEW")
-cur.execute("DROP TABLE pipeline_reconciliation")
+cur.execute("DROP TABLE pipeline_reconciliation CASCADE")   # corrections (migration 009) depend on it
 stage({"pipeline_reconciliation": (PREC, [item])})
 w = merge()
 check("load 6: skipped, not failed, before migration 008 creates the table", "pipeline_reconciliation" not in w)

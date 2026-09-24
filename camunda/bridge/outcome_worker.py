@@ -24,6 +24,7 @@ import _env  # sets the Windows event-loop policy - must be imported before pyze
 import psycopg2
 from pyzeebe import ZeebeWorker, Job, create_insecure_channel
 
+import reconciliation_db
 from _env import database_url, zeebe_address
 
 
@@ -72,6 +73,19 @@ async def write_review_outcome(job: Job) -> dict:
     return {}
 
 
+async def write_reconciliation_outcome(job: Job) -> dict:
+    """reconciliation-review's service task (specs/cfo-reconciliation-workflow.md): the CFO approved,
+    so the item and its proposed corrections become APPROVED. The approver is whoever completed the
+    last CFO step (approvedByUserId), falling back to the CFO the process was started for."""
+    v = job.variables
+    conn = psycopg2.connect(database_url(), connect_timeout=45)
+    try:
+        reconciliation_db.approve(conn, int(v["recordKey"]), int(v.get("approvedByUserId") or v["cfoUserId"]))
+    finally:
+        conn.close()
+    return {}
+
+
 async def main() -> None:
     # Built inside main(), not at module scope: a grpc.aio channel created before asyncio.run()
     # starts its loop binds to a throwaway loop instance, distinct from the one main() actually
@@ -80,7 +94,8 @@ async def main() -> None:
     channel = create_insecure_channel(grpc_address=zeebe_address())
     worker = ZeebeWorker(channel)
     worker.task(task_type="write-review-outcome")(write_review_outcome)
-    print(f"write-review-outcome worker listening on {zeebe_address()}...")
+    worker.task(task_type="write-reconciliation-outcome")(write_reconciliation_outcome)
+    print(f"write-review-outcome + write-reconciliation-outcome workers listening on {zeebe_address()}...")
     await worker.work()
 
 

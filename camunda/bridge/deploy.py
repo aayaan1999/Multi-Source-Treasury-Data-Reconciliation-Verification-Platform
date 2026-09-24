@@ -1,4 +1,5 @@
-"""Deploys the transaction-review BPMN process and its form to the local Zeebe gateway.
+"""Deploys the BPMN processes (transaction-review with its form, and reconciliation-review -
+specs/cfo-reconciliation-workflow.md) to the local Zeebe gateway.
 
     python camunda/bridge/deploy.py
 
@@ -21,6 +22,7 @@ async def main() -> None:
     result = await client.deploy_resource(
         str(PROCESS_DIR / "review-outcome-form.form"),  # deploy the form first so the BPMN's formId resolves
         str(PROCESS_DIR / "transaction-review.bpmn"),
+        str(PROCESS_DIR / "reconciliation-review.bpmn"),
     )
     print(f"Deployed key {result.key}:")
     for resource in result.deployments:

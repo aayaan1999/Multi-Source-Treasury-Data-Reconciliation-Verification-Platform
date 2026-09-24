@@ -166,5 +166,10 @@ export const api = {
   // Received vs kept per source, country and table (specs/pipeline-reconciliation.md)
   pipelineReconciliation: (params) => request(`/reconciliation/pipeline${query(params)}`),
   pipelineRecords: (reconId) => request(`/reconciliation/pipeline/${reconId}/records`),
+  // CFO reconciliation workflow (specs/cfo-reconciliation-workflow.md)
+  pipelineCorrections: (reconId) => request(`/reconciliation/pipeline/${reconId}/corrections`),
+  proposeCorrection: (reconId, body) => request(`/reconciliation/pipeline/${reconId}/corrections`, { method: "POST", body }),
+  pipelineEvent: (reconId, body) => request(`/reconciliation/pipeline/${reconId}/events`, { method: "POST", body }),
+  assignees: () => request("/reconciliation/assignees"),
   resolveReconciliation: (id, body) => request(`/reconciliation/${id}/resolve`, { method: "POST", body }),
 };

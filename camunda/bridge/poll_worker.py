@@ -21,7 +21,8 @@ import psycopg2
 import psycopg2.extras
 from pyzeebe import ZeebeClient, create_insecure_channel
 
-from _env import database_url, zeebe_address
+import reconciliation_db
+from _env import cfo_email, database_url, zeebe_address
 
 PROCESS_ID = "transaction-review"
 
@@ -80,6 +81,23 @@ def record_tracking(conn, row: dict, process_instance_key: int) -> None:
     conn.commit()
 
 
+async def start_reconciliation_reviews(client: ZeebeClient, conn) -> int:
+    """One reconciliation-review (specs/cfo-reconciliation-workflow.md) per OPEN pipeline
+    reconciliation item with a gap, handed to the CFO. Tracked like the flags above, so never twice."""
+    items = reconciliation_db.fetch_unstarted(conn)
+    if not items:
+        return 0
+    cfo_id = reconciliation_db.cfo_user_id(conn, cfo_email())
+    for item in items:
+        result = await client.run_process(
+            bpmn_process_id=reconciliation_db.PROCESS_ID,
+            variables=reconciliation_db.process_variables(item, cfo_id),
+        )
+        reconciliation_db.record_started(conn, item["recon_id"], result.process_instance_key)
+        print(f"Started instance {result.process_instance_key} for reconciliation item {item['recon_id']} -> CFO")
+    return len(items)
+
+
 async def run_once(client: ZeebeClient, conn) -> int:
     rows = fetch_unstarted(conn)
     for row in rows:
@@ -100,7 +118,7 @@ async def run_once(client: ZeebeClient, conn) -> int:
         print(f"Started instance {result.process_instance_key} for "
               f"{row['record_type']}/{row['source_table']}/{row['record_key']}/{row['flag_label']} "
               f"-> {category}")
-    return len(rows)
+    return len(rows) + await start_reconciliation_reviews(client, conn)
 
 
 async def main() -> None:

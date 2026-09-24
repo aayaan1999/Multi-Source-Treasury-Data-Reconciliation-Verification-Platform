@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  specs/cfo-reconciliation-workflow.md section 3 (FLOW-5). Hand-authored, like transaction-review:
+  validate the layout in Camunda Modeler / web.camunda.io before relying on the diagram; the process
+  logic is what the bridge, outcome worker and Tasks screen depend on.
+
+  CFO review: APPROVE (handled directly) goes to write outcome, then end.
+  CFO review: REASSIGN goes to Update values, then CFO final review:
+    APPROVE goes to write outcome, then end; RETURN goes back to Update values.
+  No forms: the React Tasks screen completes these tasks through Tasklist's REST API with the
+  decision variables below, after saving corrections and comments in the app's own database.
+-->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+                   xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   id="Definitions_reconciliation-review"
+                   targetNamespace="http://bankx.example/camunda"
+                   exporter="hand-authored" exporterVersion="1.0">
+
+  <bpmn:process id="reconciliation-review" name="Reconciliation Review" isExecutable="true">
+
+    <bpmn:startEvent id="StartEvent_GapFound" name="Reconciliation gap found">
+      <bpmn:outgoing>Flow_ToCfoReview</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:sequenceFlow id="Flow_ToCfoReview" sourceRef="StartEvent_GapFound" targetRef="UserTask_CfoReview" />
+
+    <!-- Completed with cfoDecision = "APPROVE" | "REASSIGN" (+ assigneeUserId). -->
+    <bpmn:userTask id="UserTask_CfoReview" name="CFO review">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="cfo" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToCfoReview</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToCfoDecision</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_ToCfoDecision" sourceRef="UserTask_CfoReview" targetRef="Gateway_CfoDecision" />
+
+    <!-- Default = approve: an unexpected value never leaves the instance stuck. -->
+    <bpmn:exclusiveGateway id="Gateway_CfoDecision" name="Handle or reassign?" default="Flow_CfoApproves">
+      <bpmn:incoming>Flow_ToCfoDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_CfoReassigns</bpmn:outgoing>
+      <bpmn:outgoing>Flow_CfoApproves</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_CfoReassigns" sourceRef="Gateway_CfoDecision" targetRef="UserTask_AssigneeUpdate">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=cfoDecision = "REASSIGN"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_CfoApproves" sourceRef="Gateway_CfoDecision" targetRef="ServiceTask_WriteOutcome" />
+
+    <!-- The named assignee (assigneeUserId, tracked in the app: Tasklist has one shared demo login,
+         so the group is the finest Camunda-level assignment). Entered twice: from the CFO's reassign
+         and from a return at final review (implicit exclusive merge). -->
+    <bpmn:userTask id="UserTask_AssigneeUpdate" name="Update values">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="reconciliation-team" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_CfoReassigns</bpmn:incoming>
+      <bpmn:incoming>Flow_Returned</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToFinalReview</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_ToFinalReview" sourceRef="UserTask_AssigneeUpdate" targetRef="UserTask_CfoFinalReview" />
+
+    <!-- Completed with finalDecision = "APPROVE" | "RETURN". -->
+    <bpmn:userTask id="UserTask_CfoFinalReview" name="CFO final review">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="cfo" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToFinalReview</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToFinalDecision</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_ToFinalDecision" sourceRef="UserTask_CfoFinalReview" targetRef="Gateway_FinalDecision" />
+
+    <bpmn:exclusiveGateway id="Gateway_FinalDecision" name="Approve or return?" default="Flow_FinalApproves">
+      <bpmn:incoming>Flow_ToFinalDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_Returned</bpmn:outgoing>
+      <bpmn:outgoing>Flow_FinalApproves</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_Returned" sourceRef="Gateway_FinalDecision" targetRef="UserTask_AssigneeUpdate">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=finalDecision = "RETURN"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_FinalApproves" sourceRef="Gateway_FinalDecision" targetRef="ServiceTask_WriteOutcome" />
+
+    <!-- camunda/bridge/outcome_worker.py: marks the item and its corrections APPROVED. -->
+    <bpmn:serviceTask id="ServiceTask_WriteOutcome" name="Write approval to Postgres">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="write-reconciliation-outcome" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_CfoApproves</bpmn:incoming>
+      <bpmn:incoming>Flow_FinalApproves</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToEnd</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_ToEnd" sourceRef="ServiceTask_WriteOutcome" targetRef="EndEvent_Approved" />
+
+    <bpmn:endEvent id="EndEvent_Approved" name="Approved">
+      <bpmn:incoming>Flow_ToEnd</bpmn:incoming>
+    </bpmn:endEvent>
+
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="reconciliation-review">
+      <bpmndi:BPMNShape id="StartEvent_GapFound_di" bpmnElement="StartEvent_GapFound">
+        <omgdc:Bounds x="152" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_CfoReview_di" bpmnElement="UserTask_CfoReview">
+        <omgdc:Bounds x="240" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_CfoDecision_di" bpmnElement="Gateway_CfoDecision" isMarkerVisible="true">
+        <omgdc:Bounds x="395" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_AssigneeUpdate_di" bpmnElement="UserTask_AssigneeUpdate">
+        <omgdc:Bounds x="370" y="240" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_CfoFinalReview_di" bpmnElement="UserTask_CfoFinalReview">
+        <omgdc:Bounds x="530" y="240" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_FinalDecision_di" bpmnElement="Gateway_FinalDecision" isMarkerVisible="true">
+        <omgdc:Bounds x="685" y="255" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_WriteOutcome_di" bpmnElement="ServiceTask_WriteOutcome">
+        <omgdc:Bounds x="780" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Approved_di" bpmnElement="EndEvent_Approved">
+        <omgdc:Bounds x="942" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_ToCfoReview_di" bpmnElement="Flow_ToCfoReview">
+        <omgdi:waypoint x="188" y="120" /><omgdi:waypoint x="240" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToCfoDecision_di" bpmnElement="Flow_ToCfoDecision">
+        <omgdi:waypoint x="340" y="120" /><omgdi:waypoint x="395" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CfoReassigns_di" bpmnElement="Flow_CfoReassigns">
+        <omgdi:waypoint x="420" y="145" /><omgdi:waypoint x="420" y="240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CfoApproves_di" bpmnElement="Flow_CfoApproves">
+        <omgdi:waypoint x="445" y="120" /><omgdi:waypoint x="780" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToFinalReview_di" bpmnElement="Flow_ToFinalReview">
+        <omgdi:waypoint x="470" y="280" /><omgdi:waypoint x="530" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToFinalDecision_di" bpmnElement="Flow_ToFinalDecision">
+        <omgdi:waypoint x="630" y="280" /><omgdi:waypoint x="685" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Returned_di" bpmnElement="Flow_Returned">
+        <omgdi:waypoint x="710" y="305" /><omgdi:waypoint x="710" y="360" /><omgdi:waypoint x="420" y="360" /><omgdi:waypoint x="420" y="320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FinalApproves_di" bpmnElement="Flow_FinalApproves">
+        <omgdi:waypoint x="735" y="280" /><omgdi:waypoint x="830" y="280" /><omgdi:waypoint x="830" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToEnd_di" bpmnElement="Flow_ToEnd">
+        <omgdi:waypoint x="880" y="120" /><omgdi:waypoint x="942" y="120" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

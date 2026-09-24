@@ -42,6 +42,12 @@ def database_url() -> str:
     return url
 
 
+def cfo_email() -> str:
+    """The login that acts as CFO in the reconciliation workflow (specs/cfo-reconciliation-workflow.md
+    section 2): the demo approver unless CFO_EMAIL says otherwise."""
+    return os.environ.get("CFO_EMAIL") or "approver@bankx.demo"
+
+
 def zeebe_address() -> str:
     if os.environ.get("ZEEBE_ADDRESS"):
         return os.environ["ZEEBE_ADDRESS"]

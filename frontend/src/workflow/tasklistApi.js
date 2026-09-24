@@ -74,8 +74,9 @@ async function call(path, { method = "GET", body, retried = false } = {}) {
   return response.json();
 }
 
-// specs/camunda-bpmn-process-design.md section 3's three candidate groups.
-export const CANDIDATE_GROUPS = ["fraud-investigation", "compliance", "operations"];
+// specs/camunda-bpmn-process-design.md section 3's three candidate groups, plus the CFO
+// reconciliation workflow's two (specs/cfo-reconciliation-workflow.md).
+export const CANDIDATE_GROUPS = ["fraud-investigation", "compliance", "operations", "cfo", "reconciliation-team"];
 
 /**
  * The stack has no Identity/Keycloak, so Tasklist tasks carry candidate GROUPS, not individual
@@ -87,7 +88,7 @@ export const CANDIDATE_GROUPS = ["fraud-investigation", "compliance", "operation
  */
 // Requested inline via includeVariables rather than a separate getVariables call per row - one
 // Tasklist round trip for the whole list instead of N+1.
-const LIST_VARIABLES = ["recordType", "sourceTable", "recordKey", "flagLabel"];
+const LIST_VARIABLES = ["recordType", "sourceTable", "recordKey", "flagLabel", "title"];
 
 export async function searchTasks({ state = "CREATED", candidateGroups = CANDIDATE_GROUPS } = {}) {
   const tasks = await call("/tasks/search", {

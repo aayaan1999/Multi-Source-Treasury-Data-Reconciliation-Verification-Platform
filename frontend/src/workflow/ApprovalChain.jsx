@@ -4,6 +4,8 @@ const GROUP_LABEL = {
   "fraud-investigation": "Fraud Investigation",
   compliance: "Compliance Review",
   operations: "Operations Review",
+  cfo: "CFO",
+  "reconciliation-team": "Assignee",
 };
 
 /**

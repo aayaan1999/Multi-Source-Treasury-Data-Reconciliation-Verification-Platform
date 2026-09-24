@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { currencyLines, fmtAmount, gapSummary } from "./pipeline";
+import { correctableFields, currencyLines, fmtAmount, gapSummary, statusText, taskStep } from "./pipeline";
 
 // The Lebanon accounts item from specs/pipeline-reconciliation.md section 7.
 const lebanonAccounts = {
@@ -28,5 +28,26 @@ describe("pipeline reconciliation helpers", () => {
   it("formats amounts with separators and at most 2 decimals", () => {
     expect(fmtAmount(64800)).toBe("64,800");
     expect(fmtAmount(-500.126)).toBe("-500.13");
+  });
+});
+
+
+describe("CFO workflow helpers", () => {
+  it("knows each step by its BPMN id or its name", () => {
+    expect(taskStep({ taskDefinitionId: "UserTask_CfoReview" })).toBe("CFO_REVIEW");
+    expect(taskStep({ name: "Update values" })).toBe("ASSIGNEE_UPDATE");
+    expect(taskStep({ taskDefinitionId: "UserTask_CfoFinalReview" })).toBe("CFO_FINAL_REVIEW");
+    expect(taskStep({ name: "Fraud Investigation" })).toBeNull();
+  });
+
+  it("words the status, naming the assignee", () => {
+    expect(statusText({ status: "ASSIGNED", assigned_to_name: "Demo Reviewer" })).toBe("Assigned: Demo Reviewer");
+    expect(statusText({ status: "SUBMITTED" })).toBe("Awaiting CFO approval");
+  });
+
+  it("never offers the record's key as a field to correct", () => {
+    const t0009 = { transaction_id: "T0009", account_id: "ACC004", channel: "Cheque" };
+    expect(correctableFields(t0009, "transactions")).toEqual(["account_id", "channel"]);
+    expect(correctableFields({ date: "2026-09-01", currency_pair: "USD/LBP", rate: 0 }, "fx_rates")).toEqual(["rate"]);
   });
 });

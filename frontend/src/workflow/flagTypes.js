@@ -21,7 +21,7 @@ export const TRANSACTION_FLAGS = {
   },
 };
 
-const RECORD_TYPE_ALERT = { data_quality: "Data quality", breach: "Breach" };
+const RECORD_TYPE_ALERT = { data_quality: "Data quality", breach: "Breach", reconciliation: "Reconciliation" };
 
 /** The Tasks list's "Type" cell: Threshold / Suspicious / Operational for a transaction alert,
  * otherwise Data quality or Breach. */
