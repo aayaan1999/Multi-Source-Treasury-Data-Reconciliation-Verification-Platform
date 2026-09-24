@@ -16,7 +16,7 @@ const DECISION_WORD = Object.fromEntries(DECISIONS.map(([k, label]) => [k, label
 
 /** "Accept all", or "Accept all except 3" once breaks are left out. */
 export function decisionLabel(label, leftOut, total) {
-  if (total === 1) return label;
+  if (total <= 1) return label;
   return leftOut ? `${label} all except ${leftOut}` : `${label} all`;
 }
 
@@ -44,6 +44,7 @@ export default function GroupReviewPanel({ task, user, onDone, onClose }) {
   );
   const [leftOut, setLeftOut] = useState(() => new Set());
   const [comment, setComment] = useState("");
+  const [postedComment, setPostedComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -52,6 +53,8 @@ export default function GroupReviewPanel({ task, user, onDone, onClose }) {
   const [group, comments, vars] = data;
   const open = group.breaks.filter((b) => b.status === "OPEN");
   const canCarveOut = !group.important && open.length > 1;
+  // Four eyes: the second approval must come from someone other than the reviewer who decided.
+  const ownDecision = current === "SECOND_APPROVAL" && vars.decidedByUserId != null && vars.decidedByUserId === user.user_id;
 
   function toggle(id) {
     setLeftOut((s) => {
@@ -65,10 +68,16 @@ export default function GroupReviewPanel({ task, user, onDone, onClose }) {
   async function act(variables) {
     setFormError("");
     if (!comment.trim()) return setFormError("A comment is required before taking this action.");
-    if (current === "REVIEW" && leftOut.size >= open.length) return setFormError("Leave at least one break in the group, or it has nothing to decide.");
+    if (ownDecision) return setFormError("You made this group's decision, so the second approval has to come from someone else.");
+    // With no open breaks left (all resolved by an admin override) the decision just closes the group.
+    if (current === "REVIEW" && open.length > 0 && leftOut.size >= open.length) return setFormError("Leave at least one break in the group, or it has nothing to decide.");
     setBusy(true);
     try {
-      await api.addExceptionComment({ ...commentKey, comment_text: comment });
+      // Posted once: a retry after a failed completion doesn't add the same comment again.
+      if (comment !== postedComment) {
+        await api.addExceptionComment({ ...commentKey, comment_text: comment });
+        setPostedComment(comment);
+      }
       await completeTask(task.id, variables);
       onDone();
     } catch (err) {
@@ -102,7 +111,11 @@ export default function GroupReviewPanel({ task, user, onDone, onClose }) {
         <div className="card mt-4 rounded-xl border border-hair bg-surface p-4 text-sm text-ink">
           The reviewer chose <strong>{DECISION_WORD[vars.decision] || vars.decision}</strong> for this group
           {vars.excludedIds?.length ? `, leaving out ${vars.excludedIds.length} break(s) for their own review` : ""}.
+          {ownDecision && <p className="mt-2 font-medium" style={{ color: "var(--critical)" }}>You made this decision, so someone else has to approve it.</p>}
         </div>
+      )}
+      {current === "REVIEW" && open.length === 0 && (
+        <p className="mt-2 text-sm text-ink2">Every break in this group has already been resolved (by an admin override). Record a decision to close the group.</p>
       )}
 
       <h3 className="mb-2 mt-5 text-sm font-medium text-ink2">Breaks in this group</h3>
@@ -169,8 +182,8 @@ export default function GroupReviewPanel({ task, user, onDone, onClose }) {
           ))}
           {current === "SECOND_APPROVAL" && (
             <>
-              <button type="button" disabled={busy} onClick={() => act({ approvalDecision: "RETURN" })} className="rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page disabled:opacity-60">Return to reviewer</button>
-              <button type="button" disabled={busy} onClick={() => act({ approvalDecision: "APPROVE", approvedByUserId: user.user_id })} className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60">Approve</button>
+              <button type="button" disabled={busy || ownDecision} onClick={() => act({ approvalDecision: "RETURN" })} className="rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page disabled:opacity-60">Return to reviewer</button>
+              <button type="button" disabled={busy || ownDecision} onClick={() => act({ approvalDecision: "APPROVE", approvedByUserId: user.user_id })} className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60">Approve</button>
             </>
           )}
         </div>

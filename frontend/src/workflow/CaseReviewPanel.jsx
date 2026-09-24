@@ -23,6 +23,7 @@ export default function CaseReviewPanel({ task, user, onDone, onClose }) {
     [task.id],
   );
   const [comment, setComment] = useState("");
+  const [postedComment, setPostedComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -35,7 +36,11 @@ export default function CaseReviewPanel({ task, user, onDone, onClose }) {
     if (!comment.trim()) return setFormError("A comment is required before taking this action.");
     setBusy(true);
     try {
-      await api.addExceptionComment({ ...commentKey, comment_text: comment });
+      // Posted once: a retry after a failed completion doesn't add the same comment again.
+      if (comment !== postedComment) {
+        await api.addExceptionComment({ ...commentKey, comment_text: comment });
+        setPostedComment(comment);
+      }
       await completeTask(task.id, { outcome, correctedValue: "", reviewedByUserId: user.user_id });
       await api.logTaskCompletion({ ...commentKey, outcome, camunda_task_id: task.id });
       onDone();

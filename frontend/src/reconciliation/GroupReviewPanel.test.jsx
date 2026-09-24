@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import GroupReviewPanel, { decisionLabel } from "./GroupReviewPanel";
-import { completeTask } from "../workflow/tasklistApi";
+import { api } from "../api";
+import { completeTask, getVariables } from "../workflow/tasklistApi";
 
 const BREAKS = ["A100", "A101", "A102", "A103"].map((id, i) => ({
   exception_id: i + 1, entity_id: id, field_name: "balance", source_value: "1015.00", canonical_value: "1000.00",
@@ -45,5 +46,33 @@ describe("reconciliation group popup", () => {
     await userEvent.type(screen.getByLabelText("Comment"), "checked");
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(completeTask).toHaveBeenCalledWith("t8", { approvalDecision: "APPROVE", approvedByUserId: 3 });
+  });
+
+  it("the reviewer who decided can't also give the second approval", async () => {
+    getVariables.mockResolvedValueOnce({ decision: "ACCEPT", excludedIds: [], decidedByUserId: 3 });
+    render(<GroupReviewPanel task={{ id: "t9", taskDefinitionId: "UserTask_SecondApproval", vars: { recordKey: "7" } }} user={{ user_id: 3 }} onDone={() => {}} onClose={() => {}} />);
+    expect(await screen.findByText(/someone else has to approve it/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Approve" }).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Return to reviewer" }).disabled).toBe(true);
+  });
+
+  it("a group whose breaks were all resolved elsewhere can still be closed", async () => {
+    api.reconGroup.mockResolvedValueOnce({ group_id: 7, important: true, break_count: 1, due_date: "2026-09-27", breaks: [{ ...BREAKS[0], status: "ACCEPTED" }] });
+    render(<GroupReviewPanel task={{ id: "t10", taskDefinitionId: "UserTask_ReviewGroup", vars: { recordKey: "7" } }} user={{ user_id: 2 }} onDone={() => {}} onClose={() => {}} />);
+    expect(await screen.findByText(/already been resolved/)).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("Comment"), "resolved by admin override");
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(completeTask).toHaveBeenCalledWith("t10", { decision: "ACCEPT", excludedIds: [], decidedByUserId: 2 });
+  });
+
+  it("a retry after a failed completion doesn't post the comment twice", async () => {
+    completeTask.mockRejectedValueOnce(new Error("Tasklist request failed (504)"));
+    render(<GroupReviewPanel task={{ id: "t11", taskDefinitionId: "UserTask_ReviewGroup", vars: { recordKey: "7" } }} user={{ user_id: 2 }} onDone={() => {}} onClose={() => {}} />);
+    await userEvent.type(await screen.findByLabelText("Comment"), "late fee batch");
+    await userEvent.click(screen.getByRole("button", { name: "Accept all" }));
+    expect(await screen.findByText(/504/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Accept all" }));
+    expect(api.addExceptionComment).toHaveBeenCalledTimes(1);
+    expect(completeTask).toHaveBeenCalledTimes(2);
   });
 });

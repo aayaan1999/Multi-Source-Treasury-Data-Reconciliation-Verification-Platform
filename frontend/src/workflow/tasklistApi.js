@@ -150,9 +150,19 @@ export function claimTask(taskId) {
 
 // Verified live: /complete wants { variables: [{name, value}] }, value JSON-encoded (Zeebe
 // variables are stored as JSON) - a plain { name: value } map 400s.
-export function completeTask(taskId, variables) {
+//
+// A failed /complete is checked against the task itself: if Zeebe finished it anyway (the reply was
+// lost or timed out while the broker was slow, and a second Submit then got "Task is not active" -
+// live, 2026-09-25), the decision went through, so it counts as done rather than as an error.
+export async function completeTask(taskId, variables) {
   const encoded = Object.entries(variables).map(([name, value]) => ({ name, value: JSON.stringify(value) }));
-  return call(`/tasks/${encodeURIComponent(taskId)}/complete`, { method: "PATCH", body: { variables: encoded } });
+  try {
+    return await call(`/tasks/${encodeURIComponent(taskId)}/complete`, { method: "PATCH", body: { variables: encoded } });
+  } catch (err) {
+    const task = await getTask(taskId).catch(() => null);
+    if (task?.taskState === "COMPLETED") return task;
+    throw err;
+  }
 }
 
 export { TasklistError };

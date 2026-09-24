@@ -59,6 +59,7 @@ function ReviewPanel({ task, user, onDone, onClose }) {
   }, [task.id]);
 
   const [commentText, setCommentText] = useState("");
+  const [postedComment, setPostedComment] = useState("");
   const [outcome, setOutcome] = useState("");
   const [correctedField, setCorrectedField] = useState("");
   const [correctedFieldValue, setCorrectedFieldValue] = useState("");
@@ -70,6 +71,12 @@ function ReviewPanel({ task, user, onDone, onClose }) {
 
   const { variables, detail, comments } = data;
   const flagInfo = variables.recordType === "fraud" ? TRANSACTION_FLAGS[variables.flagLabel] : undefined;
+  // A breach is a KPI crossing a limit, not a record with fields to fix: the outcome worker maps the
+  // three outcomes to Acknowledged / Dismissed / Action planned, and "Corrected" carries the action plan.
+  const isBreach = variables.recordType === "breach";
+  const outcomeLabel = isBreach
+    ? { APPROVED: "Acknowledge", REJECTED: "Dismiss", CORRECTED: "Plan action" }
+    : { APPROVED: "Approved", REJECTED: "Rejected", CORRECTED: "Corrected" };
 
   async function submitComment(e) {
     e.preventDefault();
@@ -91,9 +98,10 @@ function ReviewPanel({ task, user, onDone, onClose }) {
 
   async function submitOutcome() {
     setFormError("");
-    if (!outcome) return setFormError("Pick an outcome: Approved, Rejected or Corrected.");
+    if (!outcome) return setFormError(`Pick an outcome: ${Object.values(outcomeLabel).join(", ")}.`);
     if (!commentText.trim()) return setFormError("A comment is required before taking this action.");
-    if (outcome === "CORRECTED" && (!correctedField || !correctedFieldValue.trim())) {
+    if (outcome === "CORRECTED" && isBreach && !correctedFieldValue.trim()) return setFormError("Describe the action plan.");
+    if (outcome === "CORRECTED" && !isBreach && (!correctedField || !correctedFieldValue.trim())) {
       return setFormError("Pick the field to correct and enter its new value.");
     }
     setBusy(true);
@@ -102,15 +110,20 @@ function ReviewPanel({ task, user, onDone, onClose }) {
       // the Tasklist task (the actual workflow action - CLAUDE.md's Workflow Engine Decision),
       // then mirror the completion into audit_log. If the Tasklist call fails, the comment still
       // stands (a reasonable reviewer note) but the task stays open - surfaced via formError.
-      await api.addExceptionComment({
-        source_table: variables.sourceTable, record_key: variables.recordKey, flag_label: variables.flagLabel,
-        comment_text: commentText,
-      });
+      if (commentText !== postedComment) {   // posted once: a retry doesn't repeat it
+        await api.addExceptionComment({
+          source_table: variables.sourceTable, record_key: variables.recordKey, flag_label: variables.flagLabel,
+          comment_text: commentText,
+        });
+        setPostedComment(commentText);
+      }
       // Built here, not typed by the reviewer: review_outcomes.corrected_value is jsonb, read
       // back by Databricks to patch the real {table}_clean row (specs/bidirectional-sync.md).
       // Field comes from a dropdown of the record's own columns, not free text, so it can't name
       // a field that doesn't exist on the row.
-      const correctedValue = outcome === "CORRECTED" ? JSON.stringify({ [correctedField]: correctedFieldValue }) : "";
+      // For a breach it's the action plan as plain text (the worker stores it in breaches.action_plan).
+      const correctedValue = outcome !== "CORRECTED" ? ""
+        : isBreach ? correctedFieldValue.trim() : JSON.stringify({ [correctedField]: correctedFieldValue });
       await completeTask(task.id, { outcome, correctedValue, reviewedByUserId: user.user_id });
       await api.logTaskCompletion({
         source_table: variables.sourceTable, record_key: variables.recordKey, flag_label: variables.flagLabel,
@@ -185,11 +198,21 @@ function ReviewPanel({ task, user, onDone, onClose }) {
                 outcome === o ? "border-accent bg-accent text-white" : "border-hair text-ink hover:border-accent/40 hover:bg-page"
               }`}
             >
-              {o[0] + o.slice(1).toLowerCase()}
+              {outcomeLabel[o]}
             </button>
           ))}
         </div>
-        {outcome === "CORRECTED" && (
+        {outcome === "CORRECTED" && isBreach && (
+          <input
+            type="text"
+            value={correctedFieldValue}
+            onChange={(e) => setCorrectedFieldValue(e.target.value)}
+            placeholder="Action plan, e.g. raise tier-1 capital by year end"
+            aria-label="Action plan"
+            className="mb-3 w-full rounded-md border border-hair bg-surface px-3 py-1.5 text-sm text-ink"
+          />
+        )}
+        {outcome === "CORRECTED" && !isBreach && (
           <div className="mb-3 flex flex-wrap gap-2">
             <select
               value={correctedField}

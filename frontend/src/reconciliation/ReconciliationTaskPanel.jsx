@@ -104,6 +104,7 @@ export default function ReconciliationTaskPanel({ task, user, onDone, onClose })
   }, [task.id]);
 
   const [comment, setComment] = useState("");
+  const [postedComment, setPostedComment] = useState("");
   const [assignee, setAssignee] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
@@ -122,7 +123,11 @@ export default function ReconciliationTaskPanel({ task, user, onDone, onClose })
     if (kind !== "REASSIGN" && !text) return setFormError("A comment is required before taking this action.");
     setBusy(true);
     try {
-      if (text) await api.addExceptionComment({ ...commentKey, comment_text: text });
+      // Posted once: a retry after a failed step doesn't add the same comment again.
+      if (text && text !== postedComment) {
+        await api.addExceptionComment({ ...commentKey, comment_text: text });
+        setPostedComment(text);
+      }
       // Camunda first: if Tasklist refuses, nothing is recorded as done.
       if (kind === "APPROVE") {
         await completeTask(task.id, step === "CFO_REVIEW"
