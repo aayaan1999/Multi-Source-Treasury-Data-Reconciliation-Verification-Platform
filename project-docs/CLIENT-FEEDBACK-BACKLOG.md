@@ -10,11 +10,78 @@ Eight points raised by the bank after the demo walkthrough, each broken into bui
   existing NIM / cost-to-income / ROE assumptions.
 - Status: `todo` / `in progress` / `done` / `blocked (bank)`
 
-**Suggested order:** 5 + 6 → 8 → 1 → 7 → 4 → 2 → 3 (reasoning at the end; 7 moved up on
-2026-09-24 when the chatbot became rule-based and stopped waiting on external-AI approval).
+**Priority (updated 2026-09-24):** the **target end-to-end flow** below comes first:
+FLOW-1a → FLOW-3 → FLOW-5 → FLOW-6 → FLOW-4 → FLOW-1b/1c. The eight client points follow, in the
+order 5 + 6 → 8 → 1 → 7 → 4 → 2 → 3 (reasoning at the end; 7 moved up on 2026-09-24 when the chatbot
+became rule-based and stopped waiting on external-AI approval).
 
 **Open scope question:** these tasks go beyond `3-WEEK-POC-PLAN.md`, the plan currently being
-executed. Decide whether they replace its remaining work or follow it before starting Phase 1.
+executed. Decide whether they replace its remaining work or follow it before starting.
+
+---
+
+## Target end-to-end flow (finalised with Ankit Sir, 2026-09-24)
+
+1. **Data collection:** 10 countries, each with its own source systems (ERP, CRM, ...), gathered
+   automatically into Databricks.
+2. **Processing and health checks:** cleaning, duplicate and fraud checks → one clean, standard dataset.
+3. **Reconciliation:** when data changes or drops during cleaning (e.g. a raw total of ₹20,000
+   becomes ₹15,000 after checks), the gap is flagged as an item on the Reconciliation tab.
+4. **CFO dashboard:** aggregated KPIs and a global financial summary across all 10 countries.
+5. **Task assignment and approval:** the CFO investigates, handles the item directly or reassigns
+   it; the assignee updates values, comments and submits back; the CFO gives final approval and
+   the database updates.
+6. **Refresh:** data refreshes automatically every 24 hours, plus a "Refresh Now" button to update
+   after reconciliation without waiting for the daily cycle.
+
+**Reconciliation is per source.** A *source* is one system that sends data (e.g. "Lebanon ERP",
+"Lebanon CRM", "KSA ERP"); a *country* is only a tag on each source, used for dashboards,
+filtering and routing, never the unit of reconciliation. For each source, data type and run, the
+row count and amount total are compared as received vs after cleaning; a gap becomes **one item**
+(not one per record) that opens onto the exact rejected records and why:
+
+| Source | Data | Received | After cleaning | Gap | Result |
+|---|---|---|---|---|---|
+| Lebanon ERP | transactions, 24 Sept | ₹20,000 (500 rows) | ₹15,000 (488 rows) | ₹5,000 (12 rows) | Item on the Reconciliation tab |
+| KSA ERP | transactions, 24 Sept | ₹80,000 (1,200 rows) | ₹80,000 (1,200 rows) | none | nothing to do |
+
+This **pipeline reconciliation** (did our own pipeline lose or change anything?) is different from
+point 1's **source reconciliation** (does our copy match the bank's core system?). Recommendation:
+both, since they catch different problems; point 1 stays as the second kind, pending confirmation.
+
+**Gap analysis (current system vs the flow):**
+
+| Step | Fits today? | Work needed |
+|---|---|---|
+| 1. Collection | Partly: one CSV set; 5 demo connectors, only Neon verified | Connector + field/code mapping per source; source and country tag on every record; completeness check (did every source deliver?) |
+| 2. Health checks | Yes (Notebooks 2 and 5) | Run per source; duplicate-company matching (point 3) |
+| 3. Reconciliation | **No: different kind** | Control totals per source at received / loaded / clean; items on the tab linked to the rejected records |
+| 4. CFO dashboard | Yes (Executive Summary) | Country breakdown; one reporting currency for global totals |
+| 5. CFO workflow | **No: tasks go to teams, single review step, shared Camunda login** | New Camunda process with CFO → assignee → CFO approval loop; per-person assignment; approved corrections written to Neon **and** back to Databricks |
+| 6. Refresh | No: file-arrival trigger only | Daily schedule; "Refresh Now" button starting the job via the Jobs API, with progress status |
+
+| ID | Task | Size | Needs confirming | Status |
+|---|---|---|---|---|
+| FLOW-1a | `source_system`, `country`, `ingest_batch_id` on every record from Notebook 1 through Neon (same as SRC-1; prerequisite for per-source reconciliation) | M | Sources per country | todo |
+| FLOW-1b | Completeness check: every expected source delivered this run, else flagged (not silently missing from totals) | S | Expected sources and cut-off times | todo |
+| FLOW-1c | Connector + field/code mapping per new source system (file, API or database) | L per source | Each country's systems and delivery method; code lists (SRC-4) | blocked (bank) |
+| FLOW-3 | Pipeline reconciliation: row counts + amount totals per source / data type / run at received, loaded and clean (Notebooks 1-2); one `reconciliation_items` row per gap, drill-down to the rejected records in `data_quality_exceptions`; shown on the Reconciliation tab | L | Which amounts to total (transactions, balances, loans; per currency) | todo |
+| FLOW-5 | CFO workflow: new Camunda process - item → CFO → handle or reassign → assignee updates values + comments → submit → CFO approves or returns (loop); per-person assignment tracked in the app (proper Camunda identity, e.g. Keycloak, later); on approval, write to Neon immediately and to `review_outcomes` so Databricks applies it on the next run (not overwritten nightly) | L | Every item to the CFO, or only above an amount? Named people or teams? | todo |
+| FLOW-6 | Refresh: daily schedule in `databricks.yml`; "Refresh Now" button (CFO/admin only) starting the job via the Jobs API, status shown ("started 10:42 → updated 10:51"), no overlapping runs. Not instant: a run takes minutes and costs compute | S-M | Is "a few minutes, with progress" acceptable? | todo |
+| FLOW-4 | CFO dashboard: country breakdown (each country + bank-wide total) and one reporting currency for global totals | M | Reporting currency (₹, USD, ...) | todo |
+
+**Recommendation on FLOW-5:** if every item goes to the CFO first, the CFO becomes a bottleneck.
+Suggest: the CFO sees everything, large items go to the CFO first, smaller ones go straight to the
+source's country finance team, and the CFO gives final approval above an amount limit.
+
+**Questions for Ankit Sir:**
+1. Reconciliation: only raw-vs-clean totals per source, or also comparison against each country's core/ERP system?
+2. Which amounts to compare: transaction totals, balances, loan totals, per currency?
+3. Does every item go to the CFO first, or only above an amount?
+4. Assign to named people (needs logins linked to Camunda) or to teams?
+5. Reporting currency for the global view?
+6. Is "Refresh Now" taking a few minutes, with a progress indicator, acceptable?
+7. Which systems does each of the 10 countries use (one or several per country), and how do they deliver data (file, API, database)?
 
 ## Rules for every task (from `CLAUDE.md`)
 
@@ -35,6 +102,10 @@ executed. Decide whether they replace its remaining work or follow it before sta
 
 ## 1. Automated reconciliation
 
+*This point is **source reconciliation** (our copy vs the bank's core system). The target flow's
+**pipeline reconciliation** (received vs clean, per source) is FLOW-3 above; both share the grouping,
+task and Reconciliation-tab design below, pending confirmation that both are wanted.*
+
 > Reconciliation can't be done one by one manually. Filters needed; tasks created automatically.
 
 **Today:** Reconciliation screen has type tabs + a status filter; each break is resolved alone in a
@@ -42,15 +113,52 @@ popup (Accept / Correct / Dismiss). No tasks are created - `backend/app/routers/
 deliberately keeps it separate from Camunda. $1 numeric tolerance exists
 (`notebooks/multi_source_reconciliation.py`, `NUMERIC_TOLERANCE_USD`).
 
+**Design (agreed for discussion 2026-09-24): a 3-step funnel.**
+1. **Clear harmless breaks automatically:** within tolerance, formatting-only, and timing once a
+   transaction feed exists. Every automatic decision is logged with the rule that made it.
+2. **Group by cause, across accounts:** same run + source system + break type + field (+ same
+   difference amount where useful) → one group = one task. Example: 412 accounts all +$15 from a
+   late fee batch = 1 task, not 412.
+3. **One decision per group:** Accept all / Accept all except selected (carve-outs become their
+   own task) / Correct / Dismiss, with a mandatory reason; still one `audit_log` row per break.
+
+Safety: important breaks (over an amount, key fields, missing accounts) are never bulk-cleared -
+always their own task; large bulk decisions can require a second approver.
+
+Example night: 600 breaks → 180 auto-cleared → **3 tasks** instead of 600.
+
+**Where people work:**
+- **Tasks screen** = the to-do list. Reconciliation decisions are made **only** in the task, so
+  there is one route for decisions and one audit story.
+- **Reconciliation tab** = the big picture, read-only: last run's summary, groups (with "Open
+  task"), all breaks with filters (existing type tabs kept), ageing, recurring breaks, export, and
+  run sign-off if required. The per-break resolve popup is replaced by a link to the task (admin
+  override only if the bank asks for it).
+
+**Task types in Camunda:** transaction alerts, data quality and breaches keep sharing
+`transaction-review` (one team reviews → Approve / Reject / Correct). Reconciliation gets its own
+`reconciliation-review` process, because bulk decisions, carve-outs and a second approval would
+complicate the shared one. All types appear in the same Tasks screen, labelled by type.
+
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| REC-1 | More filters: entity type, field, size of difference, detected date, source system | S | - | todo |
-| REC-2 | Bulk resolve: select many rows, one reason; still one `audit_log` row per exception | M | - | todo |
-| REC-3 | Auto-rules by size: within tolerance → auto-accept (logged); key fields or large differences → task | M | Tolerances, which fields are material | todo |
-| REC-4 | Group breaks into cases (per customer / per root cause) instead of one row per field | M | - | todo |
-| REC-5 | Create Camunda tasks for material breaks (new flagCategory or route to Operations), reusing `poll_worker.py`'s tracking pattern | M | Which team owns reconciliation | todo |
+| REC-1 | Automatic clearing: rules step after the comparison (tolerance, formatting-only; timing once REC-6 exists); rules + limits in a settings table; `resolved_by` = system + `rule` columns; "auto-cleared" filter on screen | M | Tolerances, which harmless causes to accept | todo |
+| REC-2 | Group by cause across accounts: `reconciliation_groups` table + group id on each break; group view (summary, full list, filters, export) with Accept all / all-except-selected / Correct / Dismiss, reason required; carve-outs split out; one audit row per break | L | - | todo |
+| REC-3 | Safety rules: important breaks (amount, key fields, missing accounts) never grouped for bulk, bulk accept blocked in the backend too; optional second approval above a total | M | Amount limits, key fields, second-approval rule | todo |
+| REC-4 | Tasks: `reconciliation-review` Camunda process; bridge starts one task per group (idempotent, reusing TSK-1's case tracking); outcome worker writes the decision to every break in the group; due dates via TSK-3 | M | Owning team (placeholder: Operations), deadlines | todo |
+| REC-5 | Ageing and recurring breaks: first/last seen + times seen; a rerun reopens a previously accepted break as "Recurring" (new task, never silently re-accepted); age buckets on screen | S-M | Escalation age | todo |
+| REC-6 | Transaction-level matching (1:1, then 1:many): transaction feed from core banking, matching notebook (exact → near → one-to-many), matched-pairs table, side-by-side matching screen; runs in Databricks, screens read results only | L | **Transaction export + matching fields** | blocked (bank) |
+| REC-7 | Run sign-off: `reconciliation_runs` table; preparer submits (no open important breaks, or a written explanation), reviewer signs off or returns; signed-off run locked; both logged | M | Whether required; who prepares / signs | todo |
+| REC-8 | Reconciliation tab as the overview: run summary, groups list with "Open task", all-breaks explorer with the new filters, ageing and recurring views, export; resolve popup replaced by the task link | M | Admin override wanted? | todo |
 
-**Done when:** a batch of hundreds of breaks can be triaged in minutes; only material ones reach a human, as tasks; every automatic decision is in the audit trail.
+Suggested order inside this point: REC-1 → REC-2 → REC-3 → REC-4 → REC-8 → REC-5 → REC-7; REC-6 once the bank provides a transaction feed.
+
+**Done when:** a night of hundreds of breaks becomes a handful of tasks decided in minutes; nothing important is cleared in bulk; every automatic and bulk decision is in the audit trail per break.
+
+**Plain-language summary (for stakeholders):** instead of checking hundreds of differences one by
+one every night, the system clears the harmless ones automatically, groups the rest by cause into a
+few tasks, and lets a person approve each group in one go - with big or risky items always checked
+individually and everything recorded for audit.
 
 ---
 
@@ -204,10 +312,11 @@ breach creates a Compliance task. Two **placeholder** limits set 2026-09-23: cap
 
 ## Waiting on the bank (collected)
 
+- Target flow: the 7 questions for Ankit Sir (FLOW section above)
 - Official limits per level, consecutive-days rule and deadlines (BRC-1/2/3)
 - AML typologies and reporting thresholds (FRD-3); device/login/beneficiary data (FRD-4)
 - SLAs per team and task-creation sign-off (TSK-3/4)
-- Reconciliation tolerances, material fields, owning team (REC-3/5)
+- Reconciliation tolerances, harmless causes, key fields, second-approval rule, owning team and deadlines, escalation age, run sign-off requirement (REC-1/3/4/5/7); core-banking transaction export (REC-6)
 - Official FX source per currency; which LBP rate per report (FX-2/3)
 - Source-system list and transaction-code lists (SRC-4)
 - A reliable company identifier (DUP-2)
