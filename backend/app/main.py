@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 import psycopg2
@@ -10,6 +11,8 @@ from fastapi.responses import JSONResponse
 from . import db
 from .config import get_settings
 from .routers import auth, health, kpi, performance, portfolio, reconciliation, refresh, reports, scenario, workflow
+
+logger = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
@@ -42,7 +45,10 @@ async def database_needs_migration(_: Request, __: Exception):
 
 
 @app.exception_handler(psycopg2.OperationalError)
-async def database_unavailable(_: Request, __: psycopg2.OperationalError):
+async def database_unavailable(request: Request, exc: psycopg2.OperationalError):
+    # Log the cause (first line only: never the connection string) so an outage can be diagnosed -
+    # DNS failure, timeout or a dropped connection all looked the same before.
+    logger.warning("Database unavailable on %s: %s", request.url.path, str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__)
     return JSONResponse(status_code=503, content={"detail": "Database unavailable - try again shortly"})
 
 

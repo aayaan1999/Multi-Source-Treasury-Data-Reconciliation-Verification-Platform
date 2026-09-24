@@ -7,28 +7,6 @@ import StatBox from "../components/StatBox";
 import useAsync from "../hooks/useAsync";
 import { formatDateTime } from "../kpi/format";
 
-function BreachAlerts() {
-  const { status, data, error, reload } = useAsync(() => api.breaches({ status: "OPEN" }), []);
-  if (status === "loading") return <Loading what="breach alerts" />;
-  if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
-  return (
-    <DataTable
-      caption="Open breaches"
-      columns={[
-        { key: "metric_name", header: "Metric" },
-        { key: "actual_value", header: "Actual", align: "right" },
-        { key: "threshold_value", header: "Threshold", align: "right" },
-        { key: "detected_at", header: "Detected", render: (b) => formatDateTime(b.detected_at) },
-        { key: "assigned_to_name", header: "Assigned to", render: (b) => b.assigned_to_name || "Unassigned" },
-      ]}
-      rows={data}
-      rowKey={(b) => b.breach_id}
-      rowFlag={() => ({ kind: "watch", label: "Open" })}
-      emptyText="No open breaches."
-    />
-  );
-}
-
 function AuditTrail() {
   const [objectId, setObjectId] = useState("");
   const { status, data, error, reload } = useAsync(() => api.auditLog({ object_id: objectId || undefined, limit: 100 }), [objectId]);
@@ -92,14 +70,10 @@ export default function AuditOversight() {
     <PageShell
       title="Audit & Oversight"
       eyebrow="Governance & oversight"
-      subtitle="Risk-limit breaches, the permanent record of every review decision, and how the team is doing overall."
+      subtitle="How the team is doing overall, and the permanent record of every review decision. Breaches are handled as tasks on the Tasks tab."
     >
       <Section id="stats" title="Management view" description="How review is going: on-time vs late, how long reviews take, and how old the open breaches are.">
         <ManagementStats />
-      </Section>
-
-      <Section id="breaches" title="Breach alerts" description="Regulatory and risk limits that have been crossed. Each new breach is detected automatically and becomes a task on the Tasks tab; this section is the full history.">
-        <BreachAlerts />
       </Section>
 
       <Section id="audit" title="Audit trail" description="A permanent record of every comment and decision made on the Tasks tab. Nothing here can be edited or deleted.">
