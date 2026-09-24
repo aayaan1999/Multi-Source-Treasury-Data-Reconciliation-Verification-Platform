@@ -5,6 +5,9 @@
 (see "Relationship to prior work" below)
 **Source of truth:** `Middle East bank data cleaning and reporting.md` (database schema section)
 **File:** `notebooks/01_ingestion_standardisation.py`
+**Source tags (2026-09-24):** every `raw_*` row now also carries `source_system`, `source_country`,
+`ingest_batch_id` and `source_file`, with two new parameters (`source_system`, `source_country`) —
+see `specs/source-tagging.md`. Not yet run on a cluster.
 
 ---
 

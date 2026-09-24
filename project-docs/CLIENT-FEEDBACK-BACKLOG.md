@@ -62,7 +62,7 @@ both, since they catch different problems; point 1 stays as the second kind, pen
 
 | ID | Task | Size | Needs confirming | Status |
 |---|---|---|---|---|
-| FLOW-1a | `source_system`, `country`, `ingest_batch_id` on every record from Notebook 1 through Neon (same as SRC-1; prerequisite for per-source reconciliation) | M | Sources per country | todo |
+| FLOW-1a | `source_system`, `source_country`, `ingest_batch_id`, `source_file` on every record from Notebook 1 through Neon (same as SRC-1; prerequisite for per-source reconciliation) - `specs/source-tagging.md` | M | Sources per country; region → country map | in progress: code + tests done 2026-09-24; migration 007 not yet on Neon, notebooks not yet run on the cluster |
 | FLOW-1b | Completeness check: every expected source delivered this run, else flagged (not silently missing from totals) | S | Expected sources and cut-off times | todo |
 | FLOW-1c | Connector + field/code mapping per new source system (file, API or database) | L per source | Each country's systems and delivery method; code lists (SRC-4) | blocked (bank) |
 | FLOW-3 | Pipeline reconciliation: row counts + amount totals per source / data type / run at received, loaded and clean (Notebooks 1-2); one `reconciliation_items` row per gap, drill-down to the rejected records in `data_quality_exceptions`; shown on the Reconciliation tab | L | Which amounts to total (transactions, balances, loans; per currency) | todo |
@@ -173,7 +173,7 @@ Five `multi_source_*` ingestion notebooks exist; only Neon is verified live.
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| SRC-1 | Add `source_system` + `ingest_batch_id` (file/run reference) to every entity, from Notebook 1 through `load_to_postgres.py` into Neon | M | - | todo |
+| SRC-1 | Add `source_system` + `ingest_batch_id` (file/run reference) to every entity, from Notebook 1 through `load_to_postgres.py` into Neon | M | - | in progress: same work as FLOW-1a |
 | SRC-2 | Show source on drill-downs (KPI detail, portfolio, task source record) | S | - | todo |
 | SRC-3 | Lineage view: Source X file → raw → clean → Gold KPI → screen, with row counts and rejects per step | M | - | todo |
 | SRC-4 | `transaction_code_mapping`: map each source's own transaction codes to our `type` | M | **Real code lists per source system** | blocked (bank) |

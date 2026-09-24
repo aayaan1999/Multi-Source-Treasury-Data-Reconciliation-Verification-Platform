@@ -19,6 +19,10 @@
 # MAGIC `capital_positions.csv`, `liquidity_daily.csv`, `fx_rates.csv`
 # MAGIC Output: Delta tables `raw_customers`, `raw_accounts`, `raw_loans`, `raw_transactions`,
 # MAGIC `raw_branches`, `raw_capital_positions`, `raw_liquidity_daily`, `raw_fx_rates`
+# MAGIC
+# MAGIC Every output row is tagged with where it came from — `source_system`, `source_country`,
+# MAGIC `ingest_batch_id`, `source_file` (`specs/source-tagging.md`) — so reconciliation can compare
+# MAGIC each source's delivery with what survives cleaning.
 
 # COMMAND ----------
 
@@ -30,6 +34,9 @@ spark.sql("CREATE SCHEMA IF NOT EXISTS raw")
 spark.sql("USE SCHEMA raw")
 
 # COMMAND ----------
+
+import uuid
+from datetime import datetime, timezone
 
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
@@ -50,6 +57,27 @@ from pyspark.sql import functions as F
 dbutils.widgets.text("input_dir", "/Volumes/dbw_bankx_treasury_poc/raw/raw/resources", "Input directory")
 
 INPUT_DIR = dbutils.widgets.get("input_dir")
+
+# Which source system this folder's files came from, and (for a single-country source) its country.
+# Today one CSV set covers every country, so the defaults are a placeholder source name and a blank
+# country, which makes each row take its branch's country instead (see "Source tags" below). Each
+# real source (e.g. a country's ERP) will get its own landing folder and run with these set.
+dbutils.widgets.text("source_system", "CORE_CSV", "Source system")
+dbutils.widgets.text("source_country", "", "Source country (blank = each record's branch country)")
+SOURCE_SYSTEM = dbutils.widgets.get("source_system").strip() or "CORE_CSV"
+SOURCE_COUNTRY = dbutils.widgets.get("source_country").strip() or None
+
+# One id for this whole run: every row loaded now shares it, so a later step can compare "what this
+# delivery contained" with "what survived cleaning". Readable on its own: source, UTC time, short id.
+INGEST_BATCH_ID = f"{SOURCE_SYSTEM}-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
+
+# Branch region -> country, for a multi-country source. An assumption read off the region names in
+# the sample data (specs/source-tagging.md section 3) - confirm with the bank.
+REGION_COUNTRY = {
+    "Beirut": "Lebanon", "North": "Lebanon", "South": "Lebanon", "Bekaa": "Lebanon", "Mount Lebanon": "Lebanon",
+    "KSA": "Saudi Arabia",
+    "Qatar": "Qatar",
+}
 
 VALID_CURRENCY_CODES = {"USD", "EUR", "LBP", "SAR", "QAR"}
 
@@ -159,7 +187,13 @@ def read_table(table_name: str, cfg: dict) -> DataFrame:
     df = spark.read.option("header", True).option("inferSchema", False).csv(path)
     df = standardise_dates(df, cfg["date_cols"])
     df = standardise_numerics(df, cfg["numeric_cols"])
-    return df
+    # Provenance tags on every row: which system, which run, which file. source_country is added
+    # separately below, since for a multi-country source it depends on other tables.
+    return (
+        df.withColumn("source_system", F.lit(SOURCE_SYSTEM))
+        .withColumn("ingest_batch_id", F.lit(INGEST_BATCH_ID))
+        .withColumn("source_file", F.lit(cfg["file"]))
+    )
 
 
 raw_customers = read_table("customers", TABLES["customers"])
@@ -183,6 +217,68 @@ raw_liquidity_daily = read_table("liquidity_daily", TABLES["liquidity_daily"])
 raw_fx_rates = standardise_currency_pair(
     read_table("fx_rates", TABLES["fx_rates"]), "currency_pair"
 )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Source tags: country
+# MAGIC
+# MAGIC A single-country source (the `source_country` parameter is set) stamps that country on every
+# MAGIC row. A multi-country source (today's CSV set) takes each row's country from its branch:
+# MAGIC branches from their region, customers from their branch, accounts and loans from their
+# MAGIC customer, transactions from their account. Bank-wide tables (capital, liquidity, FX) are
+# MAGIC `Group`. A row whose branch can't be found is `Unknown` — kept, not dropped: judging broken
+# MAGIC links is Notebook 2's job (its orphan checks still flag the row).
+
+# COMMAND ----------
+
+region_to_country = F.create_map([F.lit(x) for pair in REGION_COUNTRY.items() for x in pair])
+
+
+def one_country_per_key(tagged_df: DataFrame, key_col: str) -> DataFrame:
+    """key -> source_country lookup from an already-tagged parent table. Grouped to one row per
+    key first: raw data has no primary-key guarantee, and a duplicated parent key would otherwise
+    multiply the child rows in the join below."""
+    return (
+        tagged_df.filter(F.col(key_col).isNotNull())
+        .groupBy(key_col)
+        .agg(F.first("source_country", ignorenulls=True).alias("source_country"))
+        .withColumnRenamed(key_col, "_parent_key")
+    )
+
+
+def with_country_from_parent(child_df: DataFrame, fk_col: str, lookup_df: DataFrame) -> DataFrame:
+    """Left join, so every child row survives; no matching parent (or a null key) -> Unknown."""
+    return (
+        child_df.join(lookup_df, child_df[fk_col] == F.col("_parent_key"), "left")
+        .drop("_parent_key")
+        .withColumn("source_country", F.coalesce(F.col("source_country"), F.lit("Unknown")))
+    )
+
+
+if SOURCE_COUNTRY:
+    (raw_branches, raw_customers, raw_accounts, raw_loans, raw_transactions,
+     raw_capital_positions, raw_liquidity_daily, raw_fx_rates) = [
+        df.withColumn("source_country", F.lit(SOURCE_COUNTRY))
+        for df in (raw_branches, raw_customers, raw_accounts, raw_loans, raw_transactions,
+                   raw_capital_positions, raw_liquidity_daily, raw_fx_rates)
+    ]
+else:
+    # Parents first: each table's lookup is built from the one already tagged above it.
+    raw_branches = raw_branches.withColumn(
+        "source_country", F.coalesce(region_to_country[F.trim(F.col("region"))], F.lit("Unknown"))
+    )
+    raw_customers = with_country_from_parent(raw_customers, "branch_id", one_country_per_key(raw_branches, "branch_id"))
+    customer_countries = one_country_per_key(raw_customers, "customer_id")
+    raw_accounts = with_country_from_parent(raw_accounts, "customer_id", customer_countries)
+    raw_loans = with_country_from_parent(raw_loans, "customer_id", customer_countries)
+    raw_transactions = with_country_from_parent(raw_transactions, "account_id", one_country_per_key(raw_accounts, "account_id"))
+    # Bank-wide figures belong to no single branch or country.
+    raw_capital_positions = raw_capital_positions.withColumn("source_country", F.lit("Group"))
+    raw_liquidity_daily = raw_liquidity_daily.withColumn("source_country", F.lit("Group"))
+    raw_fx_rates = raw_fx_rates.withColumn("source_country", F.lit("Group"))
+
+# COMMAND ----------
 
 OUTPUT_TABLES = {
     "raw_customers": raw_customers,
@@ -210,5 +306,12 @@ for table_name, df in OUTPUT_TABLES.items():
 
 # COMMAND ----------
 
+print(f"ingest_batch_id: {INGEST_BATCH_ID}")
 for table_name in OUTPUT_TABLES:
     print(f"{table_name}: {spark.table(table_name).count()} rows")
+
+# Rows per source + country: each table's counts here should add up to its total above (the
+# country lookups never drop or multiply rows), with Unknown only where a parent key is broken.
+for table_name in OUTPUT_TABLES:
+    print(table_name)
+    spark.table(table_name).groupBy("source_system", "source_country").count().show(truncate=False)

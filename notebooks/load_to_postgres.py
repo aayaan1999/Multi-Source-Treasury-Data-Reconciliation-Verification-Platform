@@ -63,6 +63,10 @@ ENTITY_TABLES = [
     ("fx_rates_clean", "fx_rates"),
 ]
 
+# Notebook 1's provenance columns (specs/source-tagging.md). Entity tables need nothing special - the
+# merge copies every column present on both sides - but the exceptions upsert below refreshes them.
+SOURCE_TAG_COLS = ["source_system", "source_country", "ingest_batch_id", "source_file"]
+
 # Gold tables: same name in Delta and Postgres, every row carries calculation_date.
 SNAPSHOT_TABLES = [
     "kpi_daily_summary",
@@ -127,10 +131,17 @@ def run_merge(cur):
             written[pg] = _insert_from_staging(cur, pg)
 
     # 3. Exceptions log: keep exception_id stable for rows that persist, drop rows that were fixed.
+    #    A persisting exception is re-found by every run, so its description and source tags
+    #    (specs/source-tagging.md - which run and file it was last seen in) are refreshed. Only tag
+    #    columns present on both sides are set, so this still works before migration 007 is applied.
     if "data_quality_exceptions" in staged:
+        both = ({n for n, _ in _columns(cur, "staging.data_quality_exceptions")}
+                & {n for n, _ in _columns(cur, "public.data_quality_exceptions")})
+        updates = ["description"] + [c for c in SOURCE_TAG_COLS if c in both]
         written["data_quality_exceptions"] = _insert_from_staging(
             cur, "data_quality_exceptions",
-            "ON CONFLICT (source_table, record_key, flag_label) DO UPDATE SET description = EXCLUDED.description",
+            "ON CONFLICT (source_table, record_key, flag_label) DO UPDATE SET "
+            + ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in updates),
         )
         cur.execute(
             """DELETE FROM public.data_quality_exceptions d

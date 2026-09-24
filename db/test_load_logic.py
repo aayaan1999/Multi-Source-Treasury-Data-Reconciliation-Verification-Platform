@@ -171,6 +171,36 @@ except psycopg2.errors.ForeignKeyViolation:
 after = (scalar("SELECT count(*) FROM customers"), scalar("SELECT count(*) FROM accounts"), scalar("SELECT balance FROM accounts"))
 check("load 4: failed load rolled back completely (nothing half-applied)", before == after, f"{before} vs {after}")
 
+# ---- Load 5: source tags (specs/source-tagging.md) land, and persisting exceptions refresh them
+TAGS = ", source_system text, source_country text, ingest_batch_id text, source_file text"
+tag1 = ("CORE_CSV", "Lebanon", "CORE_CSV-20260924T100000Z-aaaa1111", "customers.csv")
+tag2 = ("CORE_CSV", "Lebanon", "CORE_CSV-20260925T100000Z-bbbb2222", "customers.csv")
+stage({
+    "branches": (BRANCH + TAGS, [("B1", "Beirut", "Beirut", 10.0, 5000.0, "CORE_CSV", "Lebanon", tag1[2], "branches.csv")]),
+    "customers": (CUSTOMER + TAGS, [("C1", "Ann", "Retail", "B1", date(2020, 1, 1), "Low", "Lebanon") + tag1]),
+    # Children staged untagged: tags are optional per table, and the full refresh needs the chain.
+    "accounts": (ACCOUNT, [("A1", "C1", "Savings", "USD", 150.0, date(2020, 1, 1))]),
+    "transactions": (TXN, [("T1", "A1", date(2026, 9, 1), 60000.0, "USD", "Deposit", "Branch")]),
+    "data_quality_exceptions": (DQ + TAGS, [("customers", "C9", "MISSING_RISK_RATING", "risk_rating is missing") + tag1]),
+})
+merge()
+check("load 5: entity row carries its source tags",
+      scalar("SELECT source_system || '|' || source_country || '|' || ingest_batch_id || '|' || source_file FROM customers WHERE customer_id='C1'")
+      == "|".join(tag1))
+check("load 5: customer's own country kept separate from source_country",
+      scalar("SELECT country FROM customers WHERE customer_id='C1'") == "Lebanon"
+      and scalar("SELECT source_file FROM branches WHERE branch_id='B1'") == "branches.csv")
+e9 = scalar("SELECT exception_id FROM data_quality_exceptions WHERE record_key='C9'")
+stage({"data_quality_exceptions": (DQ + TAGS, [("customers", "C9", "MISSING_RISK_RATING", "risk_rating is missing") + tag2])})
+merge()
+check("load 5: persisting exception keeps its id, tags refreshed to the latest run",
+      scalar("SELECT exception_id FROM data_quality_exceptions WHERE record_key='C9'") == e9
+      and scalar("SELECT ingest_batch_id FROM data_quality_exceptions WHERE record_key='C9'") == tag2[2])
+stage({"data_quality_exceptions": (DQ, [("customers", "C9", "MISSING_RISK_RATING", "untagged run")])})
+merge()
+check("load 5: an untagged (older Notebook 2) load still works",
+      scalar("SELECT description FROM data_quality_exceptions WHERE record_key='C9'") == "untagged run")
+
 # ---- Report ---------------------------------------------------------------------------------
 for name, ok, detail in results:
     print(f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  -- {detail}" if detail and not ok else ""))

@@ -5,6 +5,9 @@
 **Source of truth:** `Middle East bank data cleaning and reporting.md`
 **File:** `notebooks/02_data_quality_verification.py`
 **Depends on:** `specs/notebook-01-bank-data-ingestion.md` (reads its `raw_*` output tables)
+**Source tags (2026-09-24):** `*_clean` tables keep Notebook 1's four source tags, and every
+`data_quality_exceptions` row copies them from the rejected row — see `specs/source-tagging.md`.
+Not yet run on a cluster.
 
 ---
 

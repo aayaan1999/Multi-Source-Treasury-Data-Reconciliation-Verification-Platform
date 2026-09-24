@@ -17,7 +17,12 @@ CREATE TABLE branches (
     name          text NOT NULL,
     region        text NOT NULL,
     staff_count   integer,
-    monthly_opex  numeric(20,4)
+    monthly_opex  numeric(20,4),
+    -- Source tags from Notebook 1 (specs/source-tagging.md): system, country, ingestion run, file.
+    source_system   text,
+    source_country  text,
+    ingest_batch_id text,
+    source_file     text
 );
 
 CREATE TABLE customers (
@@ -27,7 +32,12 @@ CREATE TABLE customers (
     branch_id     text NOT NULL REFERENCES branches (branch_id),
     onboard_date  date,
     risk_rating   text NOT NULL,
-    country       text
+    country       text,
+    -- Source tags from Notebook 1 (specs/source-tagging.md): system, country, ingestion run, file.
+    source_system   text,
+    source_country  text,
+    ingest_batch_id text,
+    source_file     text
 );
 
 CREATE TABLE accounts (
@@ -36,7 +46,12 @@ CREATE TABLE accounts (
     type         text NOT NULL,
     currency     text NOT NULL,
     balance      numeric(20,4),
-    open_date    date
+    open_date    date,
+    -- Source tags from Notebook 1 (specs/source-tagging.md): system, country, ingestion run, file.
+    source_system   text,
+    source_country  text,
+    ingest_batch_id text,
+    source_file     text
 );
 
 CREATE TABLE loans (
@@ -52,7 +67,12 @@ CREATE TABLE loans (
     days_past_due     integer,
     stage             smallint CHECK (stage IN (1, 2, 3)),
     provision_amount  numeric(20,4),
-    collateral_value  numeric(20,4)
+    collateral_value  numeric(20,4),
+    -- Source tags from Notebook 1 (specs/source-tagging.md): system, country, ingestion run, file.
+    source_system   text,
+    source_country  text,
+    ingest_batch_id text,
+    source_file     text
 );
 
 CREATE INDEX loans_customer_idx ON loans (customer_id);
@@ -68,7 +88,12 @@ CREATE TABLE transactions (
     amount          numeric(20,4) NOT NULL,
     currency        text NOT NULL,
     type            text,
-    channel         text
+    channel         text,
+    -- Source tags from Notebook 1 (specs/source-tagging.md): system, country, ingestion run, file.
+    source_system   text,
+    source_country  text,
+    ingest_batch_id text,
+    source_file     text
 );
 
 -- Screens 1/2/5 read precomputed Gold tables, not this one, but the date index keeps drill-downs fast.
@@ -78,7 +103,12 @@ CREATE TABLE capital_positions (
     month                text PRIMARY KEY CHECK (month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
     tier1_capital        numeric(20,4),
     tier2_capital        numeric(20,4),
-    risk_weighted_assets numeric(20,4)
+    risk_weighted_assets numeric(20,4),
+    -- Source tags from Notebook 1 (specs/source-tagging.md): system, country, ingestion run, file.
+    source_system   text,
+    source_country  text,
+    ingest_batch_id text,
+    source_file     text
 );
 
 CREATE TABLE liquidity_daily (
@@ -86,7 +116,12 @@ CREATE TABLE liquidity_daily (
     hqla              numeric(20,4),
     net_outflows_30d  numeric(20,4),
     stable_funding    numeric(20,4),
-    required_funding  numeric(20,4)
+    required_funding  numeric(20,4),
+    -- Source tags from Notebook 1 (specs/source-tagging.md): system, country, ingestion run, file.
+    source_system   text,
+    source_country  text,
+    ingest_batch_id text,
+    source_file     text
 );
 
 -- One rate per day per pair. specs/postgres-schema.md 2.2 says to mirror `fx_rates_live`, but
@@ -96,6 +131,10 @@ CREATE TABLE fx_rates (
     date           date NOT NULL,
     currency_pair  text NOT NULL,
     rate           double precision NOT NULL,
+    source_system   text,
+    source_country  text,
+    ingest_batch_id text,
+    source_file     text,
     PRIMARY KEY (date, currency_pair)
 );
 
@@ -135,6 +174,10 @@ CREATE TABLE data_quality_exceptions (
     record_key    text NOT NULL,
     flag_label    text NOT NULL,
     description   text,
+    source_system   text,
+    source_country  text,
+    ingest_batch_id text,
+    source_file     text,
     UNIQUE (source_table, record_key, flag_label)
 );
 

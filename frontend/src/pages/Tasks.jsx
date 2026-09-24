@@ -13,6 +13,10 @@ import ApprovalChain from "../workflow/ApprovalChain";
 import { TRANSACTION_FLAGS, alertType } from "../workflow/flagTypes";
 import { claimTask, completeTask, getVariables, searchTasks } from "../workflow/tasklistApi";
 
+// Provenance columns stamped by Notebook 1 (specs/source-tagging.md): shown with the source record,
+// but not offered as fields to correct - they say where the data came from, not what it says.
+const SOURCE_TAG_FIELDS = new Set(["source_system", "source_country", "ingest_batch_id", "source_file"]);
+
 const GROUP_ASSUMPTION = [
   "This is a demo limitation: tasks are routed to a team (Fraud, Compliance, or Operations), not to a specific person's login yet.",
   "Right now, every signed-in user can see and act on tasks for all three teams, rather than only their own.",
@@ -187,7 +191,7 @@ function ReviewPanel({ task, user, onDone, onClose }) {
               className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40"
             >
               <option value="">Field to correct…</option>
-              {Object.keys(detail.source_row || {}).map((f) => <option key={f} value={f}>{f}</option>)}
+              {Object.keys(detail.source_row || {}).filter((f) => !SOURCE_TAG_FIELDS.has(f)).map((f) => <option key={f} value={f}>{f}</option>)}
             </select>
             <input
               type="text"

@@ -22,6 +22,10 @@
 # MAGIC Output: Delta tables `customers_clean`, `accounts_clean`, `loans_clean`,
 # MAGIC `transactions_clean`, `branches_clean`, `capital_positions_clean`, `liquidity_daily_clean`,
 # MAGIC `fx_rates_clean`, and one `data_quality_exceptions` table
+# MAGIC
+# MAGIC Notebook 1's source tags (`source_system`, `source_country`, `ingest_batch_id`,
+# MAGIC `source_file` — `specs/source-tagging.md`) carry through: clean tables keep them because
+# MAGIC every check selects `*`, and each exception copies them from the rejected row.
 
 # COMMAND ----------
 
@@ -49,6 +53,10 @@ VALID_RISK_RATINGS = {"A", "B", "C", "D", "E"}
 VALID_LOAN_STAGES = {1.0, 2.0, 3.0}
 VALID_CHANNELS = {"Branch", "ATM", "Mobile", "Online"}
 NPL_DAYS_PAST_DUE_THRESHOLD = 90
+
+# Notebook 1's provenance columns, copied onto every exception so a rejected record still says which
+# source, country, run and file it came from (reconciliation per source counts rejects by these).
+SOURCE_TAG_COLS = ["source_system", "source_country", "ingest_batch_id", "source_file"]
 
 # COMMAND ----------
 
@@ -80,12 +88,13 @@ def finalize(df: DataFrame, table_name: str, key_col: str, check_cols: list):
 
     exceptions_df = (
         df.filter(F.size("flags") > 0)
-        .select(F.col(key_col).cast("string").alias("record_key"), F.explode("flags").alias("flag"))
+        .select(F.col(key_col).cast("string").alias("record_key"), F.explode("flags").alias("flag"), *SOURCE_TAG_COLS)
         .select(
             F.lit(table_name).alias("source_table"),
             "record_key",
             F.col("flag.flag_label").alias("flag_label"),
             F.col("flag.description").alias("description"),
+            *SOURCE_TAG_COLS,
         )
     )
     return clean_df, exceptions_df
@@ -110,6 +119,7 @@ def orphan_flags(child_df: DataFrame, child_key_col: str, child_fk_col: str, par
         F.col(child_key_col).cast("string").alias("record_key"),
         F.lit(flag_label).alias("flag_label"),
         F.concat(F.lit(f"{child_fk_col} '"), F.col(child_fk_col), F.lit(f"' has no matching {parent_key_col} in the clean parent table")).alias("description"),
+        *SOURCE_TAG_COLS,
     )
 
 # COMMAND ----------
