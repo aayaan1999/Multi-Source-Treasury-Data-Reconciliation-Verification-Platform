@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bank Data Platform Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Mulish:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #14305c; --navy-deep: #0f2447; --ink: #172238; --ink2: #4d5a70; --muted: #7c889c;
+    --gold: #c09a45; --gold-soft: #e8c878; --blue: #2f6db3; --paper: #ffffff; --tint: #f2f6fb;
+    --tint2: #e8eef7; --hair: #d6deea; --red: #d9604e; --green: #3f9b62;
+  }
+  @page { size: 13.333in 7.5in; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #dfe4ec; }
+  body { font-family: "Mulish", "Segoe UI", Arial, sans-serif; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 13.333in; height: 7.5in; position: relative; overflow: hidden; background: var(--paper); page-break-after: always; break-after: page; margin: 0 auto 24px; }
+  @media print { html, body { background: none; } .page { margin: 0; } }
+  .page::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 6px; background: linear-gradient(90deg, var(--navy) 0%, #3b557c 55%, var(--gold) 100%); }
+  .inner { position: absolute; top: 0.45in; left: 0.62in; right: 0.62in; bottom: 0.55in; display: flex; flex-direction: column; }
+  .footer { position: absolute; left: 0.62in; right: 0.62in; bottom: 0.22in; display: flex; justify-content: space-between; border-top: 1px solid var(--hair); padding-top: 8px; font-size: 8.5px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--muted); }
+  .footer .mid { color: var(--gold); font-weight: 700; }
+  .eyebrow { font-size: 10px; font-weight: 800; letter-spacing: 3.2px; text-transform: uppercase; color: var(--gold); }
+  h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.4px; color: var(--ink); margin-top: 6px; line-height: 1.12; }
+  .rule { height: 3px; width: 100%; background: var(--tint2); margin: 12px 0 14px; position: relative; }
+  .rule::before { content: ""; position: absolute; left: 0; top: 0; height: 3px; width: 110px; background: var(--navy); }
+  .lede { font-size: 14.5px; line-height: 1.6; color: var(--ink2); max-width: 11.6in; }
+  .lede b { color: var(--ink); }
+  .label { font-size: 10px; font-weight: 800; letter-spacing: 2.6px; text-transform: uppercase; color: var(--blue); }
+  .label.gold { color: var(--gold); }
+  .grid { display: grid; gap: 14px; }
+  .g2 { grid-template-columns: 1fr 1fr; } .g3 { grid-template-columns: repeat(3, 1fr); } .g4 { grid-template-columns: repeat(4, 1fr); }
+  .card { background: var(--paper); border: 1px solid var(--hair); border-top: 4px solid var(--navy); padding: 15px 17px; box-shadow: 0 2px 6px rgba(20,48,92,.05); }
+  .card.gold { border-top-color: var(--gold); }
+  .card.soft { background: var(--tint); border: none; border-top: none; box-shadow: none; }
+  .card h3 { font-size: 15px; font-weight: 800; color: var(--ink); margin: 5px 0 6px; }
+  .card p, .card li { font-size: 12.2px; line-height: 1.58; color: var(--ink2); }
+  .card ul { list-style: none; margin-top: 6px; }
+  .card li { padding-left: 13px; position: relative; margin: 3px 0; }
+  .card li::before { content: "▪"; position: absolute; left: 0; color: var(--blue); font-size: 9px; top: 1px; }
+  .num { display: inline-block; background: var(--blue); color: #fff; font-size: 10px; font-weight: 800; padding: 3px 6px; margin-right: 8px; }
+  .step-head { display: flex; align-items: center; }
+  .step-head .label { font-size: 9.5px; }
+  .band { background: var(--navy); color: #d9e2f0; display: grid; border-left: 5px solid var(--gold); position: relative; }
+  .band .cell { padding: 15px 18px; border-right: 1px solid rgba(255,255,255,.12); }
+  .band .cell:last-child { border-right: none; }
+  .band h4 { color: var(--gold-soft); font-size: 13px; font-weight: 800; margin-bottom: 4px; }
+  .band p { font-size: 11.8px; line-height: 1.58; }
+  .band .tag { position: absolute; top: -9px; left: 18px; background: var(--gold); color: #fff; font-size: 8.5px; font-weight: 800; letter-spacing: 2.4px; padding: 3px 9px; text-transform: uppercase; }
+  .callout { border-left: 4px solid var(--gold); padding: 8px 0 8px 16px; font-size: 15px; font-weight: 800; color: var(--ink); }
+  .callout span { color: var(--blue); }
+  .pill { display: inline-block; font-size: 8.5px; font-weight: 800; letter-spacing: 1.2px; padding: 2px 7px; border-radius: 10px; text-transform: uppercase; }
+  .pill.live { background: #e3f3e8; color: var(--green); } .pill.cfg { background: #fbf1dc; color: #a67a1f; } .pill.road { background: var(--tint2); color: var(--blue); }
+  .arrow { display: flex; align-items: center; justify-content: center; color: var(--gold); font-size: 16px; }
+  .mini-table { width: 100%; border-collapse: collapse; font-size: 11.8px; }
+  .mini-table th { text-align: left; font-size: 9.5px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--muted); font-weight: 800; padding: 5px 8px; border-bottom: 1px solid var(--hair); }
+  .mini-table td { padding: 8px 9px; border-bottom: 1px solid var(--tint2); color: var(--ink2); }
+  .mini-table td b { color: var(--ink); }
+  .mini-table tr.hl td { background: #fdf6e6; }
+  .foot-note { font-size: 10.2px; color: var(--muted); line-height: 1.5; }
+  /* dark pages */
+  .dark { background: radial-gradient(ellipse at 80% 20%, #1d3f73 0%, var(--navy) 45%, var(--navy-deep) 100%); color: #dfe7f3; }
+  .dark .footer { border-top-color: rgba(255,255,255,.15); color: #8ea0bd; }
+  .dark h1 { color: #fff; }
+  .hero { font-size: 50px; font-weight: 800; line-height: 1.08; letter-spacing: -0.8px; color: #fff; }
+  .hero em { font-style: normal; color: var(--gold-soft); }
+  .goldbar { width: 100px; height: 4px; background: var(--gold); margin: 22px 0; }
+  .pillars { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .pillars div { border-left: 1px solid rgba(255,255,255,.2); padding: 2px 18px; }
+  .pillars div:first-child { border-left: none; padding-left: 0; }
+  .pillars b { display: block; color: #fff; font-size: 17px; margin-bottom: 4px; }
+  .pillars span { font-size: 11px; color: #a9b8d0; }
+  /* flow */
+  .flow { display: grid; grid-template-columns: repeat(8, 1fr); column-gap: 16px; margin-top: 6px; }
+  .flow .st { position: relative; padding: 14px 11px; margin-right: 0; background: var(--paper); border: 1px solid var(--hair); border-top: 4px solid var(--navy); min-height: 2.55in; }
+  .flow .st:nth-child(even) { border-top-color: var(--gold); }
+  .flow .st:last-child { margin-right: 0; }
+  .flow .st::after { content: "▶"; position: absolute; right: -14px; top: 42%; color: var(--gold); font-size: 11px; }
+  .flow .st:last-child::after { content: ""; }
+  .flow .n { font-size: 11px; font-weight: 800; color: var(--gold); letter-spacing: 1px; }
+  .flow h3 { font-size: 14px; font-weight: 800; margin: 3px 0 5px; color: var(--ink); }
+  .flow p { font-size: 11.2px; line-height: 1.52; color: var(--ink2); }
+  .layers { display: grid; grid-template-columns: repeat(8, 1fr); column-gap: 16px; margin-top: 10px; }
+  .layers div { padding: 9px 12px; font-size: 11.2px; color: #fff; }
+  .layers b { display: block; font-size: 9.5px; letter-spacing: 2.4px; text-transform: uppercase; margin-bottom: 2px; }
+  .gap-wrap { display: grid; grid-template-columns: 1fr 150px 1fr; align-items: center; gap: 10px; }
+  .gap-mid { text-align: center; }
+  .gap-mid .ring { width: 58px; height: 58px; border: 2.5px solid var(--red); border-radius: 50%; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; color: var(--red); font-size: 26px; font-weight: 800; }
+  .gap-mid .chip { display: inline-block; border: 1.5px solid var(--red); color: var(--red); border-radius: 14px; padding: 3px 12px; font-size: 9px; font-weight: 800; letter-spacing: 2.4px; }
+  .funnel { display: grid; grid-template-columns: 1fr 22px 1fr 22px 1fr 22px 1fr; align-items: stretch; }
+  .funnel .f { background: var(--tint); padding: 13px 15px; }
+  .funnel .f.last { background: var(--navy); color: #fff; }
+  .funnel .f.last p { color: #c8d4e8; }
+  .funnel .big { font-size: 26px; font-weight: 800; color: var(--navy); }
+  .funnel .f.last .big { color: var(--gold-soft); }
+  .funnel p { font-size: 11.6px; color: var(--ink2); line-height: 1.5; }
+  .loop { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; }
+  .loop .s { background: var(--tint); margin-right: 16px; padding: 13px 14px; position: relative; border-top: 3px solid var(--blue); }
+  .loop .s:last-child { margin-right: 0; background: var(--navy); border-top-color: var(--gold); }
+  .loop .s:last-child h3, .loop .s:last-child p { color: #fff; }
+  .loop .s::after { content: "▶"; position: absolute; right: -12px; top: 40%; color: var(--gold); font-size: 10px; }
+  .loop .s:last-child::after { content: ""; }
+  .loop h3 { font-size: 13px; font-weight: 800; margin-bottom: 3px; }
+  .loop p { font-size: 11.3px; line-height: 1.5; color: var(--ink2); }
+  .screens { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .screens .card { padding: 13px 15px; }
+  .screens .card h3 { font-size: 14px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; }
+  .kpis div { background: var(--tint); padding: 8px 10px; font-size: 11.5px; font-weight: 700; color: var(--ink); }
+  .kpis div small { display: block; font-weight: 400; color: var(--muted); font-size: 10px; }
+  .star { color: var(--gold); }
+</style>
+</head>
+<body>
+
+<!-- ============ 1. COVER ============ -->
+<section class="page dark">
+  <div class="inner" style="top:0.9in">
+    <div class="eyebrow">Bank Data Platform · Client Demo Overview</div>
+    <div class="hero" style="margin-top:18px">One Trusted Set of Numbers<br><em>From Every System the Bank Runs.</em></div>
+    <div class="goldbar"></div>
+    <p style="font-size:15px;line-height:1.65;color:#c7d3e6;max-width:7.6in">
+      A platform that collects the bank's data from every country and every source system, cleans and verifies it,
+      reconciles it, turns it into the ratios the board and regulators care about, and makes sure every problem it
+      finds is reviewed, approved and recorded.
+    </p>
+    <div style="flex:1"></div>
+    <div class="pillars">
+      <div><b>Collect</b><span>every source, every country</span></div>
+      <div><b>Verify</b><span>cleaned, checked, reconciled</span></div>
+      <div><b>Measure</b><span>KPIs and regulatory views</span></div>
+      <div><b>Act</b><span>tasks, approvals, audit trail</span></div>
+    </div>
+    <p style="font-size:10.5px;color:#8ea0bd;margin-top:14px">Prepared for the Bank's CFO, COO, finance, risk and compliance teams.</p>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">Client Demo Overview</span><span>[Your company]</span></div>
+</section>
+
+<!-- ============ 2. WHAT IT IS ============ -->
+<section class="page">
+  <div class="inner">
+    <div class="eyebrow">What the platform is</div>
+    <h1>From Many Systems to One Verified Truth.</h1>
+    <div class="rule"></div>
+    <p class="lede">A bank operating across several countries runs many systems, often a different mix in each country. Each holds part of the picture,
+      in its own format. The platform brings them together into <b>one clean, checked and reconciled dataset</b>, with the numbers, the problems and the decisions in one place.</p>
+
+    <div class="grid g3" style="margin-top:14px">
+      <div class="card soft">
+        <div class="step-head"><span class="num">01</span><span class="label">Collect and clean</span></div>
+        <h3>It builds one dataset.</h3>
+        <p>Every source is brought into Databricks, put into one standard format and checked record by record.</p>
+        <ul><li><b>Every record tagged</b> with its source, country and run</li><li><b>More than 25 quality checks</b></li><li><b>Nothing lost without a trace</b></li></ul>
+      </div>
+      <div class="card soft" style="background:var(--tint2)">
+        <div class="step-head"><span class="num">02</span><span class="label">Verify and measure</span></div>
+        <h3>It proves the numbers are right.</h3>
+        <p>What each source sent is reconciled against what was kept, and the KPIs are calculated from verified data only.</p>
+        <ul><li><b>Reconciled per source</b>, per country</li><li><b>9 fraud and business rules</b></li><li><b>8 headline KPIs</b>, every night</li></ul>
+      </div>
+      <div class="card soft">
+        <div class="step-head"><span class="num">03</span><span class="label">Act and approve</span></div>
+        <h3>Every problem gets an owner.</h3>
+        <p>Each issue becomes a task for the right team. Approved corrections flow back into the numbers on the next run.</p>
+        <ul><li><b>Tasks routed</b> to the right team</li><li><b>Second approval</b> for large decisions</li><li><b>Permanent audit trail</b></li></ul>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card soft" style="border-left:4px solid var(--blue)">
+        <div class="label gold">What the platform adds</div>
+        <h3 style="margin-bottom:8px">Capabilities that today sit across people, files and inboxes.</h3>
+        <div class="grid g2" style="gap:8px">
+          <div class="card" style="padding:8px 10px"><h3 style="font-size:11.5px;margin:0 0 2px">One standard format</h3><p>The same definitions for every country and every source system.</p></div>
+          <div class="card gold" style="padding:8px 10px"><h3 style="font-size:11.5px;margin:0 0 2px">Proof, not trust</h3><p>Every figure can be traced back to the source, file and run it came from.</p></div>
+          <div class="card" style="padding:8px 10px"><h3 style="font-size:11.5px;margin:0 0 2px">Problems found automatically</h3><p>Checks run on every record, every run, not on a sample.</p></div>
+          <div class="card gold" style="padding:8px 10px"><h3 style="font-size:11.5px;margin:0 0 2px">Decisions on record</h3><p>Who decided what, when and why, kept permanently.</p></div>
+        </div>
+      </div>
+      <div class="card soft" style="border-left:4px solid var(--blue);background:var(--tint2)">
+        <div class="label">Any source, any country</div>
+        <h3 style="margin-bottom:8px">The source system is an input, never a constraint.</h3>
+        <div class="grid g2" style="gap:8px">
+          <div class="card" style="padding:8px 10px;border-top-width:1px"><h3 style="font-size:11.5px;margin:0 0 2px">Files</h3><p>CSV and spreadsheet exports dropped into a folder</p></div>
+          <div class="card" style="padding:8px 10px;border-top-width:1px"><h3 style="font-size:11.5px;margin:0 0 2px">Databases</h3><p>Core banking and other systems read directly</p></div>
+          <div class="card" style="padding:8px 10px;border-top-width:1px"><h3 style="font-size:11.5px;margin:0 0 2px">Applications</h3><p>ERPs and CRMs through their APIs</p></div>
+          <div class="card" style="padding:8px 10px;border-top-width:1px"><h3 style="font-size:11.5px;margin:0 0 2px">New countries</h3><p>Added as a new source, not a new system</p></div>
+        </div>
+        <p class="foot-note" style="margin-top:6px">The demo runs on file drops today; connectors follow once the Bank confirms each country's systems (page 11).</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">What the platform is</span><span>02</span></div>
+</section>
+
+<!-- ============ 3. THE PROBLEM ============ -->
+<section class="page">
+  <div class="inner">
+    <div style="text-align:center;margin-top:0.25in">
+      <h1 style="font-size:36px">Ten Countries. Ten Systems.<br>No Single Version of the Truth.</h1>
+      <p class="lede" style="margin:14px auto 0;max-width:9.6in;text-align:center">Each country's systems record their own transactions correctly. But the questions the CFO and the regulator ask,
+        <b>are the group's numbers complete, do they agree, and who fixed what</b>, can't be answered from any single one of them.</p>
+    </div>
+    <div class="gap-wrap" style="margin:0.4in auto 0;width:10.4in">
+      <div class="card" style="padding:18px 22px"><h3 style="font-size:16px">The systems of record</h3>
+        <p style="font-size:12px">Core banking, ERPs, CRMs and spreadsheets in every country. Different formats, different codes,
+          different cut-off times. Accurate on their own, but never checked against each other.</p></div>
+      <div class="gap-mid"><div class="ring">!</div><span class="chip">THE GAP</span></div>
+      <div class="card gold" style="padding:18px 22px"><h3 style="font-size:16px">The decision</h3>
+        <p style="font-size:12px">Capital, liquidity, credit risk and regulatory returns. Built from exports stitched together by hand,
+          with no proof that nothing was lost, duplicated or changed on the way.</p></div>
+    </div>
+    <p style="text-align:center;font-size:15px;font-weight:800;margin-top:0.35in;line-height:1.5">The platform closes the gap: one pipeline that collects every source,<br>proves nothing was lost, and puts every exception in front of the right person.</p>
+    <div class="grid g3" style="margin-top:0.3in">
+      <div class="card soft" style="border:1px solid var(--hair)"><p><b style="color:var(--ink)">Less time assembling, more time deciding.</b> Collection, cleaning and calculation run automatically overnight, so finance starts the day with the numbers ready.</p></div>
+      <div class="card soft" style="border:1px solid var(--hair)"><p><b style="color:var(--ink)">Built for a bank.</b> Capital adequacy, liquidity, bad loans, IFRS 9 staging and regulatory returns are built into the platform, not bolted on.</p></div>
+      <div class="card soft" style="border:1px solid var(--hair)"><p><b style="color:var(--ink)">Works with the systems the Bank has.</b> The platform reads from existing systems. Nothing in them has to change or be replaced.</p></div>
+    </div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">The problem</span><span>03</span></div>
+</section>
+
+<!-- ============ 4. END-TO-END FLOW ============ -->
+<section class="page">
+  <div class="inner">
+    <div class="eyebrow">How it works, end to end</div>
+    <h1>Eight Steps From Raw Data to an Approved Number.</h1>
+    <div class="rule"></div>
+    <p class="lede">Every run follows the same path. The first six steps run automatically in Databricks, in about ten minutes for the current data.
+      <b>The last two involve people</b>: reviewing what the checks found, and approving the fixes.</p>
+
+    <div class="flow" style="margin-top:16px">
+      <div class="st"><div class="n">01</div><h3>Ingest</h3><p>Data arrives from every source: file drops today, databases and application APIs as connectors are added. Each record is tagged with its source, country and run.</p></div>
+      <div class="st"><div class="n">02</div><h3>Standardise</h3><p>Dates, amounts, currency codes and field names are put into one standard format, whatever system they came from.</p></div>
+      <div class="st"><div class="n">03</div><h3>Validate and clean</h3><p>More than 25 checks: missing values, invalid codes, impossible amounts, broken links. Failing records are held back with the reason.</p></div>
+      <div class="st"><div class="n">04</div><h3>Detect</h3><p>Transactions are screened by 9 rules: large amounts, structuring, unusual activity, duplicates and more.</p></div>
+      <div class="st"><div class="n">05</div><h3>Aggregate</h3><p>KPIs, portfolio, branch, country and scenario figures are calculated from the verified data only.</p></div>
+      <div class="st"><div class="n">06</div><h3>Reconcile</h3><p>What each source sent is compared with what was kept, and the Bank's data with its core banking system. Every gap is recorded.</p></div>
+      <div class="st"><div class="n">07</div><h3>Review and approve</h3><p>Each exception becomes a task for the right team. Large decisions need a second approver, and the CFO signs off.</p></div>
+      <div class="st"><div class="n">08</div><h3>Correct and refresh</h3><p>Approved corrections are saved immediately and applied to the data on the next run. The dashboards update.</p></div>
+    </div>
+
+    <div class="layers">
+      <div style="background:#5b6f8f;grid-column:span 2"><b>Raw layer</b>What each source sent, in one standard format</div>
+      <div style="background:var(--blue)"><b>Clean layer</b>Verified records + rejection log</div>
+      <div style="background:var(--navy);grid-column:span 3"><b>Business layer</b>Flags, KPIs, summaries and reconciliation results, loaded to the app</div>
+      <div style="background:var(--gold);grid-column:span 2"><b>People</b>Tasks, approvals and the audit trail</div>
+    </div>
+    <div class="layers" style="margin-top:4px">
+      <div style="grid-column:span 6;background:var(--tint2);color:var(--ink2)"><b style="color:var(--navy)">Runs automatically in Databricks</b>About ten minutes for the current data; scales with compute</div>
+      <div style="grid-column:span 2;background:var(--tint2);color:var(--ink2)"><b style="color:#a67a1f">Runs in the app and workflow engine</b>Where the Bank's teams work</div>
+    </div>
+
+    <div class="band" style="grid-template-columns:repeat(3,1fr);margin-top:auto">
+      <span class="tag">Why it is built this way</span>
+      <div class="cell"><h4>Nothing disappears silently</h4><p>A rejected record is never deleted. It is logged with the check it failed, counted in the reconciliation and turned into a task.</p></div>
+      <div class="cell"><h4>Screens stay fast</h4><p>The heavy work happens in the nightly run. The screens read small, pre-calculated summaries, so they open in seconds.</p></div>
+      <div class="cell"><h4>Runs on arrival or on demand</h4><p>A run starts when a new file lands, on a daily schedule, or when the CFO presses Refresh Now after approving corrections.</p></div>
+    </div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">End-to-end flow</span><span>04</span></div>
+</section>
+
+<!-- ============ 5. COLLECT AND CLEAN ============ -->
+<section class="page">
+  <div class="inner">
+    <div class="eyebrow">Steps 1 to 3 · Ingest, standardise, validate</div>
+    <h1>Every Source In. Every Record Checked.</h1>
+    <div class="rule"></div>
+    <p class="lede">Each source delivers its data in its own shape. The platform reads it, converts it to one standard format, and then
+      <b>checks every single record</b> before it is allowed anywhere near a KPI or a regulatory return.</p>
+
+    <div class="grid" style="grid-template-columns:1.05fr 1fr;gap:16px;margin-top:14px">
+      <div class="card soft" style="border-left:5px solid var(--gold)">
+        <div class="label gold">What it replaces today</div>
+        <p style="font-size:12.5px;line-height:1.65;margin-top:8px;color:var(--ink2)">Each country sends its figures in a different format. Someone copies them into a master spreadsheet,
+          fixes dates and codes by hand, and removes rows that "look wrong". <b style="color:var(--ink)">Nobody can later prove which rows were removed, or why</b>,
+          and one wrong currency code quietly changes a group total.</p>
+        <div class="label" style="margin-top:14px">Every record carries its origin</div>
+        <table class="mini-table" style="margin-top:4px">
+          <tr><th>Tag</th><th>Example</th><th>Used for</th></tr>
+          <tr><td><b>Source system</b></td><td>Lebanon core banking</td><td>Reconciliation per source</td></tr>
+          <tr><td><b>Country</b></td><td>Lebanon</td><td>Country view, routing</td></tr>
+          <tr><td><b>Run and file</b></td><td>24 Sep run, accounts file</td><td>Tracing any number back</td></tr>
+        </table>
+      </div>
+      <div>
+        <div class="label">Examples of the checks</div>
+        <table class="mini-table" style="margin-top:4px">
+          <tr><th>Check</th><th>What it catches</th></tr>
+          <tr><td><b>Missing values</b></td><td>A transaction with no amount, a customer with no risk rating</td></tr>
+          <tr><td><b>Invalid codes</b></td><td>Currency "XYZ", an unknown channel or customer segment</td></tr>
+          <tr><td><b>Impossible numbers</b></td><td>Negative balance, loan outstanding above its principal</td></tr>
+          <tr><td><b>Broken links</b></td><td>An account whose customer doesn't exist</td></tr>
+          <tr class="hl"><td><b>Banking rules</b></td><td>A loan 90+ days overdue that isn't in IFRS 9 stage 3</td></tr>
+        </table>
+        <div class="card gold" style="margin-top:12px">
+          <div class="label gold">A real example from the demo data</div>
+          <h3>Lebanon sent 755 transactions. 753 passed.</h3>
+          <p>One had no amount, one used a channel the Bank doesn't have. Both were held back with their reason, the 4,000 USD
+            difference was recorded, and a task was created for the CFO.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid g4" style="margin-top:14px">
+      <div class="card"><h3>One format for every source</h3><p>Dates, numbers and currency codes are standardised once, so every country is measured the same way.</p></div>
+      <div class="card gold"><h3>Checked, not sampled</h3><p>Every record in every run goes through every check. No record reaches a KPI without passing.</p></div>
+      <div class="card"><h3>Rejected, never lost</h3><p>A failing record is kept in a rejection log with the exact reason, so it can be fixed and brought back.</p></div>
+      <div class="card gold"><h3>Traceable to the file</h3><p>Any record can be traced to the source system, file and run it came from.</p></div>
+    </div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">Collect and clean</span><span>05</span></div>
+</section>
+
+<!-- ============ 6. DETECT AND MEASURE ============ -->
+<section class="page">
+  <div class="inner">
+    <div class="eyebrow">Steps 4 and 5 · Detect and aggregate</div>
+    <h1>Unusual Activity Flagged. The Bank's KPIs Calculated.</h1>
+    <div class="rule"></div>
+    <p class="lede">Once the data is clean, two things happen in parallel: every transaction is screened for unusual patterns, and the
+      figures the board and regulators watch are calculated. <b>Every number is computed from the verified data, never typed in.</b></p>
+
+    <div class="grid g2" style="margin-top:14px;gap:16px">
+      <div>
+        <div class="label">Transaction screening: three kinds of flag</div>
+        <div class="grid g3" style="margin-top:6px;gap:8px">
+          <div class="card" style="border-top-color:var(--red)"><h3>Suspicious</h3><p>Patterns that may point to fraud or money laundering: structuring just under a limit, money in and out the same day, a dormant account suddenly active.</p><p style="margin-top:6px"><b>Goes to:</b> investigations</p></div>
+          <div class="card gold"><h3>Threshold</h3><p>A reporting event, not fraud: for example a single transaction above 50,000 USD.</p><p style="margin-top:6px"><b>Goes to:</b> compliance</p></div>
+          <div class="card"><h3>Operational</h3><p>A processing fault, such as the same transaction posted twice.</p><p style="margin-top:6px"><b>Goes to:</b> operations</p></div>
+        </div>
+        <div class="card soft" style="margin-top:10px">
+          <p><b style="color:var(--ink)">Grouped into cases, not a flood of alerts.</b> Related flags on the same account and day become one case with a severity.
+            High and medium cases become tasks with a deadline; low ones go into a daily digest.</p>
+        </div>
+      </div>
+      <div>
+        <div class="label">The eight headline KPIs, every run</div>
+        <div class="kpis">
+          <div>Capital adequacy<small>CAR</small></div><div>Liquidity coverage<small>LCR</small></div>
+          <div>Bad loans<small>NPL ratio</small></div><div>Total assets<small>in USD</small></div>
+          <div>Dollarization<small>share in USD</small></div><div>Net interest margin<small>NIM <span class="star">*</span></small></div>
+          <div>Cost-to-income<small>efficiency <span class="star">*</span></small></div><div>Return on equity<small>ROE <span class="star">*</span></small></div>
+        </div>
+        <div class="card soft" style="margin-top:10px">
+          <p><b style="color:var(--ink)">Also calculated:</b> loan book by product, segment, branch and currency · IFRS 9 staging · top 20 exposures ·
+            ageing · loan-to-value bands · branch, segment and country performance · the snapshot behind stress testing.</p>
+        </div>
+        <div class="card soft" style="margin-top:10px">
+          <p><b style="color:var(--ink)">Limits and breaches.</b> Each KPI is compared with its limit at three levels: early warning, internal appetite and
+            regulatory minimum. A breach becomes a compliance task with a deadline.</p>
+        </div>
+        <p class="foot-note" style="margin-top:6px"><span class="star">*</span> Uses a documented assumption until the Bank supplies the missing inputs (deposit rates, cost allocation, equity). Shown on screen with a footnote.</p>
+      </div>
+    </div>
+
+    <div class="band" style="grid-template-columns:repeat(3,1fr);margin-top:auto">
+      <span class="tag">What changes for the Bank</span>
+      <div class="cell"><h4>Fraud is not "a big number"</h4><p>A large transaction is labelled a reporting event, not fraud. Each flag says why it was raised, so investigators start with a reason.</p></div>
+      <div class="cell"><h4>KPIs ready every morning</h4><p>No one builds the ratios by hand. They are recalculated every run, on the same definitions, for every country.</p></div>
+      <div class="cell"><h4>Converted at a logged rate</h4><p>Figures in LBP, SAR, QAR and EUR are converted to USD, and every exchange rate used is recorded with its time.</p></div>
+    </div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">Detect and measure</span><span>06</span></div>
+</section>
+
+<!-- ============ 7. RECONCILE ============ -->
+<section class="page">
+  <div class="inner">
+    <div class="eyebrow">Step 6 · Reconcile</div>
+    <h1>Hundreds of Differences. A Handful of Decisions.</h1>
+    <div class="rule"></div>
+    <p class="lede">Reconciliation answers two different questions, and the platform asks both on every run. Then, instead of sending people through
+      differences one by one, it <b>clears the harmless ones, groups the rest by cause, and asks for one decision per group</b>.</p>
+
+    <div class="grid g2" style="margin-top:12px;gap:16px">
+      <div class="card">
+        <div class="label">Check A · Received vs kept, per source</div>
+        <h3>Did our own pipeline lose or change anything?</h3>
+        <p>Rows received vs rows kept, and amounts per currency, for every source, country and table. Each gap is one CFO item, opening onto the rejected records.</p>
+        <table class="mini-table" style="margin-top:6px">
+          <tr><th>Source · data</th><th>Received</th><th>Kept</th><th>Result</th></tr>
+          <tr class="hl"><td><b>Lebanon · transactions</b></td><td>755</td><td>753</td><td>2 rows, 4,000 USD gap → CFO</td></tr>
+          <tr><td><b>Saudi Arabia · transactions</b></td><td>165</td><td>165</td><td>Matched</td></tr>
+        </table>
+      </div>
+      <div class="card gold">
+        <div class="label gold">Check B · Our data vs the core banking system</div>
+        <h3>Does our copy agree with the Bank's system of record?</h3>
+        <p>Every customer and account is compared field by field. A "break" is a value that disagrees, or a record on only one side.</p>
+        <table class="mini-table" style="margin-top:6px">
+          <tr><th>Break</th><th>Example</th></tr>
+          <tr><td><b>Value differs</b></td><td>Balance 294,618 in core banking vs 246,618 ours</td></tr>
+          <tr><td><b>Missing</b></td><td>A customer in core banking but not in our data</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="label" style="margin-top:12px">How differences become decisions</div>
+    <div class="funnel" style="margin-top:6px">
+      <div class="f"><div class="big">1</div><p><b style="color:var(--ink)">Compare</b><br>Every record, both sides, every run.</p></div>
+      <div class="arrow">▶</div>
+      <div class="f"><div class="big">2</div><p><b style="color:var(--ink)">Clear the harmless</b><br>Formatting-only differences ("NOUR SAAD" vs "Nour Saad") are cleared automatically, with the rule logged.</p></div>
+      <div class="arrow">▶</div>
+      <div class="f"><div class="big">3</div><p><b style="color:var(--ink)">Group by cause</b><br>12 accounts each 9,000 lower become one group, one task, not twelve.</p></div>
+      <div class="arrow">▶</div>
+      <div class="f last"><div class="big">4</div><p><b style="color:#fff">One decision per group</b><br>Accept, correct or dismiss, with a reason. Still one audit record per difference.</p></div>
+    </div>
+
+    <div class="band" style="grid-template-columns:repeat(3,1fr);margin-top:auto">
+      <span class="tag">Safety rules</span>
+      <div class="cell"><h4>Big items are never bulk-cleared</h4><p>Missing records, key fields and differences of 10,000 or more always get their own task, due in one day.</p></div>
+      <div class="cell"><h4>Two people for large totals</h4><p>A group totalling 100,000 or more needs a second approver. The first decision-maker can't give it.</p></div>
+      <div class="cell"><h4>Nothing is re-accepted quietly</h4><p>A difference that was decided and comes back in a later run is reopened as "recurring", and the day's run is signed off by a second person.</p></div>
+    </div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">Reconcile</span><span>07</span></div>
+</section>
+
+<!-- ============ 8. REVIEW, APPROVE, CORRECT ============ -->
+<section class="page">
+  <div class="inner">
+    <div class="eyebrow">Steps 7 and 8 · Review, approve, correct</div>
+    <h1>Every Exception Owned. Every Fix Approved.</h1>
+    <div class="rule"></div>
+    <p class="lede">A finding is only useful if someone acts on it. Every exception the platform finds becomes a <b>task with an owner, a priority and a deadline</b>,
+      decided in one place, with a permanent record of who did what.</p>
+
+    <div class="label" style="margin-top:12px">The CFO approval loop for a reconciliation gap</div>
+    <div class="loop" style="margin-top:6px">
+      <div class="s"><h3>1 · Gap found</h3><p>The run finds rows rejected or amounts that moved. One item is created for the CFO.</p></div>
+      <div class="s"><h3>2 · CFO reviews</h3><p>The CFO opens the rejected records, then handles the item directly or assigns it to a colleague.</p></div>
+      <div class="s"><h3>3 · Values corrected</h3><p>The assignee proposes the corrected values with a comment, and submits back.</p></div>
+      <div class="s"><h3>4 · CFO approves</h3><p>The CFO approves, or returns it with a note. The loop repeats until it is right.</p></div>
+      <div class="s"><h3>5 · Numbers update</h3><p>Saved immediately, applied in the next run, so the gap closes and every KPI includes the fixed record.</p></div>
+    </div>
+
+    <div class="grid g2" style="margin-top:14px;gap:16px">
+      <div>
+        <div class="label">Who gets what</div>
+        <table class="mini-table" style="margin-top:4px">
+          <tr><th>Task</th><th>Team</th><th>Deadline</th></tr>
+          <tr><td><b>Reconciliation gap</b> (received vs kept)</td><td>CFO</td><td>per item</td></tr>
+          <tr><td><b>Core-system difference</b> (group)</td><td>Operations</td><td>1 day if important, else 3</td></tr>
+          <tr><td><b>Suspicious transaction case</b></td><td>Investigations</td><td>by severity</td></tr>
+          <tr><td><b>Threshold event, KPI breach</b></td><td>Compliance</td><td>by severity / limit</td></tr>
+          <tr><td><b>Data-quality problem, duplicate company</b></td><td>Operations</td><td>by severity</td></tr>
+        </table>
+        <p class="foot-note" style="margin-top:6px">Teams, deadlines and limits are settings, not code. The values shown are placeholders until the Bank confirms them.</p>
+      </div>
+      <div class="grid g2" style="gap:10px">
+        <div class="card"><h3>One queue for everyone</h3><p>Every task type on one Tasks screen, with overdue items highlighted.</p></div>
+        <div class="card gold"><h3>No one approves alone</h3><p>Large decisions and the run sign-off need a second person.</p></div>
+        <div class="card"><h3>Permanent audit trail</h3><p>Every decision is logged, one entry per record, and can't be edited.</p></div>
+        <div class="card gold"><h3>Source systems untouched</h3><p>Corrections live in the platform's copy; the Bank's systems are only read.</p></div>
+      </div>
+    </div>
+
+    <div class="band" style="grid-template-columns:repeat(3,1fr);margin-top:auto">
+      <span class="tag">What changes for the Bank</span>
+      <div class="cell"><h4>No more email chains</h4><p>The question, the evidence and the decision sit in the same task, instead of moving between people and files.</p></div>
+      <div class="cell"><h4>Fixes that stick</h4><p>An approved correction is applied again on every run until the source itself is fixed, so it isn't overwritten overnight.</p></div>
+      <div class="cell"><h4>Audit-ready by design</h4><p>For any number, the Bank can show where it came from, what was changed, and who approved it.</p></div>
+    </div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">Review, approve, correct</span><span>08</span></div>
+</section>
+
+<!-- ============ 9. WHAT THE BANK SEES ============ -->
+<section class="page">
+  <div class="inner">
+    <div class="eyebrow">What the Bank sees</div>
+    <h1>Not Just a Dashboard. One Place Where the Work Happens.</h1>
+    <div class="rule"></div>
+    <p class="lede">Eight screens, all reading the same verified numbers. Each role signs in and sees what it needs: <b>the board sees the ratios, finance sees the gaps,
+      the reviewers see their tasks</b>, and nothing is re-keyed between them.</p>
+
+    <div class="screens" style="margin-top:14px">
+      <div class="card"><div class="label">01</div><h3>Executive summary</h3><p>The 8 KPI tiles coloured by limit, the trend, plain-language alerts, a country breakdown and Refresh Now. Click any tile to see what moved and why.</p></div>
+      <div class="card gold"><div class="label gold">02</div><h3>Portfolio and credit risk</h3><p>The loan book by product, segment, branch and currency, IFRS 9 staging, top 20 exposures, ageing and loan-to-value bands.</p></div>
+      <div class="card"><div class="label">03</div><h3>Branch and segment performance</h3><p>Branch league table, regional and segment results, and an efficiency chart showing which branches lead and which lag.</p></div>
+      <div class="card gold"><div class="label gold">04</div><h3>Scenario modelling</h3><p>Stress tests with four sliders (devaluation, rate change, bad-loan increase, deposit outflow) and base, adverse and severe presets.</p></div>
+      <div class="card gold"><div class="label gold">05</div><h3>Regulatory reporting</h3><p>Report calendar, reports in the regulator's layout, validation checks and PDF or Excel export. Every figure links back to its formula and source.</p></div>
+      <div class="card"><div class="label">06</div><h3>Reconciliation</h3><p>Received vs kept per source, and our data vs core banking: groups, every difference with filters, ageing, recurring items and the run sign-off.</p></div>
+      <div class="card gold"><div class="label gold">07</div><h3>Tasks</h3><p>The single to-do list: reconciliation groups, CFO items, suspicious cases, breaches and data problems, with deadlines and approvals.</p></div>
+      <div class="card"><div class="label">08</div><h3>Audit and oversight</h3><p>The permanent record of every decision, overdue work and who approved what, for internal audit and the regulator.</p></div>
+    </div>
+
+    <div class="label gold" style="margin-top:16px">Who signs in, and what they do</div>
+    <div class="grid g4" style="margin-top:6px;gap:10px">
+      <div class="card soft"><h3>Analyst</h3><p>Prepares the work and submits the day's reconciliation run for sign-off.</p></div>
+      <div class="card soft"><h3>Reviewer</h3><p>Reviews and decides reconciliation groups, suspicious cases and alerts.</p></div>
+      <div class="card soft" style="background:var(--tint2)"><h3>CFO (approver)</h3><p>Second approvals, run sign-off, reconciliation gaps and Refresh Now.</p></div>
+      <div class="card soft"><h3>Administrator</h3><p>Limits, thresholds, teams and deadlines, all as settings.</p></div>
+    </div>
+
+    <div class="callout" style="margin-top:auto">A dashboard shows the number. A report describes what happened. <span>This platform is where the numbers are checked, explained and signed off.</span></div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">What the Bank sees</span><span>09</span></div>
+</section>
+
+<!-- ============ 10. SCALE ============ -->
+<section class="page">
+  <div class="inner">
+    <div class="eyebrow">Built to scale</div>
+    <h1>Ten Sources Today. A Hundred Tomorrow.</h1>
+    <div class="rule"></div>
+    <p class="lede">The processing runs on Databricks, which spreads work across as many machines as the data needs. Adding sources, countries or years of history
+      <b>does not require a new platform, only more computing power</b>, which can be increased at any time and scaled back when the run is done.</p>
+
+    <div class="grid g3" style="margin-top:14px">
+      <div class="card soft">
+        <div class="step-head"><span class="num">01</span><span class="label">More sources</span></div>
+        <h3>Each source is a configuration, not a rebuild.</h3>
+        <p>A new country or system is one more source: a connection plus a mapping to the standard format. Checks, reconciliation, tasks and screens then apply automatically.</p>
+      </div>
+      <div class="card soft" style="background:var(--tint2)">
+        <div class="step-head"><span class="num">02</span><span class="label">More data</span></div>
+        <h3>More volume, more compute. Not more people.</h3>
+        <p>Millions of transactions are handled by adding workers to the run. Heavier runs cost more compute; the steps and the results stay the same.</p>
+      </div>
+      <div class="card soft">
+        <div class="step-head"><span class="num">03</span><span class="label">Same speed on screen</span></div>
+        <h3>The screens never touch the raw data.</h3>
+        <p>Each run pre-calculates small summary tables, and the screens read only those. The design target is under two seconds per screen, whatever the volume underneath.</p>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:14px;gap:16px">
+      <div class="card" style="border-top-color:var(--blue)">
+        <div class="label">What grows easily</div>
+        <ul>
+          <li><b>Number of sources and countries</b>: 10, 20, 50 or 100</li>
+          <li><b>Data volume</b>: from thousands to millions of rows a night, by adding compute</li>
+          <li><b>New checks and rules</b>: thresholds and limits are settings, changed without code</li>
+          <li><b>New reports and screens</b>: built on the same verified data</li>
+        </ul>
+      </div>
+      <div class="card gold">
+        <div class="label gold">What each new source still needs</div>
+        <ul>
+          <li><b>A connector</b>: file drop, database or API, depending on how the system can share data</li>
+          <li><b>A mapping</b> of its fields and transaction codes to the standard format, confirmed by the Bank</li>
+          <li><b>Agreed record keys</b>, so the same customer or account is recognised across systems</li>
+          <li><b>Compute budget</b>: larger runs cost more; the Bank chooses the speed/cost balance</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="label" style="margin-top:16px">How the same design carries 10 or 100 sources</div>
+    <div class="funnel" style="margin-top:6px">
+      <div class="f"><p><b style="color:var(--ink)">Sources</b><br>Each country's systems, each with its own connector and mapping.</p></div>
+      <div class="arrow">▶</div>
+      <div class="f"><p><b style="color:var(--ink)">Databricks compute</b><br>The same steps run in parallel; add workers for more volume.</p></div>
+      <div class="arrow">▶</div>
+      <div class="f"><p><b style="color:var(--ink)">Summary tables</b><br>Small, pre-calculated results, whatever the size underneath.</p></div>
+      <div class="arrow">▶</div>
+      <div class="f last"><p><b style="color:#fff">One set of screens</b><br>The same fast views for 10 sources or 100.</p></div>
+    </div>
+
+    <div class="callout" style="margin-top:auto">More fuel, more capacity: the design is the same at 10 sources or 100. <span>The effort per new source is the mapping, not the platform.</span></div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">Built to scale</span><span>10</span></div>
+</section>
+
+<!-- ============ 11. WHERE IT STANDS ============ -->
+<section class="page">
+  <div class="inner">
+    <div class="eyebrow">Where it stands today</div>
+    <h1>Working End to End on Demo Data. Ready for the Bank's Systems.</h1>
+    <div class="rule"></div>
+    <p class="lede">The full flow, from file to approved correction, runs today on demo data in the Bank's format. Moving to production means connecting the Bank's
+      real systems and <b>replacing a small number of placeholder settings with the Bank's own values</b>.</p>
+
+    <div class="grid g3" style="margin-top:14px;gap:14px">
+      <div class="card" style="border-top-color:var(--green)">
+        <span class="pill live">Working in the demo</span>
+        <ul style="margin-top:8px">
+          <li>File-drop ingestion, standardisation and 25+ checks</li>
+          <li>Source and country tagging on every record</li>
+          <li>Received-vs-kept reconciliation per source, with completeness check</li>
+          <li>9 fraud and business rules, grouped into cases</li>
+          <li>8 KPIs, portfolio, branch, country and scenario figures</li>
+          <li>Core-banking comparison with grouping and safety rules</li>
+          <li>Tasks, CFO approval loop, second approval, audit trail</li>
+          <li>All 8 screens, PDF and Excel export</li>
+        </ul>
+      </div>
+      <div class="card gold">
+        <span class="pill cfg">Built, needs the Bank's values</span>
+        <ul style="margin-top:8px">
+          <li>Official limits for each KPI and breach level</li>
+          <li>Reconciliation tolerances and approval amounts</li>
+          <li>Fraud and anti-money-laundering thresholds</li>
+          <li>Teams, deadlines and task policy sign-off</li>
+          <li>Inputs for NIM, cost-to-income and ROE</li>
+          <li>Reporting currency and official FX source</li>
+          <li>Refresh Now connection and daily schedule</li>
+        </ul>
+      </div>
+      <div class="card" style="border-top-color:var(--blue)">
+        <span class="pill road">Next, with the Bank's input</span>
+        <ul style="margin-top:8px">
+          <li>Connectors for each country's own systems (ERP, CRM, core banking)</li>
+          <li>Field and transaction-code mapping per system</li>
+          <li>Transaction-level matching against core banking</li>
+          <li>Reconciliation against the general ledger and nostro statements</li>
+          <li>Testing at full production volume</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="label gold" style="margin-top:14px">What we need from the Bank to go live</div>
+    <div class="grid g4" style="margin-top:6px;gap:10px">
+      <div class="card soft"><h3>Systems per country</h3><p>Which systems each of the 10 countries uses, and how each can share data: file, database or API.</p></div>
+      <div class="card soft"><h3>Mappings and code lists</h3><p>Field definitions and transaction codes for each system, and a shared customer and account identifier.</p></div>
+      <div class="card soft"><h3>Limits and policies</h3><p>Official KPI limits, tolerances, approval amounts, teams and deadlines.</p></div>
+      <div class="card soft"><h3>What to reconcile against</h3><p>Which systems the Bank reconciles today, for example core banking vs the general ledger.</p></div>
+    </div>
+    <div class="callout" style="margin-top:auto">No big-bang go-live. <span>Start with one country, prove the numbers against what finance already trusts, then add country by country.</span></div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">Where it stands today</span><span>11</span></div>
+</section>
+
+<!-- ============ 12. THANK YOU ============ -->
+<section class="page dark">
+  <div class="inner" style="top:1.3in">
+    <div class="hero">Thank you.</div>
+    <div class="goldbar"></div>
+    <p style="font-size:15px;line-height:1.7;color:#c7d3e6;max-width:8in">We would welcome an hour on the live demo with whoever you would like in the room: finance, risk, compliance or IT.
+      We are equally happy to go deeper on any part of this document, answer questions in writing, or review the architecture and data security with anyone you nominate.</p>
+    <div style="flex:1"></div>
+    <div style="border-top:1px solid rgba(255,255,255,.18);padding-top:16px">
+      <div class="eyebrow" style="color:var(--gold-soft)">Primary contact</div>
+      <p style="font-size:18px;font-weight:800;color:#fff;margin-top:6px">[Name]</p>
+      <p style="font-size:11px;color:#8ea0bd">[Title], [Your company]</p>
+      <p style="font-size:12px;color:#dfe7f3;margin-top:6px">[email] · [phone]</p>
+    </div>
+  </div>
+  <div class="footer"><span>Bank Data Platform</span><span class="mid">Client Demo Overview</span><span>[Your company]</span></div>
+</section>
+
+</body>
+</html>
