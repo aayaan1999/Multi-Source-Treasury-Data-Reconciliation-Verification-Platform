@@ -126,7 +126,7 @@ export default function Dashboard() {
         <TopBar />
         <Message
           title="Couldn't load the dashboard"
-          action={<button type="button" onClick={load} className="mt-4 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110">Try again</button>}
+          action={<button type="button" onClick={load} className="mt-4 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent transition hover:brightness-110">Try again</button>}
         >
           {data.message}
         </Message>

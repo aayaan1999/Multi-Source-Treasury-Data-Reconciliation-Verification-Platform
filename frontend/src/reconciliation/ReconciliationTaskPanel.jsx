@@ -15,7 +15,7 @@ const STEP_LABELS = [
 ];
 
 const BUTTON = "rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page disabled:opacity-60";
-const PRIMARY = "rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60";
+const PRIMARY = "rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-on-accent transition hover:brightness-110 disabled:opacity-60";
 const INPUT = "rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink";
 
 function StepChain({ step }) {
@@ -27,7 +27,7 @@ function StepChain({ step }) {
           {i > 0 && <span aria-hidden className="mx-1 h-px w-6 bg-hair" />}
           <span
             aria-current={i === current ? "step" : undefined}
-            className={`rounded-full border border-hair px-2.5 py-1 text-xs font-medium ${i === current ? "text-white" : "text-ink2"}`}
+            className={`rounded-full border border-hair px-2.5 py-1 text-xs font-medium ${i === current ? "text-on-accent" : "text-ink2"}`}
             style={i === current ? { background: "var(--series-1)" } : i < current ? { color: "var(--good)" } : undefined}
           >
             {label}

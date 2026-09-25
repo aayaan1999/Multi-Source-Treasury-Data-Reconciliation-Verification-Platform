@@ -43,7 +43,7 @@ export function LoadError({ error, onRetry, emptyTitle = "No numbers yet" }) {
   return (
     <Notice
       title="Couldn't load this screen"
-      action={<button type="button" onClick={onRetry} className="mt-4 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110">Try again</button>}
+      action={<button type="button" onClick={onRetry} className="mt-4 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent transition hover:brightness-110">Try again</button>}
     >
       {error?.message}
     </Notice>

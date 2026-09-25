@@ -3,6 +3,7 @@ import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../auth";
 import { formatDay } from "../kpi/format";
 import { THEME_ORDER, getTheme, setTheme } from "../theme";
+import appbayLogo from "../assets/appbay-logo.jpg";
 
 const NAV = [
   ["/", "Executive summary", true],
@@ -53,20 +54,12 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   return (
-    <header
-      className="sticky top-0 z-20 border-b border-hair backdrop-blur"
-      style={{ background: "linear-gradient(180deg, color-mix(in srgb, var(--series-1) 5%, var(--surface-1)) 0%, var(--surface-1) 100%)" }}
-    >
+    <header className="brand-header sticky top-0 z-20 border-b border-hair">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <svg viewBox="0 0 32 32" className="h-8 w-8 shrink-0" aria-hidden>
-            <rect width="32" height="32" rx="7" fill="var(--series-1)" />
-            <path d="M16 6 L27 11.5 V13.5 H5 V11.5 Z" fill="white" />
-            <rect x="7" y="15" width="3" height="10" fill="white" />
-            <rect x="14.5" y="15" width="3" height="10" fill="white" />
-            <rect x="22" y="15" width="3" height="10" fill="white" />
-            <rect x="5" y="26" width="22" height="2.5" fill="white" />
-          </svg>
+        <div className="flex items-center gap-4">
+          {/* The company that built the platform, on the charcoal header band its logo was made for. */}
+          <img src={appbayLogo} alt="AppBay" className="h-10 w-auto shrink-0" />
+          <span aria-hidden className="h-9 w-px bg-hair" />
           <div>
             <Link to="/" className="text-lg font-semibold leading-tight tracking-tight text-ink">
               {BANK_NAME}
@@ -100,7 +93,7 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
             <div className="flex items-center gap-2.5 border-l border-hair pl-3 text-sm text-ink2">
               <span
                 aria-hidden
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-on-accent"
                 style={{ background: "var(--series-1)" }}
               >
                 {initials(user.name) || "?"}
@@ -124,7 +117,7 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
             className={({ isActive }) =>
               `whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-all ${
                 isActive
-                  ? "bg-accent font-medium text-white shadow-[0_4px_12px_-2px_var(--series-1-soft)]"
+                  ? "bg-accent font-medium text-on-accent shadow-[0_4px_12px_-2px_var(--series-1-soft)]"
                   : "text-ink2 hover:bg-page hover:text-ink"
               }`
             }

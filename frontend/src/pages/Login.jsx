@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
+import appbayLogo from "../assets/appbay-logo.jpg";
 
 const ROLES = [
   { label: "Analyst", desc: "Prepares data & flags exceptions" },
@@ -43,7 +44,7 @@ export default function Login() {
       {/* Brand panel */}
       <section
         className="relative hidden flex-col justify-between overflow-hidden p-10 text-white lg:flex"
-        style={{ background: "linear-gradient(155deg, #123a66 0%, #1b4d8f 45%, #2a78d6 100%)" }}
+        style={{ background: "var(--brand-dark)" }}
       >
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.07]"
@@ -54,21 +55,14 @@ export default function Login() {
           }}
         />
 
-        <div className="relative flex items-center gap-2.5">
-          <svg viewBox="0 0 32 32" className="h-8 w-8 shrink-0">
-            <rect width="32" height="32" rx="7" fill="white" fillOpacity="0.15" />
-            <path d="M16 6 L27 11.5 V13.5 H5 V11.5 Z" fill="white" />
-            <rect x="7" y="15" width="3" height="10" fill="white" />
-            <rect x="14.5" y="15" width="3" height="10" fill="white" />
-            <rect x="22" y="15" width="3" height="10" fill="white" />
-            <rect x="5" y="26" width="22" height="2.5" fill="white" />
-          </svg>
-          <span className="text-lg font-semibold tracking-tight">Bank Data Platform</span>
+        <div className="relative flex items-center gap-4">
+          <img src={appbayLogo} alt="AppBay" className="h-12 w-auto shrink-0" />
+          <span className="border-l border-white/20 pl-4 text-lg font-semibold tracking-tight">Bank Data Platform</span>
         </div>
 
         <div className="relative max-w-md">
           <h1 className="text-[2.2rem] font-semibold leading-[1.15] tracking-tight">
-            One system for regulatory reporting, risk & workflow.
+            One system for regulatory reporting, <span style={{ color: "var(--brand-yellow)" }}>risk & workflow.</span>
           </h1>
           <p className="mt-4 text-base leading-relaxed text-white/75">
             Nightly data reconciliation, KPI monitoring, scenario modelling and a governed
@@ -97,14 +91,7 @@ export default function Login() {
       <section className="flex items-center justify-center bg-page px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <svg viewBox="0 0 32 32" className="h-7 w-7 shrink-0">
-              <rect width="32" height="32" rx="7" fill="#2a78d6" />
-              <path d="M16 6 L27 11.5 V13.5 H5 V11.5 Z" fill="#ffffff" />
-              <rect x="7" y="15" width="3" height="10" fill="#ffffff" />
-              <rect x="14.5" y="15" width="3" height="10" fill="#ffffff" />
-              <rect x="22" y="15" width="3" height="10" fill="#ffffff" />
-              <rect x="5" y="26" width="22" height="2.5" fill="#ffffff" />
-            </svg>
+            <img src={appbayLogo} alt="AppBay" className="h-9 w-auto shrink-0 rounded-md" />
             <span className="text-base font-semibold tracking-tight text-ink">Bank Data Platform</span>
           </div>
 
@@ -169,7 +156,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={busy}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3.5 py-2.5 font-medium text-white shadow-sm transition hover:brightness-110 disabled:opacity-60"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3.5 py-2.5 font-medium text-on-accent shadow-sm transition hover:brightness-110 disabled:opacity-60"
             >
               {busy && (
                 <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">

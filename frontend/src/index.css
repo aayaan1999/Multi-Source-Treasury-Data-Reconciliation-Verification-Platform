@@ -4,23 +4,26 @@
    in-app toggle both work, and an explicit light choice beats an OS-dark preference). */
 :root {
   color-scheme: light;
-  --page: #f9f9f7;
-  --surface-1: #fcfcfb;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --border: rgba(11, 11, 11, 0.1);
-  --series-1: #1e56db;
-  --series-1-soft: rgba(30, 86, 219, 0.1);
-  --series-2: #eb6834;
+  --page: #f5f6f7;
+  --surface-1: #ffffff;
+  --ink: #20242c;
+  --ink-2: #4d525c;
+  --muted: #858a93;
+  --grid: #e3e5e8;
+  --axis: #c5c9cf;
+  --border: rgba(32, 36, 44, 0.12);
+  --series-1: #20242c;
+  --series-1-soft: rgba(32, 36, 44, 0.1);
+  --series-2: #fad31a;
+  --on-accent: #ffffff;
+  --brand-dark: #20242c;
+  --brand-yellow: #fad31a;
   --negative: #e34948;
   --good: #0ca30c;
   --warning: #fab219;
   --serious: #ec835a;
   --critical: #d03b3b;
-  --neutral-bar: #c3c2b7;
+  --neutral-bar: #c5c9cf;
   --shadow-color: 220 20% 60%;
   --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.08);
   --shadow-card: 0 1px 3px hsl(var(--shadow-color) / 0.08), 0 1px 2px hsl(var(--shadow-color) / 0.06);
@@ -30,19 +33,20 @@
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --page: #0d0d0d;
-    --surface-1: #1a1a19;
+    --page: #20242c;
+    --surface-1: #2a2f38;
     --ink: #ffffff;
-    --ink-2: #c3c2b7;
-    --muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
+    --ink-2: #c9cdd3;
+    --muted: #8e949e;
+    --grid: #363c46;
+    --axis: #454b56;
     --border: rgba(255, 255, 255, 0.1);
-    --series-1: #4c86ee;
-    --series-1-soft: rgba(76, 134, 238, 0.16);
-    --series-2: #d95926;
+    --series-1: #fad31a;
+    --series-1-soft: rgba(250, 211, 26, 0.16);
+    --series-2: #c9cdd3;
+    --on-accent: #20242c;
     --negative: #e66767;
-    --neutral-bar: #383835;
+    --neutral-bar: #454b56;
     --shadow-color: 220 40% 2%;
     --shadow-card: 0 1px 3px hsl(var(--shadow-color) / 0.5), 0 1px 2px hsl(var(--shadow-color) / 0.4);
     --shadow-hover: 0 10px 24px hsl(var(--shadow-color) / 0.55), 0 2px 6px hsl(var(--shadow-color) / 0.4);
@@ -51,19 +55,20 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0d0d0d;
-  --surface-1: #1a1a19;
+  --page: #20242c;
+  --surface-1: #2a2f38;
   --ink: #ffffff;
-  --ink-2: #c3c2b7;
-  --muted: #898781;
-  --grid: #2c2c2a;
-  --axis: #383835;
+  --ink-2: #c9cdd3;
+  --muted: #8e949e;
+  --grid: #363c46;
+  --axis: #454b56;
   --border: rgba(255, 255, 255, 0.1);
-  --series-1: #4c86ee;
-  --series-1-soft: rgba(76, 134, 238, 0.16);
-  --series-2: #d95926;
+  --series-1: #fad31a;
+  --series-1-soft: rgba(250, 211, 26, 0.16);
+  --series-2: #c9cdd3;
+  --on-accent: #20242c;
   --negative: #e66767;
-  --neutral-bar: #383835;
+  --neutral-bar: #454b56;
   --shadow-color: 220 40% 2%;
   --shadow-card: 0 1px 3px hsl(var(--shadow-color) / 0.5), 0 1px 2px hsl(var(--shadow-color) / 0.4);
   --shadow-hover: 0 10px 24px hsl(var(--shadow-color) / 0.55), 0 2px 6px hsl(var(--shadow-color) / 0.4);
@@ -79,6 +84,7 @@
   --color-grid: var(--grid);
   --color-accent: var(--series-1);
   --color-accent-soft: var(--series-1-soft);
+  --color-on-accent: var(--on-accent);
 }
 
 html,
@@ -92,6 +98,22 @@ body {
   background: var(--page);
   color: var(--ink);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* The header is a charcoal brand band in every theme: its own tokens, so the Tailwind colour utilities
+   inside it (text-ink, border-hair, bg-accent...) pick up the brand values. */
+.brand-header {
+  --ink: #ffffff;
+  --ink-2: #c9cdd3;
+  --muted: #8e949e;
+  --border: rgba(255, 255, 255, 0.14);
+  --page: #2f343e;
+  --surface-1: #2a2f38;
+  --series-1: #fad31a;
+  --series-1-soft: rgba(250, 211, 26, 0.25);
+  --on-accent: #20242c;
+  background: var(--brand-dark);
+  color: var(--ink);
 }
 
 :focus-visible {

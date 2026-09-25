@@ -195,7 +195,7 @@ function ReviewPanel({ task, user, onDone, onClose }) {
               type="button"
               onClick={() => setOutcome(o)}
               className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
-                outcome === o ? "border-accent bg-accent text-white" : "border-hair text-ink hover:border-accent/40 hover:bg-page"
+                outcome === o ? "border-accent bg-accent text-on-accent" : "border-hair text-ink hover:border-accent/40 hover:bg-page"
               }`}
             >
               {outcomeLabel[o]}
@@ -245,7 +245,7 @@ function ReviewPanel({ task, user, onDone, onClose }) {
             type="button"
             onClick={submitOutcome}
             disabled={busy}
-            className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
+            className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-on-accent transition hover:brightness-110 disabled:opacity-60"
           >
             {busy ? "Submitting…" : "Submit decision"}
           </button>

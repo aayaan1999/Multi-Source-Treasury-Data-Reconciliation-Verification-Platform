@@ -222,7 +222,7 @@ function AdminResolve({ row, onDone }) {
       <p className="mb-2 text-sm text-ink2">Admin override: decisions normally happen in the group's task.</p>
       <div className="flex flex-wrap items-center gap-2">
         {[["ACCEPTED", "Accept"], ["CORRECTED", "Correct"], ["DISMISSED", "Dismiss"]].map(([v, l]) => (
-          <button key={v} type="button" onClick={() => setStatus(v)} className={status === v ? "rounded-md bg-accent px-3 py-1.5 text-sm text-white" : BUTTON}>{l}</button>
+          <button key={v} type="button" onClick={() => setStatus(v)} className={status === v ? "rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent" : BUTTON}>{l}</button>
         ))}
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" aria-label="Override note" className={`${INPUT} flex-1`} />
         <button type="button" onClick={submit} className={BUTTON}>Resolve</button>
@@ -274,7 +274,7 @@ export default function CoreSystemSection() {
             role="tab"
             aria-selected={typeFilter === value}
             onClick={() => setTypeFilter(value)}
-            className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-all ${typeFilter === value ? "bg-accent font-medium text-white" : "text-ink2 hover:bg-page hover:text-ink"}`}
+            className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-all ${typeFilter === value ? "bg-accent font-medium text-on-accent" : "text-ink2 hover:bg-page hover:text-ink"}`}
           >
             {label}
           </button>

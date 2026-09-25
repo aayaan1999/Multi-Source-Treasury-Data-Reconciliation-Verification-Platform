@@ -192,7 +192,7 @@ function ScenarioBody({ snapshot }) {
             <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Preset scenarios">
               {Object.entries(PRESETS).map(([key, p]) => (
                 <button key={key} type="button" aria-pressed={activePreset === key} onClick={() => setInputs(p.inputs)}
-                  className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${activePreset === key ? "border-accent bg-accent font-medium text-white shadow-sm" : "border-hair text-ink2 hover:border-accent/40 hover:bg-page hover:text-ink"}`}>
+                  className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${activePreset === key ? "border-accent bg-accent font-medium text-on-accent shadow-sm" : "border-hair text-ink2 hover:border-accent/40 hover:bg-page hover:text-ink"}`}>
                   {p.label}
                 </button>
               ))}
@@ -211,7 +211,7 @@ function ScenarioBody({ snapshot }) {
               <input id="scenario-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="e.g. Board stress test"
                 className="min-w-0 flex-1 rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink outline-none transition focus:border-transparent focus:ring-2 focus:ring-accent/60" />
               <button type="button" onClick={save} disabled={!name.trim() || saveState.busy}
-                className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50">
+                className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent transition hover:brightness-110 disabled:opacity-50">
                 {saveState.busy ? "Saving…" : "Save"}
               </button>
             </div>

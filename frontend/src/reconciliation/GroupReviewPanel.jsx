@@ -174,7 +174,7 @@ export default function GroupReviewPanel({ task, user, onDone, onClose }) {
               disabled={busy}
               onClick={() => act({ decision: key, excludedIds: [...leftOut], decidedByUserId: user.user_id })}
               className={i === 0
-                ? "rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
+                ? "rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-on-accent transition hover:brightness-110 disabled:opacity-60"
                 : "rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page disabled:opacity-60"}
             >
               {decisionLabel(label, leftOut.size, open.length)}
@@ -183,7 +183,7 @@ export default function GroupReviewPanel({ task, user, onDone, onClose }) {
           {current === "SECOND_APPROVAL" && (
             <>
               <button type="button" disabled={busy || ownDecision} onClick={() => act({ approvalDecision: "RETURN" })} className="rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page disabled:opacity-60">Return to reviewer</button>
-              <button type="button" disabled={busy || ownDecision} onClick={() => act({ approvalDecision: "APPROVE", approvedByUserId: user.user_id })} className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60">Approve</button>
+              <button type="button" disabled={busy || ownDecision} onClick={() => act({ approvalDecision: "APPROVE", approvedByUserId: user.user_id })} className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-on-accent transition hover:brightness-110 disabled:opacity-60">Approve</button>
             </>
           )}
         </div>

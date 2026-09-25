@@ -101,7 +101,7 @@ export default function CaseReviewPanel({ task, user, onDone, onClose }) {
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={onClose} disabled={busy} className="rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink disabled:opacity-60">Cancel</button>
           <button type="button" onClick={() => decide("REJECTED")} disabled={busy} className="rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page disabled:opacity-60">Reject all</button>
-          <button type="button" onClick={() => decide("APPROVED")} disabled={busy} className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60">Approve all</button>
+          <button type="button" onClick={() => decide("APPROVED")} disabled={busy} className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-on-accent transition hover:brightness-110 disabled:opacity-60">Approve all</button>
         </div>
       </div>
     </>
