@@ -71,11 +71,14 @@ export default function RefreshNow({ onRefreshed }) {
     }
   }
 
-  if (notSetUp) return canRefresh ? <p className="text-xs text-muted">Refresh Now isn't set up yet.</p> : null;
+  // Not set up yet (no Databricks settings in backend/.env): the button still shows, and clicking it
+  // says so, so the dashboard looks finished before the pipeline is connected.
+  if (notSetUp && !canRefresh) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-3" aria-live="polite">
       {status && <span className="text-sm text-ink2">{refreshLabel(status)}</span>}
+      {notSetUp && !error && <span className="text-xs text-muted">Not connected to the pipeline yet</span>}
       {canRefresh && (
         <button
           type="button"

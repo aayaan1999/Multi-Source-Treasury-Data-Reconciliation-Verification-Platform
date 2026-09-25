@@ -2,6 +2,11 @@
 
 const TOLERANCE = 0.005;   // same as the notebook's AMOUNT_TOLERANCE: smaller is float noise, not a gap
 
+/** Bank-wide tables (FX rates, capital, liquidity) have no country; the pipeline tags them "Group". */
+export function countryLabel(country) {
+  return country === "Group" ? "Bank-wide (all countries)" : country;
+}
+
 export function fmtAmount(n) {
   return Number(n ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 }

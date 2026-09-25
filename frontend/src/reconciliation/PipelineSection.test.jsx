@@ -55,6 +55,16 @@ describe("Received vs kept, per source", () => {
     expect(within(table).getByText("No rows delivered")).toBeTruthy();
   });
 
+  it("names bank-wide tables' country in words, not the pipeline's 'Group' tag", async () => {
+    const bankWide = { ...ITEMS[0], recon_id: 4, source_country: "Group", source_table: "fx_rates" };
+    const { api } = await import("../api");
+    api.pipelineReconciliation.mockResolvedValueOnce([...ITEMS, bankWide]);
+    render(<PipelineSection />);
+    const table = await screen.findByRole("table", { name: "Received vs kept, per source" });
+    expect(within(table).getByText("Bank-wide (all countries)")).toBeTruthy();
+    expect(within(table).queryByText("Group")).toBeNull();
+  });
+
   it("opens an item onto its amounts per currency and the records that were dropped", async () => {
     render(<PipelineSection />);
     const table = await screen.findByRole("table", { name: "Received vs kept, per source" });

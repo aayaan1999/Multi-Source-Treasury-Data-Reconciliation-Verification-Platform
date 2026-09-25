@@ -35,6 +35,7 @@ def main():
     by_id = {a[0]: a for a in accounts}
     ordinary = [a[0] for a in accounts if a[0].startswith("ACN0") and float(a[4] or 0) > 20000]
     plus15, second_approval, band, big = ordinary[:4], ordinary[4:16], ordinary[16:18], ordinary[18]
+    minus250 = ordinary[19:24]
     cust_ids = [c[0] for c in customers if c[0].startswith("CN0")]
     segment_cust, caps_cust = cust_ids[50], cust_ids[51]
     customer_by_id = {c[0]: c for c in customers}
@@ -66,6 +67,8 @@ def main():
         shift(band[0], 240)
         shift(band[1], -610)
         shift(big, 48000)
+        for acc in minus250:
+            shift(acc, -250)
         new_segment = "SME" if customer_by_id[segment_cust][2] != "SME" else "Retail"
         cur.execute("UPDATE customers SET segment = %s, updated_at = now() WHERE customer_id = %s", (new_segment, segment_cust))
         cur.execute("UPDATE customers SET name = upper(name), updated_at = now() WHERE customer_id = %s", (caps_cust,))
@@ -79,6 +82,7 @@ def main():
     print(f"  balance -9,000.00 on {len(second_approval)} accounts ({second_approval[0]}..{second_approval[-1]}) -> one group, total 108,000: needs a second approval")
     print(f"  balance +240 on {band[0]} and -610 on {band[1]} -> one 'difference 100-1,000' group")
     print(f"  balance +48,000 on {big} -> important, on its own")
+    print(f"  balance -250.00 on {', '.join(minus250)} -> one group of 5")
     print(f"  segment {customer_by_id[segment_cust][2]} -> {new_segment} on {segment_cust} -> important (key field)")
     print(f"  name in capitals on {caps_cust} ('{customer_by_id[caps_cust][1]}') -> cleared automatically (formatting only)")
     print(f"  {EXTRA_CUSTOMER[0]} only in core banking -> 'missing in our data'")

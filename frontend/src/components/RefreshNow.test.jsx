@@ -57,10 +57,23 @@ describe("Refresh Now", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("says it isn't set up (to the CFO only) when the backend has no Databricks settings", async () => {
+  it("still shows the button (to the CFO only) when the backend has no Databricks settings", async () => {
     const { ApiError } = await import("../api");
     api.refreshStatus.mockRejectedValue(new ApiError(503, "Refresh Now isn't set up"));
+    api.refreshNow.mockRejectedValue(new ApiError(503, "Refresh Now isn't set up: add DATABRICKS_HOST and DATABRICKS_TOKEN to backend/.env"));
     render(<RefreshNow />);
-    expect(await screen.findByText("Refresh Now isn't set up yet.")).toBeTruthy();
+    expect(await screen.findByText("Not connected to the pipeline yet")).toBeTruthy();
+    const button = screen.getByRole("button", { name: "Refresh now" });
+    await act(async () => button.click());
+    expect((await screen.findByRole("alert")).textContent).toMatch(/isn't set up/);
+  });
+
+  it("hides everything from other roles when it isn't set up", async () => {
+    role = "analyst";
+    const { ApiError } = await import("../api");
+    api.refreshStatus.mockRejectedValue(new ApiError(503, "Refresh Now isn't set up"));
+    const { container } = render(<RefreshNow />);
+    await act(async () => {});
+    expect(container.innerHTML).toBe("");
   });
 });

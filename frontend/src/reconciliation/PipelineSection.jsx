@@ -6,7 +6,7 @@ import { Loading, LoadError } from "../components/PageShell";
 import Section from "../components/Section";
 import StatBox from "../components/StatBox";
 import useAsync from "../hooks/useAsync";
-import { currencyLines, fmtAmount, gapSummary, statusText } from "./pipeline";
+import { countryLabel, currencyLines, fmtAmount, gapSummary, statusText } from "./pipeline";
 
 function fmtDateTime(iso) {
   return iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -20,14 +20,14 @@ function ItemDetail({ item }) {
   return (
     <>
       <h3 className="text-sm font-semibold tracking-tight text-ink">
-        {item.source_system} · {item.source_country} · {item.source_table}
+        {item.source_system} · {countryLabel(item.source_country)} · {item.source_table}
       </h3>
       <p className="mt-0.5 text-sm text-ink2">
         {item.received_rows} rows received, {item.clean_rows} kept, {item.rejected_rows} rejected · run {item.ingest_batch_id}
       </p>
       {item.note && (
         <p className="mt-2 text-sm font-medium" style={{ color: "var(--critical)" }}>
-          {item.note}: this source was expected to send {item.source_table} for {item.source_country} in this run and sent none.
+          {item.note}: this source was expected to send {item.source_table} for {countryLabel(item.source_country)} in this run and sent none.
         </p>
       )}
       <p className="mt-0.5 text-sm text-ink2">
@@ -124,7 +124,7 @@ export default function PipelineSection() {
               className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40"
             >
               <option value="">All countries</option>
-              {countries.map((c) => <option key={c} value={c}>{c}</option>)}
+              {countries.map((c) => <option key={c} value={c}>{countryLabel(c)}</option>)}
             </select>
             <label className="flex items-center gap-1.5 text-sm text-ink2">
               <input type="checkbox" checked={gapsOnly} onChange={(e) => setGapsOnly(e.target.checked)} />
@@ -137,7 +137,7 @@ export default function PipelineSection() {
           caption="Received vs kept, per source"
           columns={[
             { key: "source_system", header: "Source" },
-            { key: "source_country", header: "Country" },
+            { key: "source_country", header: "Country", render: (r) => countryLabel(r.source_country) },
             { key: "source_table", header: "Table" },
             { key: "received_rows", header: "Received", align: "right" },
             { key: "clean_rows", header: "Kept", align: "right" },

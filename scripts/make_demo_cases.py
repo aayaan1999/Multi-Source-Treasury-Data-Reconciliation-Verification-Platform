@@ -97,10 +97,8 @@ def main():
     cases.append(("FLOW-3", "Rejected account", "ACNDEMO1 with currency XYZ (INVALID_CURRENCY): an accounts gap with an XYZ amount line; "
                   "a CFO can correct its currency to USD (FLOW-5) and Refresh Now closes the gap"))
 
-    # ---- Agreed flow step 1: completeness (FLOW-1b) ---------------------------------------------
-    data["fx_rates"] = (data["fx_rates"][0], [])
-    cases.append(("FLOW-1b", "No rows delivered", "fx_rates.csv has only its header: a 'No rows delivered' item for fx_rates (Group). "
-                  "Harmless: conversions use live rates"))
+    # Agreed flow step 1 (completeness, FLOW-1b) is no longer planted: emptying fx_rates.csv left a
+    # blank "No rows delivered" row on the Reconciliation tab that read as broken data in the demo.
 
     # ---- Point 3: duplicate companies ------------------------------------------------------------
     cust_fields, _ = data["customers"]

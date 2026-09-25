@@ -89,8 +89,17 @@ function RunPanel() {
         <StatBox label="Important, open" value={data.important_open} hint={`${data.recurring_open} recurring break(s) open`} status={data.important_open ? "action" : "good"} />
       </ul>
       <div className="card mt-4 rounded-xl border border-hair bg-surface p-4 text-sm" aria-label="Run sign-off">
-        <p className="text-ink">
-          <strong>Sign-off:</strong>{" "}
+        {/* The sign-off is for the whole run, not one group: say so, and what it covers. */}
+        <h3 className="font-semibold tracking-tight text-ink">Sign-off for the whole run of {data.run_date}</h3>
+        <p className="mt-1 text-ink2">
+          Covers every group and break from this comparison with the core banking system ({data.breaks_seen} break(s)), not one
+          group. Each group is decided in its own task; this is the final check that the run as a whole is finished.{" "}
+          {data.groups_open
+            ? `${data.groups_open} group(s) still open${data.important_open ? `, ${data.important_open} of them important (a note is required to submit)` : ""}.`
+            : "All groups are decided."}
+        </p>
+        <p className="mt-2 text-ink">
+          <strong>Status:</strong>{" "}
           {!signoff && "not submitted yet."}
           {signoff?.status === "SUBMITTED" && `submitted by ${signoff.prepared_by_name}${signoff.prepare_note ? ` ("${signoff.prepare_note}")` : ""}, waiting for a second person.`}
           {signoff?.status === "SIGNED_OFF" && `signed off by ${signoff.signed_by_name} (prepared by ${signoff.prepared_by_name}).`}
