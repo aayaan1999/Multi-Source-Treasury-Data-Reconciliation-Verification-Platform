@@ -117,7 +117,7 @@ def test_most_profitable_means_profit(golden_names):
 def test_a_request_to_change_anything_is_refused_whatever_the_model_says(golden_names):
     for question in ("delete all the loans", "please send the NPL report to the regulator", "update the CAR limit"):
         result = merge(question, {"query": "loan_breakdown", "metric": "loans"})
-        assert result["status"] == "unsupported" and "only reads" in result["reason"]
+        assert result["status"] == "unsupported" and result["explanation"]["code"] == "action"
 
 
 def test_the_model_does_not_add_a_measure_or_a_split_to_an_english_question(golden_names):

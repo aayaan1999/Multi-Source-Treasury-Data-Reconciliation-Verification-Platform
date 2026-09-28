@@ -37,6 +37,12 @@ STRICT = ("countries", "regions", "branches", "segments", "products", "stages", 
 def same(got: dict, case: dict) -> bool:
     if got["status"] != case["status"]:
         return False
+    if "code" in case:     # the hard set: the right explanation, or the right notice on the table
+        if case["status"] == "unsupported":
+            return (got.get("explanation") or {}).get("code") == case["code"]
+        if case["code"] not in [n["code"] for n in got.get("notices", [])]:
+            return False
+        return all(got["filters"].get(k) == v for k, v in case.get("filters", {}).items())
     if case["status"] == "unsupported":
         return True
     if got.get("query") != case["query"]:
@@ -71,7 +77,7 @@ def main():
         model = llm.classify(case["q"])
         times.append(time.monotonic() - started)
         got = service.merge(model, extract(case["q"], today, golden["names"]))
-        entry_ok = (model.get("query") == "unsupported") if case["status"] == "unsupported" else model.get("query") == case["query"]
+        entry_ok = (model.get("query") == "unsupported") if case["status"] == "unsupported" else model.get("query") == case.get("query", got.get("query"))
         ok = same(got, case)
         right_entry += entry_ok
         fully_right += ok

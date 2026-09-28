@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import AskPanel from "./AskPanel";
 import { formatCell, refinedFilters } from "./answer";
 import { clearAskHistory } from "./store";
@@ -147,6 +148,43 @@ describe("Ask panel", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Clear these answers" })));
     expect(screen.queryByRole("article")).toBeNull();
     expect(sessionStorage.getItem("bdp_ask_history")).toBeNull();
+  });
+
+  it("explains why it couldn't answer, how it works, and offers what to ask instead", async () => {
+    api.ask.mockResolvedValueOnce({
+      status: "unsupported", question: "branches except Beirut by profit",
+      explanation: {
+        code: "negation", title: "I can't leave things out yet",
+        why: "Your question says “except”. I can narrow a report to the places you name, but not exclude them.",
+        how: "How this works: I match your question to one of the bank's approved reports.",
+        suggestions: [{ label: "Show all branches instead", query: "branch_ranking", filters: { metric: "profit", order: "desc" } },
+                      { label: "Open Scenario modelling", href: "/scenario" }],
+      },
+    }).mockResolvedValueOnce(ANSWER);
+    render(<MemoryRouter><AskPanel /></MemoryRouter>);
+    await askIt("branches except Beirut by profit");
+    const card = screen.getByRole("article");
+    expect(within(card).getByText("Why I couldn't answer this")).toBeTruthy();
+    expect(within(card).getByText("I can't leave things out yet")).toBeTruthy();
+    expect(within(card).getByText(/not exclude them/)).toBeTruthy();
+    expect(within(card).getByText(/^How this works/)).toBeTruthy();
+    expect(within(card).queryByRole("table")).toBeNull();                       // never a misleading table
+    expect(within(card).getByRole("link", { name: "Open Scenario modelling →" }).getAttribute("href")).toBe("/scenario");
+    await act(async () => fireEvent.click(within(card).getByRole("button", { name: "Show all branches instead" })));
+    expect(api.ask).toHaveBeenLastCalledWith({ question: "branches except Beirut by profit", query: "branch_ranking", filters: { metric: "profit", order: "desc" } });
+  });
+
+  it("shows a notice above a table when part of the question wasn't applied", async () => {
+    api.ask.mockResolvedValue({
+      ...ANSWER, question: "branches with profit above 1 million",
+      notices: [{ code: "threshold", title: "Your limit isn't applied", message: "I can't filter by “above 1 million” yet, so this shows every row." }],
+    });
+    render(<AskPanel />);
+    await askIt("branches with profit above 1 million");
+    const note = screen.getByRole("note");
+    expect(within(note).getByText("Your limit isn't applied")).toBeTruthy();
+    expect(within(note).getByText(/above 1 million/)).toBeTruthy();
+    expect(screen.getByRole("table")).toBeTruthy();
   });
 
   it("says plainly when the model server isn't running", async () => {

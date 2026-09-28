@@ -49,6 +49,39 @@ CUES = {
 # An instruction to change something, at the start of the question ("delete ...", "please send ...").
 ACTION = r"^\s*(?:please\s+|can you\s+|could you\s+)?(?:delete|drop|remove|insert|modify|create|send|email|approve|reject|truncate|write|update)\b"
 
+# ---- What the panel can't do (specs/ask-a-question.md section 6.7) ---------------------------------------
+# Found by probing the real model with hard questions (2026-09-28): each of these used to be silently
+# dropped, and the table then answered a different question. They are now detected, so the answer
+# either explains why it can't be given or says plainly what was not applied.
+NEGATION = r"except|excluding|exclude|other than|apart from|besides|without|not in|not including|but not"
+CHANGE = (r"difference|change[sd]?|grow(?:th|n)?|grew|increase[sd]?|decrease[sd]?|rise|rose|fall|fell|drop(?:ped)?"
+          r"|delta|go(?:ne)? up|went up|go(?:ne)? down|went down|improve[sd]?|worsen(?:ed)?")
+FORECAST = r"predict\w*|forecast\w*|projection|project(?:ed)?|will|going to|expected to|next (?:week|month|quarter|year)"
+WHY = r"^\s*why|what caused|reasons?|explain\w*"
+THRESHOLD = (r"(above|over|more than|greater than|higher than|exceeds?|exceeding|at least"
+             r"|below|under|less than|lower than|at most)\s+(?:usd\s*|\$\s*)?\d[\d,.]*\s*"
+             r"(?:%|percent|k|m|mn|million|bn|billion|days?|months?|years?)?")
+# One space only, like the unknown-branch check: "by" must be next to the word in what was typed, not
+# across words already used up ("overdue by more than 90 days" is not "by day").
+SPLIT_UNSUPPORTED = (r"(?:by|per|across|split by|broken down by|for each|each) "
+                     r"(region|channel|month|week|day|quarter|year|sector|industry|city|officer|manager|age group|gender)s?")
+# Measures people ask for that no summary table holds - matched (and used up) before the known
+# measures, so "return on assets" is never read as "assets" and "Tier 1 ratio" never as CAR.
+UNKNOWN_MEASURES = ["return on assets", "roa", "ebitda", "ebit", "tier 1", "tier one", "cet1", "cet 1",
+                    "common equity tier", "net stable funding", "nsfr", "leverage ratio", "market share",
+                    "fee income", "fees", "commission", "interest expense", "cost of funds", "deposit rate",
+                    "loan to deposit", "ltd ratio", "risk weighted assets", "rwa", "nps", "churn", "var",
+                    "value at risk", "credit rating", "gdp", "inflation", "share price", "dividend"]
+# Places outside the bank's footprint, which would otherwise be silently dropped.
+OTHER_PLACES = ["dubai", "uae", "united arab emirates", "abu dhabi", "kuwait", "bahrain", "oman", "jordan", "egypt",
+                "cairo", "amman", "london", "new york", "paris", "tyre", "sidon", "baalbek", "mecca", "medina", "tabuk"]
+# An individual customer or account: a reference like C0012 / ACN0023, or "customer 12".
+CUSTOMER = (r"(?:customer|client|account|borrower)\s*(?:id|number|no\.?|#|ref\w*)?\s*[a-z]{0,3}\d{2,}"
+            r"|(?<![\w-])(?!bn\d)[a-z]{1,3}\d{3,}(?!\w)|\w+ s (?:balance|account|accounts|loan|loans)(?!\w)")
+NOT_A_PLACE = {"the", "this", "that", "which", "each", "every", "our", "my", "a", "an", "any", "all", "per", "by", "at",
+               "in", "of", "for", "best", "worst", "top", "main", "head", "biggest", "largest", "smallest", "one",
+               "busiest", "weakest", "strongest", "whole", "same", "other", "new", "old", "and", "or", "with"}
+
 
 @dataclass
 class Period:
@@ -80,6 +113,11 @@ class Extracted:
     cues: set = field(default_factory=set)     # topic words that say which question this is (CUES below)
     action: bool = False                       # asks to change something ("delete ...") - this panel only reads
     non_english: bool = False                  # the word lists can't read it; only then may the model name the metric
+    problems: list = field(default_factory=list)   # [{"code", "detail"}]: parts of the question it can't do (see above)
+    typos: list = field(default_factory=list)      # [(what was typed, what it was read as)]
+
+    def problem(self, code: str) -> Optional[dict]:
+        return next((p for p in self.problems if p["code"] == code), None)
 
 
 class _Text:
@@ -290,7 +328,36 @@ def extract(question: str, today: date, names: dict) -> Extracted:
     out.action = bool(re.search(ACTION, t.s))
     letters = [c for c in question if c.isalpha()]
     out.non_english = bool(letters) and sum(c.isascii() for c in letters) < len(letters) / 2
+
+    def flag(code, pattern, text=None):
+        m = re.search(rf"(?<!\w)(?:{pattern})(?!\w)", text if text is not None else t.s)
+        if m:
+            out.problems.append({"code": code, "detail": m.group().strip()})
+        return m
+
+    flag("negation", NEGATION)
+    flag("forecast", FORECAST)
+    flag("why", WHY)
+    flag("change", CHANGE)
+    flag("customer", CUSTOMER)
+    for phrase in sorted(UNKNOWN_MEASURES, key=len, reverse=True):
+        if t.take(phrase):
+            out.problems.append({"code": "unknown_measure", "detail": phrase})
+
     out.period = _period(t, today)
+    second = _period(t, today) if out.period else None
+    if second:
+        # "between 21 Sep and 28 Sep": show the whole span, and say the change itself isn't calculated.
+        start, end = min(out.period.date_from, second.date_from), max(out.period.date_to, second.date_to)
+        out.problems.append({"code": "two_periods", "detail": f"{out.period.label} and {second.label}"})
+        out.period = Period(start, end, f"{_fmt(start)} to {_fmt(end)}")
+    if out.period and out.period.date_from > today and not out.problem("forecast"):
+        out.problems.append({"code": "forecast", "detail": out.period.label})     # "LCR in December 2026"
+    m = re.search(rf"(?<!\w){THRESHOLD}(?!\w)", t.s)
+    if m:
+        out.problems.append({"code": "threshold", "detail": m.group().strip(),
+                             "direction": "low" if m[1] in ("below", "under", "less than", "lower than", "at most") else "high"})
+        t.use(m.start(), m.end())
     out.top_n, top_word = _top_n(t)
 
     # Segments and products share words ("SME", "Corporate"): both read before either is used up.
@@ -301,6 +368,9 @@ def extract(question: str, today: date, names: dict) -> Extracted:
         _use_all(t, [value.lower(), f"{base} loans", f"{base} loan", f"{base}s", base, *vocab.PRODUCT_ALIASES.get(base, [])])
 
     out.branches, out.regions = _branches_and_regions(t, names)
+    for place in sorted(OTHER_PLACES, key=len, reverse=True):
+        if t.take(place):
+            out.problems.append({"code": "unknown_place", "detail": place.title() if len(place) > 3 else place.upper()})
     for country, aliases in vocab.COUNTRIES.items():
         if any(t.find(a) for a in aliases + [country.lower()]):
             out.countries.append(country)
@@ -310,6 +380,12 @@ def extract(question: str, today: date, names: dict) -> Extracted:
     word_stage = {"one": 1, "two": 2, "three": 3}
     out.stages = sorted(set(out.stages) | {word_stage[w] for w in re.findall(r"(?<!\w)stage\s+(one|two|three)(?!\w)", t.s)})
 
+    # "loan product(s)" / "loan type(s)" name the product split, not a second measure (Loans).
+    _use_all(t, ["loan products", "loan product", "loan types", "loan type"])
+    m = re.search(rf"(?<!\w){SPLIT_UNSUPPORTED}(?!\w)", t.s)
+    if m:
+        out.problems.append({"code": "unsupported_split", "detail": m[1]})
+        t.use(m.start(), m.end())
     m = re.search(r"(?<!\w)(?:by|per|across|for each|each|split by|broken down by)\s+(product|segment|branch|currency)(?:e?s|ies)?(?!\w)", t.s)
     if m:
         out.dimension = m[1]
@@ -318,17 +394,45 @@ def extract(question: str, today: date, names: dict) -> Extracted:
     # Tables for the data-quality question are read before metrics use up words like "loans".
     out.tables = [table for table, words in vocab.SOURCE_TABLES.items() if any(t.find(w) for w in words)]
 
+    # Measures, in three passes: exact phrases of two or more words; the same phrases with small typos
+    # ("capitl adequecy ratio"); then single words. The typo pass runs before single words, so
+    # "cost to incme" is cost-to-income, not "cost".
     phrases = sorted(((p, key) for key, ps in vocab.METRIC_SYNONYMS.items() for p in ps), key=lambda x: -len(x[0]))
+    multi = [(p, k) for p, k in phrases if " " in p or "-" in p]
+    single = [(p, k) for p, k in phrases if (p, k) not in multi]
     hits = []
-    for phrase, key in phrases:
-        m = t.find(phrase)
-        while m:
-            hits.append((m.start(), key))
-            t.use(m.start(), m.end())
+
+    def exact(pairs):
+        for phrase, key in pairs:
             m = t.find(phrase)
+            while m:
+                hits.append((m.start(), key))
+                t.use(m.start(), m.end())
+                m = t.find(phrase)
+
+    exact(multi)
+    for phrase, key in multi:
+        want = phrase.split()
+        toks = t.tokens()
+        for i in range(len(toks) - len(want) + 1):
+            window = toks[i:i + len(want)]
+            if all(_similar(tok[0], w) for tok, w in zip(window, want)):
+                typed = t.s[window[0][1]:window[-1][2]]
+                hits.append((window[0][1], key))
+                if typed.rstrip("s") != phrase.rstrip("s"):          # a plural isn't worth a notice
+                    out.typos.append((typed, phrase))
+                t.use(window[0][1], window[-1][2])
+                break
+    exact(single)
     for _, key in sorted(hits):
         if key not in out.metrics:
             out.metrics.append(key)
+
+    # "<name> branch" where the name isn't one of ours ("Qurna branch"). One space only: the word must sit
+    # right next to "branch" in what was typed, not across words already used up.
+    for m in re.finditer(r"(?<!\w)([a-z]{3,}) branch(?:es)?(?!\w)", t.s):
+        if m[1] not in NOT_A_PLACE and m[1] not in SORT_WORDS and not out.problem("unknown_place"):
+            out.problems.append({"code": "unknown_place", "detail": m[1].title()})
 
     out.by_flag = bool(re.search(r"(?<!\w)(flags?|by type|check)(?!\w)", t.s))
     if re.search(r"(?<!\w)(closed|resolved)(?!\w)", t.s):

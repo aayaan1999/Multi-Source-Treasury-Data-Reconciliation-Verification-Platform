@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import DataTable from "../components/DataTable";
 import { ExportButton } from "../components/PageShell";
@@ -89,15 +90,7 @@ function AnswerCard({ answer, gold, busy, onAsk, onRefine }) {
       )}
 
       {!answer.pending && answer.status === "unsupported" && (
-        <div className="mt-3 text-sm text-ink2">
-          {answer.reason && <p className="mb-1 font-semibold text-ink">{answer.reason}</p>}
-          <p>I can only answer questions about the bank's reports: KPIs, countries, branches, segments, products, IFRS 9 stages, exposures, ageing, data quality and limit breaches.</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {(answer.examples || []).map((example) => (
-              <button key={example} type="button" disabled={busy} onClick={() => onAsk(example)} className={BUTTON}>{example}</button>
-            ))}
-          </div>
-        </div>
+        <Explanation explanation={answer.explanation} examples={answer.examples} busy={busy} onAsk={onAsk} onRefine={onRefine} />
       )}
 
       {!answer.pending && answer.status === "clarify" && (
@@ -116,6 +109,13 @@ function AnswerCard({ answer, gold, busy, onAsk, onRefine }) {
         <>
           <Chips understood={understood} busy={busy} onRefine={onRefine} />
           {answer.ignored?.length > 0 && <p className="mt-2 text-xs text-ink2">Not applied to this question: {answer.ignored.join(", ")}</p>}
+          {answer.notices?.map((notice) => (
+            <div key={notice.code + notice.message} className="ask-notice mt-3" role="note">
+              <div className="ask-label gold">{notice.title}</div>
+              <p className="mt-0.5 text-sm text-ink">{notice.message}</p>
+              {notice.suggestions?.length > 0 && <Suggestions items={notice.suggestions} busy={busy} onAsk={onAsk} onRefine={onRefine} />}
+            </div>
+          ))}
           <div className="mt-3">
             <DataTable
               caption={understood.label}
@@ -141,6 +141,56 @@ function AnswerCard({ answer, gold, busy, onAsk, onRefine }) {
         </>
       )}
     </article>
+  );
+}
+
+/**
+ * Why a question couldn't be answered as asked (specs/ask-a-question.md section 6.7): what went wrong in
+ * plain words, how the panel works, and buttons for what to ask instead - never a table that answers a
+ * different question.
+ */
+function Explanation({ explanation, examples, busy, onAsk, onRefine }) {
+  const e = explanation || {
+    title: "That's not a question about the bank's reports",
+    why: "I can only answer questions about the bank's reports.",
+    suggestions: (examples || []).map((q) => ({ label: q, question: q })),
+  };
+  return (
+    <div className="mt-3">
+      <div className="ask-label gold">Why I couldn't answer this</div>
+      <p className="mt-1 text-base font-extrabold text-ink">{e.title}</p>
+      <p className="mt-1 text-sm text-ink2">{e.why}</p>
+      {e.suggestions?.length > 0 && (
+        <>
+          <div className="ask-label mt-3">You could ask</div>
+          <Suggestions items={e.suggestions} busy={busy} onAsk={onAsk} onRefine={onRefine} />
+        </>
+      )}
+      {e.how && <p className="ask-card soft mt-3 text-xs text-ink2">{e.how}</p>}
+    </div>
+  );
+}
+
+/** Buttons: a question to ask, a ready-made query to run in place, or another tab. */
+function Suggestions({ items, busy, onAsk, onRefine }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {items.map((s) =>
+        s.href ? (
+          <Link key={s.label} to={s.href} className={`${BUTTON} inline-block`}>{s.label} →</Link>
+        ) : (
+          <button
+            key={s.label}
+            type="button"
+            disabled={busy}
+            onClick={() => (s.query ? onRefine(s.query, s.filters) : onAsk(s.question))}
+            className={BUTTON}
+          >
+            {s.label}
+          </button>
+        ),
+      )}
+    </div>
   );
 }
 

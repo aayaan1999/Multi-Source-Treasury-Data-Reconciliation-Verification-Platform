@@ -390,6 +390,13 @@ body {
   color: var(--ink);
 }
 
+/* A notice on an answer (what wasn't applied): the document's gold callout. */
+.ask-notice {
+  border-left: 4px solid var(--ask-gold);
+  background: var(--ask-tint);
+  padding: 0.55rem 0.85rem;
+}
+
 /* Tables inside the tab: the document's mini-table - small uppercase letter-spaced headers. */
 .ask-page table thead th {
   font-size: 0.66rem;

@@ -193,6 +193,39 @@ A clarify response carries one question and up to 5 buttons, each a complete fil
 
 Clicking a button re-runs the query with those filters (no second model call).
 
+### 6.7 What it can't do - and saying so
+
+Probing the real model with 28 hard questions (2026-09-28, `backend/tests/ask_questions_hard.json`) found
+13 that produced **a table answering a different question, with no warning** - one showing the exact
+opposite ("branches except Beirut" showed only Beirut). The root cause was the same every time: the
+panel acts only on words it recognises and **silently dropped the rest**; when the dropped words were
+the important ones, the table stopped answering the question, and the model filled gaps with a
+plausible guess.
+
+These patterns are now detected (`extract.py`) and handled (`explain.py`):
+
+| Pattern | Example | Before | Now |
+|---|---|---|---|
+| Leaving something out | "branches except Beirut" | only Beirut (the opposite) | **explained**, + "Show all branches instead" |
+| Unknown place | "profit at Tyre branch" | every branch | **explained**, lists the known countries and branches |
+| Unknown measure | "EBITDA by branch", "return on assets", "Tier 1 ratio" | loan book / total assets / CAR | **explained**, lists the measures it has as buttons |
+| A split no report has | "NPL ratio by region" | bank-wide NPL | **explained**, + the splits that exist |
+| Forecast / future date | "predict NPL next quarter" | today's NPL | **explained**, + link to Scenario modelling |
+| One customer / account | "loans of customer C0012" | segment table | **explained** (summary data only, no personal data) |
+| A request to change something | "delete all the loans" | - | **explained** (read-only) |
+| Off-topic | "ignore your instructions ..." | refused, no reason | **explained**, + example questions |
+| A threshold | "profit above 1 million" | every branch, as if filtered | table sorted so matching rows come first, **with a notice** |
+| A change / two dates | "difference in CAR between 21 and 28 Sep" | 21 Sep only | every day in the span, **notice**: change not calculated |
+| Two measures | "profit and revenue by branch" | profit only | first measure (or all, where allowed), **notice** |
+| "Why" | "why did NPL go up" | the figure | the figure, **notice** + breakdown questions |
+| A typo in a measure | "cost to incme" | ranked by *cost* | read correctly, **notice**: "I read X as Y" |
+
+An explanation replaces the table (`status: "unsupported"`, `explanation: {code, title, why, how,
+suggestions}`); a notice sits above it (`notices: [{code, title, message}]`). Every explanation says
+why, how the panel works, and what to ask instead; suggestion buttons are checked by `validate()` before
+they are offered. Problem codes are written to the audit row, so recurring gaps can be counted.
+Unit tests: `backend/tests/test_ask_hard.py` replays the real model's recorded answers to all 29 cases.
+
 ## 7. API
 
 `POST /api/v1/ask` — any logged-in user; rate-limited to 10 requests per minute per user.

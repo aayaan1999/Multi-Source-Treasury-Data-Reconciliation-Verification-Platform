@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import HTTPException
 
 from ..db import write
-from . import llm, vocab
+from . import explain, llm, vocab
 from .catalogue import ENTRIES, EXAMPLES, METRIC_FALLBACKS, NoData
 from .extract import Extracted, Period, extract
 
@@ -78,25 +78,84 @@ def text_entry(ex: Extracted) -> Optional[str]:
 
 
 def merge(model: dict, ex: Extracted) -> dict:
-    """-> {"status": "answer"|"clarify"|"unsupported", "query", "filters", "ignored", "clarify", "overridden"}.
+    """-> {"status": "answer"|"clarify"|"unsupported", "query", "filters", "ignored", "clarify", "overridden",
+           "explanation" (unsupported), "notices" (answer), "problems"}.
 
-    The question type comes from the text when the text says it (text_entry), otherwise from the
+    First the question itself (_merge_core). Then what it can't do (section 6.7): a refusal wins, since any
+    table would answer a different question, and comes with an explanation and what to ask instead; the
+    rest are notices on the answer.
+    """
+    core = _merge_core(model, ex)
+    problems = ([{"code": "action", "detail": ""}] if ex.action else []) + ex.problems
+    codes = [p["code"] for p in problems]
+    refusal = next((p for code in explain.REFUSALS for p in problems if p["code"] == code), None)
+    if refusal:
+        return {"status": "unsupported", "query": core.get("query"), "overridden": core.get("overridden", False),
+                "problems": codes, "explanation": explain.explanation(refusal, core.get("query"), vocab.names(),
+                                                                     _suggestions(refusal, core, ex))}
+    core["problems"] = codes
+    if core["status"] == "unsupported":
+        core["explanation"] = explain.explanation({"code": "off_topic"}, None, {}, [explain._question(q) for q in EXAMPLES[:4]])
+    elif core["status"] == "answer":
+        core["notices"] = explain.notices(ex, core["query"], core["filters"], core.pop("extra_metrics", []))
+    return core
+
+
+def _without(filters: dict, keys) -> dict:
+    return {k: v for k, v in filters.items() if k not in keys}
+
+
+def _suggestions(problem: dict, core: dict, ex: Extracted) -> list:
+    """What to ask instead of a refused question: runnable buttons (checked by validate() first, so a
+    suggestion can never be an invalid query), questions to ask, or another tab."""
+    code, entry_id = problem["code"], core.get("query")
+    filters = core.get("filters", {})
+    metric = filters.get("metric") or next(iter(ex.metrics), None)
+    runnable = []
+    if code in ("negation", "unknown_place") and core.get("status") == "answer":
+        what = {"branch_ranking": "branches", "country_breakdown": "countries"}.get(entry_id, "rows")
+        runnable.append({"label": f"Show all {what} instead", "query": entry_id, "filters": _without(filters, LIST_FILTERS)})
+    elif code == "unknown_measure" and entry_id and ENTRIES[entry_id].metrics:
+        base = _without(filters, ("metric", "order"))
+        runnable += [{"label": vocab.METRICS[k].label, "query": entry_id, "filters": {**base, "metric": k}}
+                     for k in list(ENTRIES[entry_id].metrics)[:MAX_OPTIONS]]
+    checked = []
+    for option in runnable:
+        try:
+            option["filters"] = validate(option["query"], option["filters"])
+            checked.append(option)
+        except HTTPException:
+            pass
+    if code == "customer":
+        return [explain._question("Top 20 exposures"), {"label": "Open Portfolio & credit risk", "href": "/portfolio"}]
+    if code == "forecast":
+        label = vocab.METRICS[metric].label if metric in vocab.METRICS else None
+        return [{"label": "Open Scenario modelling", "href": "/scenario"}] + \
+               ([explain._question(f"{label} over the last 7 days")] if label else [])
+    if code == "unsupported_split":
+        return explain.breakdown_questions(metric if metric in vocab.METRICS else None)
+    return checked or [explain._question(q) for q in EXAMPLES[:4]]
+
+
+def _merge_core(model: dict, ex: Extracted) -> dict:
+    """The question type comes from the text when the text says it (text_entry), otherwise from the
     model. Metric, split and order come from the text; only for a question the word lists can't read
     (e.g. Arabic) may the model name the metric - and then the chips show it and it can be changed.
     """
-    if ex.action:
-        return {"status": "unsupported", "reason": "This panel only reads reports - it can't change anything."}
     model_entry = model.get("query") if model.get("query") in ENTRIES else None
     entry_id = text_entry(ex) or model_entry
     if entry_id is None:
         return {"status": "unsupported"}
     overridden = entry_id != model_entry          # recorded in the audit row, to measure the model
     entry = ENTRIES[entry_id]
-    filters, ignored = {}, []
+    filters, ignored, extra_metrics = {}, [], []
 
-    text_metrics = [m for m in (_entry_metric(entry_id, k) for k in ex.metrics) if m]
-    if text_metrics:
+    text_metrics = list(dict.fromkeys(m for m in (_entry_metric(entry_id, k) for k in ex.metrics) if m))
+    if len(text_metrics) > 1 and not entry.metric_required:
+        extra_metrics = text_metrics            # "deposits and loans by country": every measure, said so
+    elif text_metrics:
         filters["metric"] = text_metrics[0]
+        extra_metrics = text_metrics[1:]        # "profit and revenue by branch": ranked by the first, said so
     elif ex.metrics and entry.metrics:
         names = ", ".join(vocab.METRICS[k].label for k in ex.metrics)
         return _clarify_metric(entry_id, {}, f"{names} isn't available in “{entry.label}”. Which measure should I show?")
@@ -136,12 +195,15 @@ def merge(model: dict, ex: Extracted) -> dict:
     if ex.top_n and "top_n" in entry.filters:
         filters["top_n"] = min(ex.top_n, 500)
     if "order" in entry.filters and filters.get("metric"):
-        filters["order"] = _order(ex.sort_word, filters["metric"])
+        threshold = ex.problem("threshold")
+        # "profit above 1 million" can't be filtered yet, so the rows that meet it go first (explain.notices says so).
+        filters["order"] = ("asc" if threshold["direction"] == "low" else "desc") if threshold else _order(ex.sort_word, filters["metric"])
     if "status" in entry.filters and ex.status:
         filters["status"] = ex.status
     if "view" in entry.filters and ex.by_flag:
         filters["view"] = "flag"
-    return {"status": "answer", "query": entry_id, "filters": filters, "ignored": ignored, "overridden": overridden}
+    return {"status": "answer", "query": entry_id, "filters": filters, "ignored": ignored, "overridden": overridden,
+            "extra_metrics": extra_metrics}
 
 
 def _clarify_metric(entry_id: str, base: dict, question: str) -> dict:
@@ -331,7 +393,8 @@ def ask(user: dict, question: str, entry_id: Optional[str] = None, filters: Opti
         ran = execute(result["query"], result["filters"])
         response["status"] = ran["status"]
         if ran["status"] == "answer":
-            response.update(columns=ran["columns"], rows=ran["rows"], source=ran["source"], notes=ran["notes"])
+            response.update(columns=ran["columns"], rows=ran["rows"], source=ran["source"], notes=ran["notes"],
+                            notices=result.get("notices", []))
         else:
             response["clarify"] = ran["clarify"]
         response["understood"] = {"query": result["query"], "label": ENTRIES[result["query"]].label,
@@ -339,12 +402,13 @@ def ask(user: dict, question: str, entry_id: Optional[str] = None, filters: Opti
     elif result["status"] == "clarify":
         response["clarify"] = result["clarify"]
         response["understood"] = {"query": result["query"], "label": ENTRIES[result["query"]].label}
-    elif result.get("reason"):
-        response["reason"] = result["reason"]
+    else:
+        response["explanation"] = result.get("explanation")
 
-    response["audit_id"] = _audit(user, "ASK_QUESTION", result.get("query") or "unsupported", {
+    response["audit_id"] = _audit(user, "ASK_QUESTION", result.get("query") if response["status"] != "unsupported" else "unsupported", {
         "question": question, "model": model_raw, "model_name": llm.model_name() if model_raw is not None else None,
-        "text_overrode_model": result.get("overridden", False), "filters": result.get("filters"),
+        "text_overrode_model": result.get("overridden", False), "problems": result.get("problems", []),
+        "filters": result.get("filters"),
         "status": response["status"], "rows": len(response.get("rows", [])), "ignored": ignored,
         "ms": round((time.monotonic() - started) * 1000),
     })
