@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from . import db
 from .config import get_settings
-from .routers import auth, health, kpi, performance, portfolio, reconciliation, refresh, reports, scenario, workflow
+from .routers import ask, auth, health, kpi, performance, portfolio, reconciliation, refresh, reports, scenario, workflow
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -52,5 +52,5 @@ async def database_unavailable(request: Request, exc: psycopg2.OperationalError)
     return JSONResponse(status_code=503, content={"detail": "Database unavailable - try again shortly"})
 
 
-for module in (health, auth, kpi, portfolio, scenario, performance, reports, workflow, reconciliation, refresh):
+for module in (health, auth, kpi, portfolio, scenario, performance, reports, workflow, reconciliation, refresh, ask):
     app.include_router(module.router, prefix="/api/v1")

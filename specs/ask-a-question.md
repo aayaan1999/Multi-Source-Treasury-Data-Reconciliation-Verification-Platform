@@ -1,6 +1,12 @@
 # Spec: Ask a Question on Reports (client point 7: CHT-1..5)
 
-**Status:** Spec only — not yet implemented. Draft for review (2026-09-28).
+**Status:** First version built 2026-09-28 — backend `backend/app/ask/` + `routers/ask.py`, panel
+`frontend/src/ask/AskPanel.jsx` on Reports, golden set `backend/tests/ask_questions.json`, evaluation
+`scripts/eval_ask.py`. Backend (pytest, fake model) and frontend (vitest) tests pass; **not yet checked in
+a browser**. **Not ready to demo:** the first evaluation against the real model (Ollama, qwen2.5:3b, CPU)
+picked the right question type for 37/54 (69%), was fully right for 35/54, and **showed a wrong table for
+13/54** (mostly country and KPI questions sent to `loan_breakdown` or other entries); ~5 s per question.
+Next: improve the prompt / let the text override the entry where it is unambiguous, re-run the evaluation.
 **Backlog:** CHT-1..CHT-5 in `project-docs/CLIENT-FEEDBACK-BACKLOG.md` (section 7, "Conversational reporting").
 **Changes a recorded decision:** the backlog's 2026-09-24 decision was *rule-based, no AI*. This spec
 replaces the rule-based parser (CHT-2) with a **self-hosted language model** at the manager's request

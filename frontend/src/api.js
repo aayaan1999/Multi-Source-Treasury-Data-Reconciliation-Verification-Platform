@@ -97,8 +97,8 @@ function query(params = {}) {
  * Downloads a file the API generates (Excel, PDF): fetch with the login token, then hand the browser a temporary
  * link. A plain <a href> can't be used because it wouldn't carry the Authorization header.
  */
-export async function download(path, { method = "GET", fallbackName = "download" } = {}) {
-  const response = await send(path, { method });
+export async function download(path, { method = "GET", body, fallbackName = "download" } = {}) {
+  const response = await send(path, { method, body });
   const blob = await response.blob();
   const match = /filename="?([^";]+)"?/i.exec(response.headers.get("Content-Disposition") || "");
   const name = match ? match[1] : fallbackName;
@@ -151,6 +151,9 @@ export const api = {
   report: (id) => request(`/reports/${id}`),
   drill: (id, lineCode) => request(`/reports/${id}/drill/${encodeURIComponent(lineCode)}`),
   exportReport: (id, kind) => download(`/reports/${id}/export/${kind}`, { method: "POST", fallbackName: `report.${kind === "pdf" ? "pdf" : "xlsx"}` }),
+  // Ask a Question (specs/ask-a-question.md): a typed question, or { query, filters } from a chip/button
+  ask: (body) => request("/ask", { method: "POST", body }),
+  exportAsk: (body) => download("/ask/export", { method: "POST", body, fallbackName: "answer.xlsx" }),
 
   // Screen 6 - everything except task state/actions, which go straight to Tasklist (tasklistApi.js)
   exceptionDetail: (params) => request(`/workflow/exceptions/detail${query(params)}`),
