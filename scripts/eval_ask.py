@@ -1,6 +1,6 @@
 """Scores the real model on the golden questions (specs/ask-a-question.md section 11.3).
 
-    backend/.venv/Scripts/python.exe scripts/eval_ask.py [--only N]
+    backend/.venv/Scripts/python.exe scripts/eval_ask.py [--only N] [--file backend/tests/ask_questions_holdout.json]
 
 Reads LLM_BASE_URL / LLM_MODEL (/ LLM_API_KEY) from backend/.env - the laptop's Ollama, or a vLLM
 server - and runs every question in backend/tests/ask_questions.json through the same steps as the
@@ -51,8 +51,13 @@ def same(got: dict, case: dict) -> bool:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--only", type=int, help="first N questions only")
+    parser.add_argument("--file", default=str(ROOT / "backend" / "tests" / "ask_questions.json"),
+                        help="question file (e.g. backend/tests/ask_questions_holdout.json)")
     args = parser.parse_args()
-    golden = json.loads((ROOT / "backend" / "tests" / "ask_questions.json").read_text(encoding="utf-8"))
+    path = pathlib.Path(args.file)
+    golden = json.loads(path.read_text(encoding="utf-8"))
+    if "names_from" in golden:     # the held-out file reuses the golden file's bank names
+        golden["names"] = json.loads((path.parent / golden["names_from"]).read_text(encoding="utf-8"))["names"]
     vocab.names = lambda: golden["names"]
     today = date.fromisoformat(golden["today"])
     cases = golden["cases"][: args.only] if args.only else golden["cases"]

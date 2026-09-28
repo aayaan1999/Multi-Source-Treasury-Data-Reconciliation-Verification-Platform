@@ -20,7 +20,6 @@ LIST_FILTERS = ("countries", "regions", "branches", "segments", "products", "sta
 FILTER_LABELS = {"metric": "Measure", "dimension": "Split by", "order": "Order", "top_n": "Show", "period": "Period",
                  "countries": "Country", "regions": "Region", "branches": "Branch", "segments": "Segment",
                  "products": "Product", "stages": "Stage", "tables": "Table", "status": "Status", "view": "View"}
-MODEL_SORT = {"best": "good", "worst": "bad", "highest": "high", "lowest": "low"}
 STATUS_TEXT = {"open": "Open only", "closed": "Closed only", "all": "Open and closed"}
 VIEW_TEXT = {"table": "Per table", "flag": "Per check"}
 MAX_OPTIONS = 6
@@ -42,17 +41,56 @@ def _order(word: Optional[str], metric: Optional[str]) -> str:
     return "desc"
 
 
+TOPIC_ENTRIES = {"ifrs9": "ifrs9_stages", "data_quality": "data_quality", "breaches": "limit_breaches",
+                 "exposures": "top_exposures", "ageing": "loan_ageing"}
+LOAN_METRICS = {"loans", "bad_loans", "npl_ratio"}
+KPI_METRICS = set(ENTRIES["kpi_value"].metrics)
+
+
+def text_entry(ex: Extracted) -> Optional[str]:
+    """The catalogue entry the question's own words point to, or None when they don't say.
+
+    Most specific first: a named topic (IFRS 9, data quality, breaches, exposures, ageing) - unless
+    two are named, which is left to the model; "<loans> by <dimension>"; then branches, countries,
+    segments, products; a loan "breakdown"; last, a headline KPI measure on its own.
+    """
+    topics = {TOPIC_ENTRIES[c] for c in ex.cues if c in TOPIC_ENTRIES} | ({"ifrs9_stages"} if ex.stages else set())
+    if len(topics) == 1:
+        return topics.pop()
+    if len(topics) > 1:
+        return None
+    first_metric = ex.metrics[0] if ex.metrics else None
+    if ex.dimension and (first_metric is None or first_metric in LOAN_METRICS):
+        return "loan_breakdown"
+    if "branch" in ex.cues or ex.branches or ex.regions:
+        return "branch_ranking"
+    if "country" in ex.cues or ex.countries:
+        return "country_breakdown"
+    if "segment" in ex.cues or (ex.segments and not ex.products):
+        return "segment_performance"
+    if "product" in ex.cues or (ex.products and not ex.segments):
+        return "product_performance"
+    if "breakdown" in ex.cues and (first_metric is None or first_metric in LOAN_METRICS):
+        return "loan_breakdown"
+    if "kpi" in ex.cues or first_metric in KPI_METRICS:
+        return "kpi_value"
+    return None
+
+
 def merge(model: dict, ex: Extracted) -> dict:
-    """-> {"status": "answer"|"clarify"|"unsupported", "query", "filters", "ignored", "clarify"}."""
-    entry_id = model.get("query") if model.get("query") in ENTRIES else None
+    """-> {"status": "answer"|"clarify"|"unsupported", "query", "filters", "ignored", "clarify", "overridden"}.
+
+    The question type comes from the text when the text says it (text_entry), otherwise from the
+    model. Metric, split and order come from the text; only for a question the word lists can't read
+    (e.g. Arabic) may the model name the metric - and then the chips show it and it can be changed.
+    """
+    if ex.action:
+        return {"status": "unsupported", "reason": "This panel only reads reports - it can't change anything."}
+    model_entry = model.get("query") if model.get("query") in ENTRIES else None
+    entry_id = text_entry(ex) or model_entry
     if entry_id is None:
         return {"status": "unsupported"}
-
-    # A bank-wide KPI asked "in Lebanon" is really a country question, where the measure exists per country.
-    if entry_id == "kpi_value" and ex.countries:
-        metric = next((m for m in ex.metrics + [model.get("metric")] if _entry_metric("country_breakdown", m)), None)
-        if metric or not ex.metrics:
-            entry_id = "country_breakdown"
+    overridden = entry_id != model_entry          # recorded in the audit row, to measure the model
     entry = ENTRIES[entry_id]
     filters, ignored = {}, []
 
@@ -62,13 +100,13 @@ def merge(model: dict, ex: Extracted) -> dict:
     elif ex.metrics and entry.metrics:
         names = ", ".join(vocab.METRICS[k].label for k in ex.metrics)
         return _clarify_metric(entry_id, {}, f"{names} isn't available in “{entry.label}”. Which measure should I show?")
-    elif _entry_metric(entry_id, model.get("metric")):
+    elif ex.non_english and _entry_metric(entry_id, model.get("metric")):
         filters["metric"] = _entry_metric(entry_id, model.get("metric"))
     if entry.metric_required and "metric" not in filters:
         return _clarify_metric(entry_id, {}, f"Which measure should {entry.label.lower()} use?")
 
     if "dimension" in entry.filters:
-        dimension = ex.dimension or (model.get("dimension") if model.get("dimension") in vocab.DIMENSIONS else None)
+        dimension = ex.dimension
         if not dimension:
             return {"status": "clarify", "query": entry_id, "clarify": {
                 "question": "How should the loan book be split?",
@@ -98,12 +136,12 @@ def merge(model: dict, ex: Extracted) -> dict:
     if ex.top_n and "top_n" in entry.filters:
         filters["top_n"] = min(ex.top_n, 500)
     if "order" in entry.filters and filters.get("metric"):
-        filters["order"] = _order(ex.sort_word or MODEL_SORT.get(model.get("sort")), filters["metric"])
+        filters["order"] = _order(ex.sort_word, filters["metric"])
     if "status" in entry.filters and ex.status:
         filters["status"] = ex.status
     if "view" in entry.filters and ex.by_flag:
         filters["view"] = "flag"
-    return {"status": "answer", "query": entry_id, "filters": filters, "ignored": ignored}
+    return {"status": "answer", "query": entry_id, "filters": filters, "ignored": ignored, "overridden": overridden}
 
 
 def _clarify_metric(entry_id: str, base: dict, question: str) -> dict:
@@ -301,11 +339,14 @@ def ask(user: dict, question: str, entry_id: Optional[str] = None, filters: Opti
     elif result["status"] == "clarify":
         response["clarify"] = result["clarify"]
         response["understood"] = {"query": result["query"], "label": ENTRIES[result["query"]].label}
+    elif result.get("reason"):
+        response["reason"] = result["reason"]
 
     response["audit_id"] = _audit(user, "ASK_QUESTION", result.get("query") or "unsupported", {
         "question": question, "model": model_raw, "model_name": llm.model_name() if model_raw is not None else None,
-        "filters": result.get("filters"), "status": response["status"], "rows": len(response.get("rows", [])),
-        "ignored": ignored, "ms": round((time.monotonic() - started) * 1000),
+        "text_overrode_model": result.get("overridden", False), "filters": result.get("filters"),
+        "status": response["status"], "rows": len(response.get("rows", [])), "ignored": ignored,
+        "ms": round((time.monotonic() - started) * 1000),
     })
     return response
 

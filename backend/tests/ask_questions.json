@@ -50,7 +50,7 @@
     {"q": "rank the branches", "status": "clarify", "query": "branch_ranking"},
     {"q": "profit by segment", "status": "answer", "query": "segment_performance", "filters": {"metric": "profit", "order": "desc"}},
     {"q": "SME segment profit", "status": "answer", "query": "segment_performance", "filters": {"metric": "profit", "order": "desc", "segments": ["SME"]}},
-    {"q": "bad loans by segment", "status": "answer", "query": "segment_performance", "filters": {"metric": "bad_loans", "order": "desc"}},
+    {"q": "bad loans by segment", "status": "answer", "query": "loan_breakdown", "filters": {"dimension": "segment", "metric": "bad_loans", "order": "desc"}},
     {"q": "retail customers", "status": "answer", "query": "segment_performance", "filters": {"metric": "customers", "order": "desc", "segments": ["Retail"]}},
     {"q": "NPL ratio by loan product", "status": "answer", "query": "product_performance", "filters": {"metric": "npl_ratio", "order": "desc"}},
     {"q": "mortgage interest income", "status": "answer", "query": "product_performance", "filters": {"metric": "interest_income", "order": "desc", "products": ["Mortgage"]}},

@@ -1,12 +1,23 @@
 # Spec: Ask a Question on Reports (client point 7: CHT-1..5)
 
 **Status:** First version built 2026-09-28 — backend `backend/app/ask/` + `routers/ask.py`, panel
-`frontend/src/ask/AskPanel.jsx` on Reports, golden set `backend/tests/ask_questions.json`, evaluation
+`frontend/src/ask/AskPanel.jsx` on its own "Ask a question" tab (`/ask`, `pages/Ask.jsx`, styled after
+`project-docs/client-demo/Client-Demo-Overview.html`), golden set `backend/tests/ask_questions.json`, evaluation
 `scripts/eval_ask.py`. Backend (pytest, fake model) and frontend (vitest) tests pass; **not yet checked in
-a browser**. **Not ready to demo:** the first evaluation against the real model (Ollama, qwen2.5:3b, CPU)
-picked the right question type for 37/54 (69%), was fully right for 35/54, and **showed a wrong table for
-13/54** (mostly country and KPI questions sent to `loan_breakdown` or other entries); ~5 s per question.
-Next: improve the prompt / let the text override the entry where it is unambiguous, re-run the evaluation.
+a browser by a user yet**. Evaluations against the real model (Ollama, qwen2.5:3b, CPU):
+
+| Run | Right type | Fully right | Wrong table | Time |
+|---|---|---|---|---|
+| 1st, golden 54 | 37 (69%) | 35 (65%) | **13** | 5.1 s |
+| After fixes, golden 54 | 52 (96%) | 53 (98%) | **0** | 3.4 s |
+| After fixes, held-out 30 (`ask_questions_holdout.json`) | 26 (87%) | 27 (90%) | **1** | 3.4 s |
+
+Fixes (2026-09-28): the question's own words decide the type where they name it (`service.text_entry`),
+the model's metric is used only for questions the word lists can't read, its split and sort order never;
+requests to change anything are refused; worked examples in the prompt. The held-out run then found two
+gaps, now fixed ("which 3 branches" as a count; "profitable") - so the held-out set is **no longer
+blind**: write a fresh one before trusting a new score. Known remaining oddity: "What's the time in
+Riyadh?" asks which branch measure instead of refusing (safe - a question, not a table).
 **Backlog:** CHT-1..CHT-5 in `project-docs/CLIENT-FEEDBACK-BACKLOG.md` (section 7, "Conversational reporting").
 **Changes a recorded decision:** the backlog's 2026-09-24 decision was *rule-based, no AI*. This spec
 replaces the rule-based parser (CHT-2) with a **self-hosted language model** at the manager's request

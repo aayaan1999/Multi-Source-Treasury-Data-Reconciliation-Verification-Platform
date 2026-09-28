@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { api } from "./api";
 import { useAuth } from "./auth";
 import { applyLimits } from "./kpi/kpiConfig";
+import Ask from "./pages/Ask";
 import AuditOversight from "./pages/AuditOversight";
 import Dashboard from "./pages/Dashboard";
 import KpiDetail from "./pages/KpiDetail";
@@ -50,6 +51,7 @@ export default function App() {
       <Route path="/performance" element={<RequireAuth><Performance /></RequireAuth>} />
       <Route path="/reports" element={<RequireAuth><Reports /></RequireAuth>} />
       <Route path="/reports/:id" element={<RequireAuth><ReportView /></RequireAuth>} />
+      <Route path="/ask" element={<RequireAuth><Ask /></RequireAuth>} />
       <Route path="/tasks" element={<RequireAuth><Tasks /></RequireAuth>} />
       <Route path="/audit-oversight" element={<RequireAuth><AuditOversight /></RequireAuth>} />
       <Route path="/reconciliation" element={<RequireAuth><Reconciliation /></RequireAuth>} />

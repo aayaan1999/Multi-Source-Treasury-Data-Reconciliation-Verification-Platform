@@ -82,8 +82,55 @@ def test_a_kpi_asked_for_one_country_becomes_the_country_breakdown(golden_names)
 
 
 def test_a_place_the_question_type_cannot_use_is_reported_as_ignored(golden_names):
-    result = merge("CAR at Doha Main", {"query": "kpi_value", "metric": "car"})
-    assert result["query"] == "kpi_value" and result["ignored"] == ["Doha Main"]
+    result = merge("IFRS 9 staging in Lebanon", {"query": "ifrs9_stages"})
+    assert result["query"] == "ifrs9_stages" and result["ignored"] == ["Lebanon"]
+
+
+# Each of these is a wrong table the real model produced in the first evaluation (2026-09-28).
+@pytest.mark.parametrize("question, model_said, expected", [
+    ("NPL ratio by country", "loan_breakdown", "country_breakdown"),
+    ("NPL ratio in Lebanon", "loan_breakdown", "country_breakdown"),
+    ("deposits in Saudi", "segment_performance", "country_breakdown"),
+    ("LCR today", "limit_breaches", "kpi_value"),
+    ("total assets as of 25 Sep", "top_exposures", "kpi_value"),
+    ("NPL over the last 7 days", "loan_ageing", "kpi_value"),
+    ("stage 3 loans", "loan_ageing", "ifrs9_stages"),
+    ("NPL ratio by loan product", "loan_breakdown", "product_performance"),
+    ("IFRS 9 staging", "unsupported", "ifrs9_stages"),
+    ("how many records were rejected", "unsupported", "data_quality"),
+])
+def test_the_question_words_decide_the_type_over_the_model(question, model_said, expected, golden_names):
+    result = merge(question, {"query": model_said})
+    assert result["query"] == expected and result["overridden"] is True
+
+
+# Gaps found by the held-out questions (backend/tests/ask_questions_holdout.json), 2026-09-28.
+def test_a_count_before_what_is_listed_is_a_top_n(golden_names):
+    result = merge("Which 3 branches have the lowest profit?", {"query": "branch_ranking"})
+    assert result["filters"] == {"metric": "profit", "top_n": 3, "order": "asc"}
+
+
+def test_most_profitable_means_profit(golden_names):
+    assert merge("most profitable branch", {"query": "branch_ranking"})["filters"] == {"metric": "profit", "order": "desc"}
+
+
+def test_a_request_to_change_anything_is_refused_whatever_the_model_says(golden_names):
+    for question in ("delete all the loans", "please send the NPL report to the regulator", "update the CAR limit"):
+        result = merge(question, {"query": "loan_breakdown", "metric": "loans"})
+        assert result["status"] == "unsupported" and "only reads" in result["reason"]
+
+
+def test_the_model_does_not_add_a_measure_or_a_split_to_an_english_question(golden_names):
+    assert merge("show me all the KPIs", {"query": "kpi_value", "metric": "car"})["filters"] == {}
+    assert merge("loan breakdown", {"query": "loan_breakdown", "dimension": "product"})["status"] == "clarify"
+    assert merge("cost to income in Beirut branches", {"query": "branch_ranking", "sort": "best"})["filters"]["order"] == "desc"
+
+
+def test_for_a_question_the_word_lists_cant_read_the_model_may_name_the_measure(golden_names):
+    arabic = "ما هي نسبة القروض المتعثرة حسب الدولة"
+    assert merge(arabic, {"query": "country_breakdown", "metric": "npl_ratio"})["filters"]["metric"] == "npl_ratio"
+    # ...but its wrong guess of the type still can't produce a table: loan_breakdown needs a split the text doesn't give
+    assert merge(arabic, {"query": "loan_breakdown", "metric": "npl_ratio"})["status"] == "clarify"
 
 
 def test_worst_means_highest_for_cost_to_income_and_lowest_for_profit(golden_names):

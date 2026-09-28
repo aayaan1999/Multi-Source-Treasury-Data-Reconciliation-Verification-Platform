@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import AskPanel from "../ask/AskPanel";
 import DataTable from "../components/DataTable";
 import { CheckIcon, CrossIcon, DashIcon, WarningIcon } from "../components/icons";
 import PageShell, { LoadError, Loading } from "../components/PageShell";
@@ -47,9 +46,6 @@ export default function Reports() {
         <StatBox label="Pending approval" value={counts.pendingApproval} hint="Draft, under review or approved, not yet sent" />
         <StatBox label="Overdue" value={counts.overdue} hint="Past the due date, not submitted" status={counts.overdue ? "action" : "good"} />
       </ul>
-      <Section id="ask" title="Ask a question" description="Type a question about the bank's figures and get a table you can export. Every number comes straight from the database; the chips show exactly what was used.">
-        <AskPanel />
-      </Section>
       <Section id="calendar" title="Report calendar" description="Red: overdue or under 5 days left. Amber: under 10 days. Green: on time or submitted. Only reports with a built return can be opened.">
         <DataTable
           caption="Report calendar"

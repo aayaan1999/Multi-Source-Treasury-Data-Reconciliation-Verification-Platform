@@ -61,7 +61,7 @@ METRIC_SYNONYMS = {
     "dollarization": ["dollarization", "dollarisation", "dollar share", "usd share"],
     "deposits": ["deposits", "deposit"],
     "loans": ["loan book", "loan portfolio", "lending", "loans", "loan", "outstanding"],
-    "profit": ["net profit", "profitability", "profits", "profit", "net income", "earnings"],
+    "profit": ["net profit", "profitability", "profitable", "profits", "profit", "net income", "earnings"],
     "revenue": ["revenues", "revenue", "income", "sales"],
     "cost": ["operating costs", "expenses", "costs", "cost", "opex"],
     "staff": ["headcount", "employees", "staff"],

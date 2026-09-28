@@ -27,6 +27,27 @@ SORT_WORDS = {  # word -> high | low | good | bad (section 6.4)
     "best": "good", "strongest": "good", "worst": "bad", "weakest": "bad", "poorest": "bad",
 }
 FUZZY = 0.85
+# Things a question can ask for a number of ("which 3 branches", "the 5 largest borrowers" is handled above).
+COUNTED = r"branch(?:es)?|countr(?:y|ies)|products?|segments?|borrowers?|exposures?|customers?|clients?"
+
+# Words that name the kind of question outright. Where they are present, they - not the model -
+# decide the catalogue entry (specs/ask-a-question.md section 6.3): the first evaluation showed the
+# 3B model sending "NPL ratio by country" to the loan breakdown and "IFRS 9 staging" to unsupported.
+CUES = {
+    "ifrs9": r"ifrs\s*-?\s*9|ifrs|staging|provisions?|ecl",
+    "data_quality": r"data quality|rejected|exceptions?|flagged|dq|quality checks?",
+    "breaches": r"breach(?:es|ed)?|limits?",
+    "exposures": r"exposures?|borrowers?|concentration",
+    "ageing": r"age?ing|arrears|days past due|dpd|overdue",
+    "breakdown": r"breakdown|broken down|split|loan book|portfolio",
+    "branch": r"branch(?:es)?",
+    "country": r"countr(?:y|ies)",
+    "segment": r"segments?",
+    "product": r"products?",
+    "kpi": r"kpis?|headline",
+}
+# An instruction to change something, at the start of the question ("delete ...", "please send ...").
+ACTION = r"^\s*(?:please\s+|can you\s+|could you\s+)?(?:delete|drop|remove|insert|modify|create|send|email|approve|reject|truncate|write|update)\b"
 
 
 @dataclass
@@ -56,6 +77,9 @@ class Extracted:
     dimension: Optional[str] = None
     by_flag: bool = False
     status: Optional[str] = None               # open | closed | all (limit breaches)
+    cues: set = field(default_factory=set)     # topic words that say which question this is (CUES below)
+    action: bool = False                       # asks to change something ("delete ...") - this panel only reads
+    non_english: bool = False                  # the word lists can't read it; only then may the model name the metric
 
 
 class _Text:
@@ -186,6 +210,12 @@ def _top_n(t: _Text) -> tuple:
     nums = r"\d{1,3}|" + "|".join(NUMBER_WORDS)
     m = re.search(rf"(?<!\w)({words}|first)\s+({nums})(?!\w)", t.s) or re.search(rf"(?<!\w)({nums})\s+({words})(?!\w)", t.s)
     if not m:
+        # "which 3 branches ...", "the 5 borrowers ...": a count straight before what is being listed.
+        m = re.search(rf"(?<!\w)({nums})\s+(?:{COUNTED})(?!\w)", t.s)
+        if m:
+            t.use(m.start(), m.start() + len(m[1]))
+            n = int(m[1]) if m[1].isdigit() else NUMBER_WORDS[m[1]]
+            return (n if n > 0 else None), None
         return None, None
     word, num = (m[1], m[2]) if not (m[1].isdigit() or m[1] in NUMBER_WORDS) else (m[2], m[1])
     t.use(m.start(), m.end())
@@ -256,6 +286,10 @@ def _use_all(t: _Text, phrases) -> None:
 def extract(question: str, today: date, names: dict) -> Extracted:
     t = _Text(question)
     out = Extracted()
+    out.cues = {name for name, pattern in CUES.items() if re.search(rf"(?<!\w)(?:{pattern})(?!\w)", t.s)}
+    out.action = bool(re.search(ACTION, t.s))
+    letters = [c for c in question if c.isalpha()]
+    out.non_english = bool(letters) and sum(c.isascii() for c in letters) < len(letters) / 2
     out.period = _period(t, today)
     out.top_n, top_word = _top_n(t)
 
