@@ -7,12 +7,36 @@ from .config import get_settings
 _pool = None
 
 
+class _LazyPool(psycopg2.pool.ThreadedConnectionPool):
+    """Opens no connections at startup, but keeps up to `maxconn` idle ones for reuse.
+
+    psycopg2's pools only keep a returned connection while fewer than `minconn` are idle and close the
+    rest, so a plain minconn=0 pool closed every connection after one query and paid a fresh TLS handshake
+    to Neon (~2 s) on every query - found live 2026-09-28, every screen endpoint took 2.5 s or more.
+    minconn is only used at construction (to open connections) and when putting one back, so raising it
+    after construction gives both: a lazy start and reuse.
+
+    Connections are autocommit: query() and write() each send exactly one statement, and without autocommit
+    psycopg2 adds a BEGIN and the pool code a ROLLBACK/COMMIT, i.e. three round trips to Neon (~0.3 s each
+    from here) for every one-query request. commit()/rollback() below then send nothing to the server.
+    """
+
+    def __init__(self, maxconn: int, **kwargs):
+        super().__init__(0, maxconn, **kwargs)  # 0: the API starts even if Neon is suspended or unreachable
+        self.minconn = maxconn
+
+    def _connect(self, key=None):
+        conn = super()._connect(key)
+        conn.autocommit = True
+        return conn
+
+
 def init_pool() -> None:
-    """minconn=0: the API starts even if Neon is suspended or unreachable; /health reports it."""
+    """Nothing is opened here, so the API starts even if Neon is suspended or unreachable; /health reports it."""
     global _pool
     s = get_settings()
-    _pool = psycopg2.pool.ThreadedConnectionPool(
-        0, s.db_pool_max, dsn=s.database_url,
+    _pool = _LazyPool(
+        s.db_pool_max, dsn=s.database_url,
         connect_timeout=30, keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
     )
 
