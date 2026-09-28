@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import AskPanel from "./AskPanel";
 import { formatCell, refinedFilters } from "./answer";
+import { clearAskHistory } from "./store";
 import { api } from "../api";
 
 vi.mock("../api", async (importOriginal) => {
@@ -34,7 +35,10 @@ const ANSWER = {
   examples: [],
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  clearAskHistory();
+});
 
 async function askIt(text) {
   fireEvent.change(screen.getByLabelText("Ask a question about the reports"), { target: { value: text } });
@@ -111,6 +115,38 @@ describe("Ask panel", () => {
     await askIt("tell me a joke");
     expect(screen.getByText(/I can only answer questions about the bank's reports/)).toBeTruthy();
     expect(within(screen.getByRole("article")).getByRole("button", { name: "NPL ratio by country" })).toBeTruthy();
+  });
+
+  // The bug reported on 2026-09-28: switching tabs unmounts the panel, and the answers used to go with it.
+  it("keeps the answers when you switch tabs and come back", async () => {
+    api.ask.mockResolvedValue(ANSWER);
+    const first = render(<AskPanel />);
+    await askIt("top 2 branches by profit");
+    first.unmount();                                   // another tab
+    render(<AskPanel />);                              // back to Ask a question
+    expect(screen.getByText("“top 2 branches by profit”")).toBeTruthy();
+    expect(within(screen.getByRole("table")).getByText("Riyadh Central")).toBeTruthy();
+  });
+
+  it("shows an answer that arrived while you were on another tab", async () => {
+    let resolve;
+    api.ask.mockReturnValue(new Promise((r) => { resolve = r; }));
+    const first = render(<AskPanel />);
+    await askIt("top 2 branches by profit");
+    first.unmount();
+    await act(async () => resolve(ANSWER));            // lands while the panel isn't on screen
+    render(<AskPanel />);
+    expect(within(screen.getByRole("table")).getByText("Riyadh Central")).toBeTruthy();
+  });
+
+  it("keeps the answers across a page refresh, and clears them on request", async () => {
+    api.ask.mockResolvedValue(ANSWER);
+    render(<AskPanel />);
+    await askIt("top 2 branches by profit");
+    expect(JSON.parse(sessionStorage.getItem("bdp_ask_history"))[0].question).toBe("top 2 branches by profit");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Clear these answers" })));
+    expect(screen.queryByRole("article")).toBeNull();
+    expect(sessionStorage.getItem("bdp_ask_history")).toBeNull();
   });
 
   it("says plainly when the model server isn't running", async () => {

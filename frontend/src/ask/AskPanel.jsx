@@ -1,43 +1,27 @@
 import { useState } from "react";
-import { ApiError, api } from "../api";
+import { api } from "../api";
 import DataTable from "../components/DataTable";
 import { ExportButton } from "../components/PageShell";
 import { formatDay } from "../kpi/format";
 import { formatCell, NUMERIC_UNITS, refinedFilters } from "./answer";
+import { clearAskHistory, runAsk, useAskHistory } from "./store";
 
 const EXAMPLES = ["NPL ratio by country", "Top 5 branches by profit", "What is our capital adequacy ratio?", "IFRS 9 staging", "Open limit breaches"];
 const MAX_LENGTH = 300;
 const BUTTON = "ask-chip px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-60";
 
-let nextId = 1;
-
 /**
  * Ask a Question (specs/ask-a-question.md, CHT-3): a typed question becomes one approved query's
  * table. The model on the server only picks which question it is; every number comes from the
  * database. Chips show what was understood and can be changed or removed, which re-runs without the
- * model. Answers stay listed (newest first) for this visit only. Styled by the .ask-* classes
- * (the client demo overview's look), on the Ask a question tab.
+ * model. Answers stay listed (newest first, up to 20) until the browser tab closes or you log out -
+ * the history lives in ./store, not in this component, so switching tabs keeps it. Styled by the
+ * .ask-* classes (the client demo overview's look), on the Ask a question tab.
  */
 export default function AskPanel() {
   const [question, setQuestion] = useState("");
-  const [answers, setAnswers] = useState([]);
-  const [busy, setBusy] = useState(false);
-
-  async function run(body, replaceId) {
-    const id = replaceId ?? nextId++;
-    const pending = { id, question: body.question, pending: true };
-    setAnswers((list) => (replaceId ? list.map((a) => (a.id === id ? { ...a, pending: true } : a)) : [pending, ...list]));
-    setBusy(true);
-    let result;
-    try {
-      result = { id, ...(await api.ask(body)) };
-    } catch (e) {
-      const unavailable = e instanceof ApiError && e.status === 503;
-      result = { id, question: body.question, status: "error", message: unavailable ? "Ask a question isn't available right now - the model server isn't running." : e.message };
-    }
-    setAnswers((list) => list.map((a) => (a.id === id ? result : a)));
-    setBusy(false);
-  }
+  const { answers, busy } = useAskHistory();
+  const run = runAsk;
 
   function submit(e) {
     e.preventDefault();
@@ -73,7 +57,14 @@ export default function AskPanel() {
           ))}
         </div>
       </form>
-      <div className="mt-5 space-y-5" aria-live="polite">
+      {answers.length > 0 && (
+        <div className="mt-4 flex justify-end">
+          <button type="button" disabled={busy} onClick={clearAskHistory} className="text-xs text-muted underline-offset-4 hover:text-ink hover:underline disabled:opacity-60">
+            Clear these answers
+          </button>
+        </div>
+      )}
+      <div className="mt-2 space-y-5" aria-live="polite">
         {answers.map((a, i) => (
           <AnswerCard key={a.id} answer={a} gold={i % 2 === 1} busy={busy} onAsk={(q) => run({ question: q })} onRefine={(query, filters) => run({ question: a.question, query, filters }, a.id)} />
         ))}
