@@ -293,7 +293,7 @@ loans_clean = loans_clean.filter(~F.col("loan_id").isin(loan_orphan_ids))
 # MAGIC %md
 # MAGIC ## Transactions
 # MAGIC
-# MAGIC `MISSING_TRANSACTION_ID`, `INVALID_AMOUNT`, `INVALID_CHANNEL`, plus `ORPHAN_ACCOUNT`.
+# MAGIC `MISSING_TRANSACTION_ID`, `INVALID_AMOUNT`, `INVALID_CHANNEL`, `INVALID_CURRENCY`, plus `ORPHAN_ACCOUNT`.
 
 # COMMAND ----------
 
@@ -306,9 +306,16 @@ transactions_checked = raw_transactions.select(
         "INVALID_CHANNEL",
         F.concat(F.lit("channel '"), F.coalesce(F.col("channel"), F.lit("")), F.lit("' is not one of Branch/ATM/Mobile/Online")),
     ).alias("chk_3"),
+    # Same currency check as accounts: an unrecognised code (e.g. "US$") would otherwise reach
+    # Notebooks 3 and 5, whose get_live_rate() call fails the whole run on it.
+    flag_struct(
+        ~F.col("currency").isin(list(VALID_CURRENCY_CODES)),
+        "INVALID_CURRENCY",
+        F.concat(F.lit("currency '"), F.coalesce(F.col("currency"), F.lit("")), F.lit("' is not recognised")),
+    ).alias("chk_4"),
 )
 
-transactions_clean, transactions_exceptions = finalize(transactions_checked, "transactions", "transaction_id", ["chk_1", "chk_2", "chk_3"])
+transactions_clean, transactions_exceptions = finalize(transactions_checked, "transactions", "transaction_id", ["chk_1", "chk_2", "chk_3", "chk_4"])
 exception_frames.append(transactions_exceptions)
 transactions_orphan_exceptions = orphan_flags(raw_transactions, "transaction_id", "account_id", accounts_clean, "account_id", "ORPHAN_ACCOUNT", "transactions")
 exception_frames.append(transactions_orphan_exceptions)
