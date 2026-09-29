@@ -202,6 +202,30 @@ select optgroup {
   border-left: 3px solid var(--ink);
   padding-left: 0.6rem;
 }
+/* Spinner and toast entrance on the Data ingestion screen. */
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.toast-in {
+  animation: toast-in 0.18s ease-out;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .toast-in {
+    animation: none;
+  }
+}
 /* A stat card's coloured top edge. */
 .top-edge {
   border-top: 4px solid var(--brand-yellow);

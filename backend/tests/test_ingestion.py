@@ -10,9 +10,9 @@ API = "/api/v1"
 def test_without_a_pipeline_run_everything_is_labelled_demo(client, auth, monkeypatch):
     monkeypatch.setattr(ingestion, "_latest_run", lambda: [])     # a database the pipeline hasn't loaded yet
     body = client.get(f"{API}/ingestion/overview", headers=auth).json()
-    assert body["stats"]["demo"] and body["recent"]["demo"] and body["connectors"]["demo"] and body["schedules"]["demo"]
+    assert body["stats"]["demo"] and body["recent"]["demo"] and body["schedules"]["demo"]
     assert body["stats"]["failed"] == 1 and "authentication expired" in body["stats"]["failed_example"]
-    assert body["sources"] == {"demo": True, "connected": 5, "total": 6, "missing": ["Core Banking / ERP"]}
+    assert not body["connectors"]["demo"]                              # sources are real state now
 
 
 def test_the_latest_run_gives_real_counts_per_source(client, auth, db):
@@ -35,7 +35,7 @@ def test_the_latest_run_gives_real_counts_per_source(client, auth, db):
         by_data = {r["data"]: r for r in body["recent"]["items"]}
         assert by_data["transactions.csv"]["source"] == "Lebanon Core Banking" and by_data["transactions.csv"]["held"] == 3
         assert by_data["fx_rates.csv"]["status"] == "failed" and by_data["accounts.csv"]["status"] == "success"
-        assert body["connectors"]["demo"] and body["trigger"] == "On file arrival"     # still placeholders
+        assert body["schedules"]["demo"] and body["trigger"] == "On file arrival"     # still placeholders
     finally:
         db.execute("DELETE FROM pipeline_reconciliation WHERE recon_key IN ('k-old', 'k1', 'k2', 'k3')")
 

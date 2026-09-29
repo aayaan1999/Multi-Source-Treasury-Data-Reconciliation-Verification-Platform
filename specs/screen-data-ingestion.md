@@ -48,13 +48,32 @@ explains itself on hover or focus, the same pattern as the existing "Assumption"
 | Recent ingestions | Same rows, one per source × country × data type; "failed" = the completeness check's "No rows delivered" (FLOW-1b) | **Real** when a run exists; demo rows otherwise |
 | Schedule button | `databricks.yml` file-arrival trigger | Real (hard-coded label matching the file) |
 | Run all sources now | Refresh now, Databricks Jobs API | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
-| Sources connected, Connect a source | `DEMO["connectors"]` | Demo (ING-1) |
+| Sources connected, Connect a source | Catalogue in `app/connectors.py` (core banking files, Salesforce, PostgreSQL, REST API, AWS S3, Snowflake) + `source_connectors` (migration 018): non-secret settings only | **Real state** (ING-1 part 1); "Test connection" checks the form, not a live sign-in |
 | Scheduled pulls | `DEMO["schedules"]` | Demo (ING-2) |
-| Upload files | Browser only: type and 2 GB size checked, progress shown, **nothing sent** | Demo (ING-3) |
+| Upload files (CSV, JSON, Parquet, XLSX, XML, PDF) | Browser only: type and 2 GB size checked, progress and a completion toast shown, **nothing sent** | Demo (ING-3) |
+| Run all sources now, each source's Sync | `POST /ingestion/run`, `POST /ingestion/sources/{key}/sync` → Databricks `POST /api/2.1/jobs/run-now` (via refresh.py); spinner and toasts | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
 
 The live data today has one source system, `CORE_CSV`: CSV files per data type from the landing volume,
 tagged by country (Lebanon, Saudi Arabia, Qatar, plus "Group" for bank-wide tables). It shows as
 "Lebanon Core Banking · File (CSV) · transactions.csv" and so on.
+
+## 3a. Connecting a source (added 2026-09-29, client demo)
+
+- **Connect** opens a form drawn from the source's field list; **Connect & Save** stays disabled until
+  every required field is filled and well-formed (https:// addresses, ports 1-65535). The server checks
+  the same rules again (`connectors.validate`) and refuses unknown fields.
+- **Test connection** (`POST /ingestion/sources/{key}/test`) checks the details are complete and
+  well-formed and says so; it does not sign in to the system yet (backlog ING-1).
+- **Connect & Save** (`POST /ingestion/sources/{key}/connect`) calls
+  `connect_to_databricks_pipeline()`: passwords, keys and tokens go to the Databricks secret scope
+  `bank-data-sources` as `<source>-<field>`, where ingestion notebooks read them. They are **never**
+  written to Postgres, the audit log or the response. Not connected to Databricks → nothing is stored,
+  the card says "Saved without credentials" and the toast explains. The non-secret settings go to
+  `source_connectors`; one `SOURCE_CONNECTED` audit row, without secrets.
+- A connected card shows **Configure** (the saved settings, secrets empty, plus **Disconnect**) and
+  **Sync**. Every change updates the page in place. CFO/admin only, like Refresh now.
+- Not yet: a notebook that actually reads each new source with those credentials. The pipeline job
+  still ingests the core banking files only (ING-1 part 2).
 
 ## 4. Acceptance criteria
 
@@ -63,4 +82,5 @@ tagged by country (Lebanon, Saudi Arabia, Qatar, plus "Group" for bank-wide tabl
 - [x] Every demo block is labelled "Demo data" - `Ingestion.test.jsx`
 - [x] Uploaded files are checked but never sent - `Ingestion.test.jsx`
 - [x] Run all sources now: CFO/admin only; a missing Databricks connection is explained, not an error page - `Ingestion.test.jsx`
+- [x] Connect form validation, Test, Connect & Save, Configure, Disconnect, Sync, Run all with spinner and toasts - `Ingestion.test.jsx`, `tests/test_source_connectors.py`; connect / disconnect run against live Neon on 2026-09-29, no secret stored
 - [ ] Checked in a browser, light and dark theme

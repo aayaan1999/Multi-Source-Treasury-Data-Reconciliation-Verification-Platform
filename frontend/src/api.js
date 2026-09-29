@@ -159,6 +159,11 @@ export const api = {
   askContext: () => request("/ask/context"),                         // the assistant's side panel
   // Data ingestion (specs/screen-data-ingestion.md): real latest-run figures + labelled demo connectors
   ingestionOverview: () => request("/ingestion/overview"),
+  testSource: (key, values) => request(`/ingestion/sources/${key}/test`, { method: "POST", body: { values } }),
+  connectSource: (key, values) => request(`/ingestion/sources/${key}/connect`, { method: "POST", body: { values } }),
+  disconnectSource: (key) => request(`/ingestion/sources/${key}`, { method: "DELETE" }),
+  syncSource: (key) => request(`/ingestion/sources/${key}/sync`, { method: "POST" }),
+  runAllSources: () => request("/ingestion/run", { method: "POST" }),            // Databricks jobs/run-now
 
   // Screen 6 - everything except task state/actions, which go straight to Tasklist (tasklistApi.js)
   exceptionDetail: (params) => request(`/workflow/exceptions/detail${query(params)}`),

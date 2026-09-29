@@ -5,11 +5,20 @@ import AssumptionBadge from "../components/AssumptionBadge";
 import DataTable from "../components/DataTable";
 import { LoadError, Loading } from "../components/PageShell";
 import TopBar from "../components/TopBar";
+import SourceModal from "../ingestion/SourceModal";
+import { Spinner, Toasts, useToasts } from "../ingestion/Toasts";
 import { formatDateTime, formatNumber } from "../kpi/format";
 
 const CAN_RUN = new Set(["approver", "admin"]);          // same as Refresh now (specs/refresh-now.md)
 const MAX_BYTES = 2 * 1024 ** 3;
-const DEMO_NOTE = ["No connector registry yet: these connectors, schedules and results are demo content until the bank's sources are connected (backlog ING-1..6)."];
+const DEMO_NOTE = ["Demo content until the bank's schedules and loads are recorded (backlog ING-2..6)."];
+
+/** A failed pipeline start, in words: not connected to Databricks is expected in the demo, not an error. */
+function runProblem(e) {
+  return e instanceof ApiError && e.status === 503
+    ? "The app isn't connected to the Databricks pipeline yet, so no run was started."
+    : e.message;
+}
 
 function clock(iso) {
   return iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
@@ -22,11 +31,19 @@ function Demo() {
 /**
  * Data ingestion (specs/screen-data-ingestion.md; layout from the client demo deck, slide 3): what came in,
  * from where, and whether it worked. The stat cards and "Recent ingestions" are the real latest pipeline
- * run when there is one; connectors, schedules and file upload are demo content, labelled as such.
+ * run when there is one. Sources are connected through their own form (ingestion/SourceModal) and saved on
+ * the server; "Run all sources now" and each card's Sync start the Databricks pipeline job. Connecting,
+ * disconnecting and syncing update this page in place - no reload.
  */
 export default function Ingestion() {
+  const { user } = useAuth() || {};
+  const canManage = CAN_RUN.has(user?.role);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [editing, setEditing] = useState(null);        // the source whose form is open
+  const [running, setRunning] = useState(false);       // "Run all sources now" in flight
+  const [syncing, setSyncing] = useState(null);        // key of the source being synced
+  const { toasts, push, update, dismiss } = useToasts();
 
   const load = useCallback(() => {
     setError(null);
@@ -36,6 +53,37 @@ export default function Ingestion() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // One source changed: replace its card and recount "Sources connected", without reloading the page.
+  const replaceSource = useCallback((next) => {
+    setData((d) => {
+      const items = d.connectors.items.map((s) => (s.key === next.key ? next : s));
+      const missing = items.filter((s) => s.status !== "connected").map((s) => s.name);
+      return { ...d, connectors: { ...d.connectors, items }, sources: { ...d.sources, connected: items.length - missing.length, missing } };
+    });
+  }, []);
+
+  async function startRun(label, call) {
+    const id = push(`Triggering Databricks ingestion pipeline${label ? ` for ${label}` : ""}…`, "info", { sticky: true });
+    try {
+      const r = await call();
+      update(id, `${r.message} (run ${r.run_id}). The figures update when it finishes, in a few minutes.`, "success");
+    } catch (e) {
+      update(id, runProblem(e), "error");
+    }
+  }
+
+  async function runAll() {
+    setRunning(true);
+    await startRun("", () => api.runAllSources());
+    setRunning(false);
+  }
+
+  async function sync(source) {
+    setSyncing(source.key);
+    await startRun(source.name, () => api.syncSource(source.key));
+    setSyncing(null);
+  }
 
   return (
     <>
@@ -50,7 +98,19 @@ export default function Ingestion() {
               before it reaches a report.
             </p>
           </div>
-          {data && <RunControls trigger={data.trigger} />}
+          {data && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-md border border-hair bg-surface px-3 py-2 text-sm font-medium text-ink" title="When the pipeline runs (databricks.yml)">
+                Schedule: {data.trigger.toLowerCase()}
+              </span>
+              {canManage && (
+                <button type="button" onClick={runAll} disabled={running} className="btn-dark inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm transition disabled:cursor-not-allowed disabled:opacity-60">
+                  {running && <Spinner />}
+                  {running ? "Triggering…" : "Run all sources now"}
+                </button>
+              )}
+            </div>
+          )}
         </div>
         {error && <LoadError error={error} onRetry={load} />}
         {!data && !error && <Loading what="the latest loads" />}
@@ -59,49 +119,37 @@ export default function Ingestion() {
             <Stats data={data} />
             <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
               <div className="space-y-8">
-                <Upload formats={data.upload_formats} />
+                <Upload formats={data.upload_formats} notify={push} />
                 <Schedules schedules={data.schedules} />
               </div>
               <div className="space-y-8">
-                <Connectors connectors={data.connectors} />
+                <Connectors connectors={data.connectors} canManage={canManage} syncing={syncing} onOpen={setEditing} onSync={sync} />
                 <Recent recent={data.recent} />
               </div>
             </div>
           </>
         )}
       </main>
+      {editing && (
+        <SourceModal
+          source={editing}
+          notify={push}
+          onClose={() => setEditing(null)}
+          onSync={sync}
+          onSaved={(next, message) => {
+            replaceSource(next);
+            setEditing(null);
+            push(`${next.name} connected. ${message}`, next.credentials === "not_stored" ? "warning" : "success");
+          }}
+          onDisconnected={(next) => {
+            replaceSource(next);
+            setEditing(null);
+            push(`${next.name} disconnected`, "success");
+          }}
+        />
+      )}
+      <Toasts toasts={toasts} onDismiss={dismiss} />
     </>
-  );
-}
-
-/** "Schedule" (the pipeline's real trigger) and "Run all sources now" (Refresh now, FLOW-6). */
-function RunControls({ trigger }) {
-  const { user } = useAuth() || {};
-  const [state, setState] = useState({ busy: false, message: "" });
-  async function run() {
-    setState({ busy: true, message: "" });
-    try {
-      await api.refreshNow();
-      setState({ busy: false, message: "Started - the pipeline takes a few minutes; the figures update when it finishes." });
-    } catch (e) {
-      const notSetUp = e instanceof ApiError && e.status === 503;
-      setState({ busy: false, message: notSetUp ? "The app isn't connected to the Databricks pipeline yet, so it can't start a run from here." : e.message });
-    }
-  }
-  return (
-    <div className="flex flex-col items-end gap-1.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-md border border-hair bg-surface px-3 py-2 text-sm font-medium text-ink" title="When the pipeline runs (databricks.yml)">
-          Schedule: {trigger.toLowerCase()}
-        </span>
-        {CAN_RUN.has(user?.role) && (
-          <button type="button" onClick={run} disabled={state.busy} className="btn-dark rounded-md px-4 py-2 text-sm transition disabled:opacity-60">
-            {state.busy ? "Starting…" : "Run all sources now"}
-          </button>
-        )}
-      </div>
-      {state.message && <p className="max-w-sm text-right text-xs text-ink2" role="status">{state.message}</p>}
-    </div>
   );
 }
 
@@ -153,7 +201,7 @@ function SectionHead({ title, text, demo }) {
  * Drop or pick files. Demo only (backlog ING-3): each file's type and size are checked here and a progress
  * bar shown, but nothing is sent - the file never leaves the browser.
  */
-function Upload({ formats }) {
+function Upload({ formats, notify }) {
   const [files, setFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const input = useRef(null);
@@ -173,7 +221,11 @@ function Upload({ formats }) {
         setFiles((current) => current.map((c) => (c.id === f.id ? { ...c, progress: Math.min(100, c.progress + 19) } : c)));
       }, 250);
       timers.current.push(timer);
-      setTimeout(() => clearInterval(timer), 1500);
+      setTimeout(() => {
+        clearInterval(timer);
+        setFiles((current) => current.map((c) => (c.id === f.id ? { ...c, progress: 100 } : c)));
+        notify?.(`${f.name} uploaded (demo): checked in the browser, not sent to the pipeline yet`, "success");
+      }, 1500);
     });
   }
 
@@ -270,39 +322,67 @@ function Schedules({ schedules }) {
   );
 }
 
-function Connectors({ connectors }) {
-  const [asked, setAsked] = useState(null);
+// A colour per source for its logo tile (a placeholder until real logos are added).
+const TILE = { core_files: "#20242c", salesforce: "#0b76d1", postgresql: "#336791", rest_api: "#6b5bd2", aws_s3: "#d9761a", snowflake: "#1a9ed6" };
+
+function IconButton({ label, onClick, disabled, busy, children }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label}
+      className="grid h-8 w-8 place-items-center rounded-md border border-hair text-ink2 transition-colors hover:border-accent/40 hover:bg-page hover:text-ink disabled:cursor-not-allowed disabled:opacity-50">
+      {busy ? <Spinner /> : children}
+    </button>
+  );
+}
+
+/** One card per source: Connect when disconnected; Connected with Configure and Sync when connected. */
+function Connectors({ connectors, canManage, syncing, onOpen, onSync }) {
+  const noRights = canManage ? undefined : "Only the CFO or an admin can connect sources";
   return (
     <section>
       <SectionHead title="Connect a source" text="Live connectors pull on a schedule or when new data arrives." demo={connectors.demo} />
-      <ul className="grid gap-3 sm:grid-cols-2">
-        {connectors.items.map((c) => (
-          <li key={c.code} className="card flex items-center gap-3 rounded-xl border border-hair bg-surface p-3">
-            <span className="grid h-10 min-w-10 place-items-center rounded-lg bg-page px-1.5 text-xs font-bold text-ink">{c.code}</span>
-            <div className="min-w-0 flex-1">
-              <div className="font-semibold text-ink">{c.name}</div>
-              <div className="truncate text-sm text-ink2">{c.detail}</div>
-            </div>
-            {c.status === "connected" ? (
-              <StatusPill status="connected" />
-            ) : (
-              <button type="button" onClick={() => setAsked(c.name)} className="btn-dark rounded-md px-3 py-1.5 text-sm">Connect</button>
-            )}
-          </li>
-        ))}
+      <ul className="grid gap-3 sm:grid-cols-2" aria-label="Sources">
+        {connectors.items.map((c) => {
+          const connected = c.status === "connected";
+          return (
+            <li key={c.key} aria-label={c.name}
+              className="card card-interactive flex items-center gap-3 rounded-xl border border-hair bg-surface p-3">
+              <span aria-hidden className="grid h-10 min-w-10 place-items-center rounded-lg px-1.5 text-xs font-bold text-white" style={{ background: TILE[c.key] || "var(--brand-dark)" }}>
+                {c.code}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-ink">{c.name}</span>
+                  <StatusPill status={connected ? "connected" : "disconnected"} />
+                </div>
+                <div className="truncate text-sm text-ink2" title={c.detail}>{c.detail}</div>
+                {c.credentials === "not_stored" && <div className="text-xs" style={{ color: "var(--warning)" }}>Saved without credentials</div>}
+              </div>
+              {connected ? (
+                <div className="flex shrink-0 gap-1.5">
+                  <IconButton label={`Configure ${c.name}`} onClick={() => onOpen(c)} disabled={!canManage}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>
+                  </IconButton>
+                  <IconButton label={`Sync ${c.name}`} onClick={() => onSync(c)} disabled={!canManage || !!syncing} busy={syncing === c.key}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 01-14.3 4.9M4 12a8 8 0 0114.3-4.9M18 3v4h-4M6 21v-4h4" /></svg>
+                  </IconButton>
+                </div>
+              ) : (
+                <button type="button" onClick={() => onOpen(c)} disabled={!canManage} title={noRights}
+                  className="btn-dark shrink-0 rounded-md px-3 py-1.5 text-sm transition disabled:cursor-not-allowed disabled:opacity-50">
+                  Connect
+                </button>
+              )}
+            </li>
+          );
+        })}
       </ul>
-      {asked && (
-        <p className="mt-2 text-sm text-ink2" role="status">
-          Connecting {asked} needs its connection details and a connector for its format - planned (backlog ING-1), not
-          available in this demo yet.
-        </p>
-      )}
     </section>
   );
 }
 
 const PILL = {
   connected: ["Connected", "var(--good)"],
+  disconnected: ["Disconnected", "var(--serious)"],
   success: ["Success", "var(--good)"],
   processing: ["Processing", "var(--warning)"],
   failed: ["Failed", "var(--critical)"],

@@ -718,6 +718,18 @@ CREATE TABLE ask_history (
 
 CREATE INDEX ask_history_user_idx ON ask_history (user_id, history_id DESC);
 
+-- Data Ingestion screen (specs/screen-data-ingestion.md, ING-1): connected sources and their NON-SECRET
+-- settings. Passwords, keys and tokens go to the Databricks secret scope bank-data-sources, never here.
+CREATE TABLE source_connectors (
+    source_key     text PRIMARY KEY,
+    config         jsonb NOT NULL DEFAULT '{}'::jsonb,
+    secret_fields  text[] NOT NULL DEFAULT '{}',     -- names of the secrets supplied, never their values
+    credentials    text NOT NULL CHECK (credentials IN ('databricks', 'not_stored', 'none_needed')),
+    connected_by   integer REFERENCES users (user_id),
+    connected_at   timestamptz NOT NULL DEFAULT now(),
+    last_sync_at   timestamptz
+);
+
 -- ---------------------------------------------------------------------------------------------
 -- 5. Sync and mapping tables
 -- ---------------------------------------------------------------------------------------------
