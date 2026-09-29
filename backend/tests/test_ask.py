@@ -318,3 +318,85 @@ def test_the_model_client_needs_configuration_and_parses_structured_output(monke
     assert sent["url"] == "http://model:8000/v1/chat/completions" and sent["auth"] == "Bearer k"
     assert sent["body"]["temperature"] == 0 and sent["body"]["response_format"]["type"] == "json_schema"
     assert "unsupported" in sent["body"]["response_format"]["json_schema"]["schema"]["properties"]["query"]["enum"]
+
+
+# ---- each user's answers are saved on the server and come back after logging in again ---------------
+def login(client, email):
+    from conftest import PASSWORD
+    token = client.post(f"{API}/auth/login", json={"email": email, "password": PASSWORD}).json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def history(client, headers, **params):
+    return client.get(f"{API}/ask/history", headers=headers, params=params).json()["items"]
+
+
+def test_answers_are_kept_per_user_across_logins_and_can_be_cleared(client, db, model):
+    reviewer = login(client, "reviewer@bankx.demo")
+    client.delete(f"{API}/ask/history", headers=reviewer)
+    model["answer"] = {"query": "branch_ranking", "metric": "profit"}
+    first = ask(client, reviewer, question="top 1 branch by profit").json()
+    assert first["history_id"]
+
+    again = login(client, "reviewer@bankx.demo")                 # a fresh login gets the same list back
+    saved = history(client, again)
+    assert [(a["question"], a["history_id"]) for a in saved] == [("top 1 branch by profit", first["history_id"])]
+    assert saved[0]["rows"] == first["rows"] and saved[0]["understood"]["query"] == "branch_ranking" and saved[0]["asked_at"]
+
+    other = login(client, "approver@bankx.demo")                  # never another user's answers
+    assert all(a["history_id"] != first["history_id"] for a in history(client, other))
+
+    # A chip edit replaces the saved answer instead of adding one; another user can't overwrite it.
+    refined = ask(client, again, question="top 1 branch by profit", query="branch_ranking",
+                  filters={"metric": "profit", "order": "asc", "top_n": 1}, history_id=first["history_id"]).json()
+    assert refined["history_id"] == first["history_id"]
+    hijack = ask(client, other, question="x", query="branch_ranking", filters={"metric": "profit"},
+                 history_id=first["history_id"]).json()
+    assert hijack["history_id"] != first["history_id"]
+    saved = history(client, again)
+    assert len(saved) == 1 and saved[0]["understood"]["filters"]["order"] == "asc"
+
+    assert client.delete(f"{API}/ask/history", headers=again).json() == {"cleared": 1}
+    assert history(client, again) == []
+    db.execute("SELECT count(*) FROM audit_log WHERE action = 'ASK_QUESTION' AND new_value LIKE %s", ("%top 1 branch by profit%",))
+    assert db.fetchone()[0] >= 1                                   # clearing the list leaves the audit trail
+
+
+def test_saved_answers_come_in_pages_newest_first(client, model):
+    user = login(client, "admin@bankx.demo")
+    client.delete(f"{API}/ask/history", headers=user)
+    model["answer"] = {"query": "branch_ranking", "metric": "profit"}
+    for n in range(1, 8):
+        ask(client, user, question=f"top {n} branches by profit")
+    first = client.get(f"{API}/ask/history", headers=user, params={"limit": 5}).json()
+    assert [a["question"][4] for a in first["items"]] == list("76543") and first["has_more"]
+    rest = client.get(f"{API}/ask/history", headers=user, params={"limit": 10, "before": first["items"][-1]["history_id"]}).json()
+    assert [a["question"][4] for a in rest["items"]] == list("21") and not rest["has_more"]
+    assert client.get(f"{API}/ask/history", headers=user, params={"limit": 500}).status_code == 422
+    client.delete(f"{API}/ask/history", headers=user)
+
+
+def test_only_the_newest_answers_are_kept(client, model, monkeypatch):
+    user = login(client, "admin@bankx.demo")
+    client.delete(f"{API}/ask/history", headers=user)
+    monkeypatch.setattr(service, "HISTORY_LIMIT", 3)
+    model["answer"] = {"query": "branch_ranking", "metric": "profit"}
+    for n in range(1, 6):
+        ask(client, user, question=f"top {n} branches by profit")
+    assert [a["question"] for a in history(client, user)] ==            ["top 5 branches by profit", "top 4 branches by profit", "top 3 branches by profit"]
+    client.delete(f"{API}/ask/history", headers=user)
+
+
+def test_opening_the_tab_warms_the_model_at_most_every_two_minutes(client, monkeypatch):
+    started = []
+    monkeypatch.setattr(llm, "configured", lambda: True)
+    monkeypatch.setattr(llm, "_last_warm_up", 0.0)
+    monkeypatch.setattr(llm.threading, "Thread", lambda target, **kw: type("T", (), {"start": lambda self: started.append(target)})())
+    user = login(client, "reviewer@bankx.demo")
+    client.get(f"{API}/ask/history", headers=user, params={"limit": 5})
+    client.get(f"{API}/ask/history", headers=user, params={"limit": 5})          # again straight away: not repeated
+    client.get(f"{API}/ask/history", headers=user, params={"limit": 10, "before": 1})  # "Show more" never warms
+    assert len(started) == 1
+    monkeypatch.setattr(llm, "configured", lambda: False)
+    monkeypatch.setattr(llm, "_last_warm_up", 0.0)
+    assert llm.warm_up() is False                                                  # no model server set up

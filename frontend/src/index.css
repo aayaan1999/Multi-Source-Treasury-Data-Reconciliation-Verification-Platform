@@ -315,6 +315,21 @@ body {
 .ask-card.gold {
   border-top-color: var(--ask-gold);
 }
+/* A previous question in the grid: a smaller card that opens the saved answer. */
+.ask-tile {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ask-heading);
+  padding: 0.75rem 0.9rem;
+  transition: border-color 0.15s;
+}
+.ask-tile:hover {
+  border-color: var(--ask-gold);
+}
+.ask-tile:focus-visible {
+  outline: 2px solid var(--ask-gold);
+  outline-offset: 2px;
+}
 .ask-card.soft {
   background: var(--ask-tint);
   border: none;

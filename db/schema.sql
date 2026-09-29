@@ -704,6 +704,20 @@ CREATE TABLE saved_scenarios (
     created_at   timestamptz NOT NULL DEFAULT now()
 );
 
+-- Ask a question (specs/ask-a-question.md): each user's recent answers, as shown, so they come back
+-- after logging out and in again. Only ever read by the user who asked (the API filters by user_id);
+-- the backend keeps the newest 20 per user. Separate from audit_log, which records every question
+-- permanently - clearing this list doesn't touch the audit trail.
+CREATE TABLE ask_history (
+    history_id  bigserial PRIMARY KEY,
+    user_id     integer NOT NULL REFERENCES users (user_id) ON DELETE CASCADE,
+    answer      jsonb NOT NULL,         -- the POST /ask response: question, table, chips, notes
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now()   -- changed when a chip edit refines the answer
+);
+
+CREATE INDEX ask_history_user_idx ON ask_history (user_id, history_id DESC);
+
 -- ---------------------------------------------------------------------------------------------
 -- 5. Sync and mapping tables
 -- ---------------------------------------------------------------------------------------------

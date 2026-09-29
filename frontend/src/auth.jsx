@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, session, setUnauthorizedHandler } from "./api";
-import { clearAskHistory } from "./ask/store";
+import { resetAskHistory } from "./ask/store";
 
 const AuthContext = createContext(null);
 
@@ -9,7 +9,8 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     session.clear();
-    clearAskHistory();   // answers can hold bank figures: never left for the next person at this browser
+    resetAskHistory();   // answers can hold bank figures: never left for the next person at this browser
+                         // (they stay saved on the server for this user and come back at the next login)
     setUser(null);
   }, []);
 
@@ -21,7 +22,7 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (email, password) => {
     const result = await api.login(email, password);
-    clearAskHistory();
+    resetAskHistory();
     session.save(result.access_token, result.user);
     setUser(result.user);
   }, []);

@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import DataTable from "../components/DataTable";
 import { ExportButton } from "../components/PageShell";
-import { formatDay } from "../kpi/format";
+import { formatDateTime, formatDay } from "../kpi/format";
 import { formatCell, NUMERIC_UNITS, refinedFilters } from "./answer";
-import { clearAskHistory, runAsk, useAskHistory } from "./store";
+import { clearAskHistory, loadAskHistory, loadMoreAskHistory, openPrevious, runAsk, useAskHistory } from "./store";
 
 const EXAMPLES = ["NPL ratio by country", "Top 5 branches by profit", "What is our capital adequacy ratio?", "IFRS 9 staging", "Open limit breaches"];
 const MAX_LENGTH = 300;
@@ -15,14 +15,20 @@ const BUTTON = "ask-chip px-3 py-1.5 text-sm font-semibold transition-colors dis
  * Ask a Question (specs/ask-a-question.md, CHT-3): a typed question becomes one approved query's
  * table. The model on the server only picks which question it is; every number comes from the
  * database. Chips show what was understood and can be changed or removed, which re-runs without the
- * model. Answers stay listed (newest first, up to 20) until the browser tab closes or you log out -
- * the history lives in ./store, not in this component, so switching tabs keeps it. Styled by the
+ * model. Every answer is saved on the server for the user who asked it: this login's answers are shown
+ * in full, earlier ones as a grid of "Previous questions" tiles (the newest 5, then 10 more per "Show
+ * more"), and opening a tile shows that answer in full as it was saved. The history lives in ./store,
+ * not in this component, so switching tabs keeps it. Styled by the
  * .ask-* classes (the client demo overview's look), on the Ask a question tab.
  */
 export default function AskPanel() {
   const [question, setQuestion] = useState("");
-  const { answers, busy } = useAskHistory();
+  const { answers, busy, previous, hasMore, loadingMore, historyError } = useAskHistory();
   const run = runAsk;
+
+  useEffect(() => {
+    loadAskHistory();
+  }, []);
 
   function submit(e) {
     e.preventDefault();
@@ -58,7 +64,7 @@ export default function AskPanel() {
           ))}
         </div>
       </form>
-      {answers.length > 0 && (
+      {(answers.length > 0 || previous.length > 0) && (
         <div className="mt-4 flex justify-end">
           <button type="button" disabled={busy} onClick={clearAskHistory} className="text-xs text-muted underline-offset-4 hover:text-ink hover:underline disabled:opacity-60">
             Clear these answers
@@ -70,7 +76,47 @@ export default function AskPanel() {
           <AnswerCard key={a.id} answer={a} gold={i % 2 === 1} busy={busy} onAsk={(q) => run({ question: q })} onRefine={(query, filters) => run({ question: a.question, query, filters }, a.id)} />
         ))}
       </div>
+      <PreviousQuestions items={previous} hasMore={hasMore} loadingMore={loadingMore} error={historyError} />
     </div>
+  );
+}
+
+function tileSummary(a) {
+  if (a.status === "answer") return `${a.rows?.length ?? 0} ${a.rows?.length === 1 ? "row" : "rows"}${a.source?.as_of ? ` · data as of ${formatDay(a.source.as_of)}` : ""}`;
+  if (a.status === "clarify") return "Needed more detail";
+  if (a.status === "unsupported") return "Couldn't answer this one";
+  return "No answer";
+}
+
+/** Earlier saved answers as a grid of tiles; "Show more" pages in 10 at a time from the server. */
+function PreviousQuestions({ items, hasMore, loadingMore, error }) {
+  if (!items.length && !hasMore && !error) return null;
+  return (
+    <section className="mt-8" aria-labelledby="ask-previous">
+      <h2 id="ask-previous" className="ask-label">Previous questions</h2>
+      {items.length > 0 && (
+        <ul className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((a) => (
+            <li key={a.id}>
+              <button type="button" onClick={() => openPrevious(a.id)} className="ask-tile h-full w-full text-left" title="Open this answer">
+                {a.understood?.label && <span className="ask-label block">{a.understood.label}</span>}
+                <span className="mt-1 block text-sm font-bold text-ink">{`“${a.question || a.understood?.label || ""}”`}</span>
+                <span className="mt-2 block text-xs text-ink2">{tileSummary(a)}</span>
+                {a.asked_at && <span className="mt-0.5 block text-xs text-muted">Asked {formatDateTime(a.asked_at)}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && <p role="alert" className="mt-3 text-sm" style={{ color: "var(--critical)" }}>{error}</p>}
+      {hasMore && (
+        <div className="mt-4 flex justify-center">
+          <button type="button" disabled={loadingMore} onClick={loadMoreAskHistory} className={BUTTON}>
+            {loadingMore ? "Loading…" : "Show more"}
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 

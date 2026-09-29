@@ -89,7 +89,7 @@ disk and Docker memory already used by Camunda. Ollama gives the same API in 4.6
 | `LLM_BASE_URL` | OpenAI-compatible base URL | `http://localhost:11434/v1` |
 | `LLM_MODEL` | Model name as the server knows it | `qwen2.5:3b` |
 | `LLM_API_KEY` | Only if the server requires one (vLLM `--api-key`) | blank |
-| `LLM_TIMEOUT_SECONDS` | Give up and say so | `30` |
+| `LLM_TIMEOUT_SECONDS` | Give up and say so | `90` (was 30: a first question after Ollama had unloaded the idle model timed out on 2026-09-29; opening the Ask a question tab now loads the model in the background) |
 
 **If the model server is down or not configured:** `POST /ask` returns 503 "Ask a question isn't
 available right now"; the panel shows that line and the rest of Reports works as today. No silent
@@ -263,7 +263,15 @@ as-of date. Reuses `backend/app/exports.py` (`_sheet` / `_save`).
   "Source: branch_performance_summary, as of 28 Sep 2026" → **Export to Excel**.
 - **Clarify:** the question and its buttons. **Unsupported:** "I can answer questions about …" plus
   the example chips.
-- Previous answers stay listed below the new one for the session (not saved).
+- Every answer is saved on the server for the user who asked it (`ask_history`, migration 017;
+  newest 200 kept per user), so it comes back after logging out and in again. Answers from this login
+  are shown in full; earlier ones appear under **Previous questions** as a grid of tiles (question,
+  report, row count, when asked): the newest 5, then 10 more per **Show more**
+  (`GET /ask/history?limit=&before=`, a cursor so new answers don't shift the pages). Opening a tile
+  shows the answer in full as it was saved, without asking again; a chip edit on it replaces the saved
+  copy. **Clear these answers** deletes the user's list (`DELETE /ask/history`) but never the
+  `audit_log` rows. On login and logout the browser's copy is emptied, so the next person at the same
+  browser sees only their own list.
 
 ## 9. Audit (CHT-4)
 

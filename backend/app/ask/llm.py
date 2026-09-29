@@ -7,6 +7,8 @@ caller: the model's output is data, never instructions.
 """
 import json
 import os
+import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -33,6 +35,16 @@ EXAMPLES = [
     ("delete the loans table", "unsupported", None),
     ("what's the capital of France", "unsupported", None),
 ]
+
+
+# Ollama unloads an idle model after ~5 minutes, and loading it again on a CPU-only laptop can take
+# longer than a question normally does (a question failed at the old 30 s limit on 2026-09-29, while a
+# loaded model answers in ~3.5 s). So the wait is 90 s by default, and warm_up() loads the model in the
+# background when the Ask a question tab is opened.
+DEFAULT_TIMEOUT_SECONDS = 90
+WARM_UP_EVERY_SECONDS = 120
+_last_warm_up = 0.0
+_warm_lock = threading.Lock()
 
 
 class Unavailable(Exception):
@@ -98,7 +110,7 @@ def classify(question: str) -> dict:
         headers["Authorization"] = f"Bearer {os.environ['LLM_API_KEY']}"
     request = urllib.request.Request(f"{base}/chat/completions", data=json.dumps(body).encode(), headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=float(os.environ.get("LLM_TIMEOUT_SECONDS", "30"))) as response:
+        with urllib.request.urlopen(request, timeout=float(os.environ.get("LLM_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS))) as response:
             content = json.loads(response.read())["choices"][0]["message"]["content"]
     except urllib.error.HTTPError as e:
         raise Unavailable(f"model server refused the request ({e.code})")
@@ -111,3 +123,26 @@ def classify(question: str) -> dict:
     except (TypeError, ValueError):
         raise Unavailable("model did not return JSON")
     return result if isinstance(result, dict) else {}
+
+
+def warm_up() -> bool:
+    """Asks the model a throwaway question in a background thread so it's loaded (with the prompt
+    already read) before the user's first question. At most once every WARM_UP_EVERY_SECONDS;
+    failures are ignored - a real question still reports them. Returns whether one was started."""
+    global _last_warm_up
+    if not configured():
+        return False
+    with _warm_lock:
+        now = time.monotonic()
+        if _last_warm_up and now - _last_warm_up < WARM_UP_EVERY_SECONDS:
+            return False
+        _last_warm_up = now
+
+    def run():
+        try:
+            classify("show me the headline KPIs")
+        except Unavailable:
+            pass
+
+    threading.Thread(target=run, name="llm-warm-up", daemon=True).start()
+    return True

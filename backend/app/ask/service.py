@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 
-from ..db import write
+from ..db import query, write
 from . import explain, llm, vocab
 from .catalogue import ENTRIES, EXAMPLES, METRIC_FALLBACKS, NoData
 from .extract import Extracted, Period, extract
@@ -371,8 +371,9 @@ def _check_role(entry_id: str, user: dict) -> None:
 
 
 def ask(user: dict, question: str, entry_id: Optional[str] = None, filters: Optional[dict] = None,
-        today: Optional[date] = None) -> dict:
-    """POST /ask. With entry_id + filters (a clarify button or chip edit) the model isn't called."""
+        today: Optional[date] = None, history_id: Optional[int] = None) -> dict:
+    """POST /ask. With entry_id + filters (a clarify button or chip edit) the model isn't called.
+    history_id (a chip edit on a saved answer) replaces that answer in the user's history."""
     started = time.monotonic()
     model_raw, ignored = None, []
     if entry_id is not None:
@@ -412,7 +413,48 @@ def ask(user: dict, question: str, entry_id: Optional[str] = None, filters: Opti
         "status": response["status"], "rows": len(response.get("rows", [])), "ignored": ignored,
         "ms": round((time.monotonic() - started) * 1000),
     })
+    response["history_id"] = save_history(user, response, history_id)
     return response
+
+
+# ---- each user's saved answers (ask_history), so they survive logging out and in again ---------------
+HISTORY_LIMIT = 200      # saved answers kept per user; older ones are deleted
+PAGE_MAX = 50
+
+
+def save_history(user: dict, response: dict, history_id: Optional[int] = None) -> Optional[int]:
+    """Stores the answer as shown; a refined answer replaces its own row (only if it's this user's)."""
+    answer = json.dumps({k: v for k, v in response.items() if k != "history_id"}, default=str)
+    row = None
+    if history_id is not None:
+        row = write("UPDATE ask_history SET answer = %s, updated_at = now() WHERE history_id = %s AND user_id = %s "
+                    "RETURNING history_id", (answer, history_id, user["user_id"]))
+    if row is None:
+        row = write("INSERT INTO ask_history (user_id, answer) VALUES (%s, %s) RETURNING history_id",
+                    (user["user_id"], answer))
+    write("""DELETE FROM ask_history WHERE user_id = %s AND history_id NOT IN (
+               SELECT history_id FROM ask_history WHERE user_id = %s ORDER BY history_id DESC LIMIT %s)""",
+          (user["user_id"], user["user_id"], HISTORY_LIMIT), returning=False)
+    return row["history_id"] if row else None
+
+
+def history(user: dict, limit: int = 10, before: Optional[int] = None) -> dict:
+    """GET /ask/history: one page of this user's saved answers, newest first. `before` is the oldest
+    history_id already shown (a cursor, so answers saved meanwhile don't shift the pages)."""
+    limit = max(1, min(limit, PAGE_MAX))
+    rows = query("SELECT history_id, answer, created_at FROM ask_history WHERE user_id = %s AND history_id < %s "
+                 "ORDER BY history_id DESC LIMIT %s",
+                 (user["user_id"], before if before is not None else 2 ** 62, limit + 1))
+    items = [{**r["answer"], "history_id": r["history_id"], "asked_at": r["created_at"].isoformat()} for r in rows[:limit]]
+    return {"items": items, "has_more": len(rows) > limit}
+
+
+def clear_history(user: dict) -> int:
+    """DELETE /ask/history: empties this user's list. The audit trail of the questions stays."""
+    row = write("WITH gone AS (DELETE FROM ask_history WHERE user_id = %s RETURNING 1) SELECT count(*) AS n FROM gone",
+                (user["user_id"],))
+    _audit(user, "ASK_HISTORY_CLEARED", "history", {"answers": row["n"]})
+    return row["n"]
 
 
 def export_rows(user: dict, entry_id: str, filters: dict, question: str) -> tuple:

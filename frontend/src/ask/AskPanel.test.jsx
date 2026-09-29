@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import AskPanel from "./AskPanel";
 import { formatCell, refinedFilters } from "./answer";
-import { clearAskHistory } from "./store";
+import { resetAskHistory } from "./store";
 import { api } from "../api";
 
 vi.mock("../api", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, api: { ask: vi.fn(), exportAsk: vi.fn() } };
+  return { ...actual, api: { ask: vi.fn(), exportAsk: vi.fn(), askHistory: vi.fn(), clearAskHistory: vi.fn() } };
 });
 
 const ANSWER = {
@@ -38,7 +38,9 @@ const ANSWER = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  clearAskHistory();
+  resetAskHistory();
+  api.askHistory.mockResolvedValue({ items: [], has_more: false });
+  api.clearAskHistory.mockResolvedValue({ cleared: 0 });
 });
 
 async function askIt(text) {
@@ -140,14 +142,73 @@ describe("Ask panel", () => {
     expect(within(screen.getByRole("table")).getByText("Riyadh Central")).toBeTruthy();
   });
 
-  it("keeps the answers across a page refresh, and clears them on request", async () => {
-    api.ask.mockResolvedValue(ANSWER);
-    render(<AskPanel />);
+  // Reported on 2026-09-29: logging in again used to lose every earlier answer.
+  const saved = (n) => ({ ...ANSWER, question: `question ${n}`, history_id: 100 - n, asked_at: "2026-09-28T10:00:00Z" });
+  const page = (from, to, hasMore) => ({ items: Array.from({ length: to - from + 1 }, (_, i) => saved(from + i)), has_more: hasMore });
+
+  it("lists the 5 newest saved answers as tiles after logging in again, and opens one in full", async () => {
+    api.askHistory.mockResolvedValue(page(1, 5, false));
+    await act(async () => render(<AskPanel />));
+    expect(api.askHistory).toHaveBeenCalledWith({ limit: 5 });
+    const grid = screen.getByRole("region", { name: "Previous questions" });
+    expect(within(grid).getAllByRole("listitem")).toHaveLength(5);
+    expect(within(grid).getByText("“question 1”")).toBeTruthy();
+    expect(within(grid).getAllByText(/2 rows · data as of/)).toHaveLength(5);
+    expect(screen.queryByRole("table")).toBeNull();                   // tiles only until one is opened
+    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+    fireEvent.click(within(grid).getByText("“question 3”"));
+    expect(within(screen.getByRole("article")).getByText("“question 3”")).toBeTruthy();
+    expect(within(screen.getByRole("table")).getByText("Riyadh Central")).toBeTruthy();
+    expect(within(grid).getAllByRole("listitem")).toHaveLength(4);
+    expect(api.ask).not.toHaveBeenCalled();                            // opened as saved, not asked again
+  });
+
+  it("loads 10 more per Show more, older than the oldest shown", async () => {
+    api.askHistory.mockResolvedValueOnce(page(1, 5, true)).mockResolvedValueOnce(page(6, 15, true)).mockResolvedValueOnce(page(16, 17, false));
+    await act(async () => render(<AskPanel />));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Show more" })));
+    expect(api.askHistory).toHaveBeenLastCalledWith({ limit: 10, before: 95 });
+    const grid = screen.getByRole("region", { name: "Previous questions" });
+    expect(within(grid).getAllByRole("listitem")).toHaveLength(15);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Show more" })));
+    expect(api.askHistory).toHaveBeenLastCalledWith({ limit: 10, before: 85 });
+    expect(within(grid).getAllByRole("listitem")).toHaveLength(17);
+    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+  });
+
+  it("fetches the saved answers once per login, and never shows them to the next person", async () => {
+    api.askHistory.mockResolvedValue(page(1, 2, false));
+    const first = await act(async () => render(<AskPanel />));
+    first.unmount();
+    await act(async () => render(<AskPanel />));                     // switching tabs doesn't refetch
+    expect(api.askHistory).toHaveBeenCalledTimes(1);
+    cleanup();
+    act(() => resetAskHistory());                                     // log out
+    api.askHistory.mockResolvedValue({ items: [], has_more: false }); // the next person has none
+    await act(async () => render(<AskPanel />));
+    expect(screen.queryByRole("region", { name: "Previous questions" })).toBeNull();
+    expect(api.askHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends the saved answer's id when a chip refines a reopened answer, so it's replaced rather than added", async () => {
+    api.askHistory.mockResolvedValue(page(1, 1, false));
+    api.ask.mockResolvedValue({ ...saved(1) });
+    await act(async () => render(<AskPanel />));
+    fireEvent.click(screen.getByText("“question 1”"));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Remove show Top 2" })));
+    expect(api.ask).toHaveBeenLastCalledWith(expect.objectContaining({ query: "branch_ranking", history_id: 99 }));
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("clears the answers on request, on the server too", async () => {
+    api.askHistory.mockResolvedValue(page(1, 2, false));
+    api.ask.mockResolvedValue({ ...ANSWER, history_id: 8 });
+    await act(async () => render(<AskPanel />));
     await askIt("top 2 branches by profit");
-    expect(JSON.parse(sessionStorage.getItem("bdp_ask_history"))[0].question).toBe("top 2 branches by profit");
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Clear these answers" })));
     expect(screen.queryByRole("article")).toBeNull();
-    expect(sessionStorage.getItem("bdp_ask_history")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Previous questions" })).toBeNull();
+    expect(api.clearAskHistory).toHaveBeenCalledTimes(1);
   });
 
   it("explains why it couldn't answer, how it works, and offers what to ask instead", async () => {

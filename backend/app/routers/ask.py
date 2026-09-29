@@ -3,17 +3,18 @@
 POST /ask turns a typed question into one approved, read-only query and returns its table; the
 model only classifies the question (app/ask/llm.py), plain code reads exact values from the text
 (app/ask/extract.py), and every call is audited. POST /ask/export re-runs the query for Excel.
+GET / DELETE /ask/history read and clear the user's own saved answers (kept across logins).
 """
 import time
 from collections import defaultdict, deque
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from openpyxl import Workbook
 from pydantic import BaseModel, Field
 
-from ..ask import service
+from ..ask import llm, service
 from ..exports import _save, _sheet
 from ..security import current_user
 
@@ -29,6 +30,7 @@ class AskRequest(BaseModel):
     question: str = Field("", max_length=300)
     query: Optional[str] = Field(None, max_length=40)
     filters: Optional[dict] = None
+    history_id: Optional[int] = None      # a chip edit on a saved answer replaces it in the history
 
 
 class ExportRequest(BaseModel):
@@ -52,7 +54,20 @@ def ask(body: AskRequest, user: dict = Depends(current_user)):
     if body.query is None and not question:
         raise HTTPException(422, "Type a question")
     _rate_limit(user["user_id"])
-    return service.ask(user, question, body.query, body.filters)
+    return service.ask(user, question, body.query, body.filters, history_id=body.history_id)
+
+
+@router.get("/history")
+def history(limit: int = Query(10, ge=1, le=service.PAGE_MAX), before: Optional[int] = None,
+            user: dict = Depends(current_user)):
+    if before is None:
+        llm.warm_up()              # the Ask a question tab just opened: load the model before the first question
+    return service.history(user, limit, before)
+
+
+@router.delete("/history")
+def clear_history(user: dict = Depends(current_user)):
+    return {"cleared": service.clear_history(user)}
 
 
 @router.post("/export")

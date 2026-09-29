@@ -154,6 +154,8 @@ export const api = {
   // Ask a Question (specs/ask-a-question.md): a typed question, or { query, filters } from a chip/button
   ask: (body) => request("/ask", { method: "POST", body }),
   exportAsk: (body) => download("/ask/export", { method: "POST", body, fallbackName: "answer.xlsx" }),
+  askHistory: (params) => request(`/ask/history?${new URLSearchParams(params)}`),   // one page of this user's saved answers
+  clearAskHistory: () => request("/ask/history", { method: "DELETE" }),
 
   // Screen 6 - everything except task state/actions, which go straight to Tasklist (tasklistApi.js)
   exceptionDetail: (params) => request(`/workflow/exceptions/detail${query(params)}`),
