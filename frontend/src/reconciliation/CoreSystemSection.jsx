@@ -10,6 +10,11 @@ import StatBox from "../components/StatBox";
 import useAsync from "../hooks/useAsync";
 import { fmtAmount } from "./pipeline";
 
+export const SYSTEMS = {
+  neon: { label: "Core system", long: "the core banking system" },
+  salesforce: { label: "CRM", long: "the CRM (Salesforce)" },
+};
+
 const MISMATCH_LABEL = {
   VALUE_MISMATCH: "Value mismatch",
   MISSING_IN_CANONICAL: "Missing in our data",
@@ -52,15 +57,16 @@ function download(filename, text) {
 }
 
 /** The latest run: what it found and cleared, what's open, and its sign-off (preparer, then a second person). */
-function RunPanel() {
+function RunPanel({ source }) {
   const { user } = useAuth() || {};
-  const { status, data, error, reload } = useAsync(() => api.reconRun(), []);
+  const system = SYSTEMS[source];
+  const { status, data, error, reload } = useAsync(() => api.reconRun(source), [source]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
   if (status === "loading") return <Loading what="the latest run" />;
   if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
-  if (!data.run_date) return <p className="mt-4 text-sm text-ink2">No comparison with the core system has run yet.</p>;
+  if (!data.run_date) return <p className="mt-4 text-sm text-ink2">No comparison with {system.long} has run yet.</p>;
 
   const signoff = data.signoff;
   const canSign = ["approver", "admin"].includes(user?.role) && signoff?.status === "SUBMITTED" && signoff.prepared_by !== user?.user_id;
@@ -82,17 +88,17 @@ function RunPanel() {
 
   return (
     <>
-      <ul className="mt-6 grid grid-cols-2 gap-5 lg:grid-cols-4" aria-label="Latest run">
+      <ul className="mt-6 grid grid-cols-2 gap-5 lg:grid-cols-4" aria-label={`Latest run: ${system.label}`}>
         <StatBox label="Breaks in the latest run" value={data.breaks_seen} hint={`Run of ${data.run_date}`} />
         <StatBox label="Cleared automatically" value={data.auto_cleared} hint="Formatting only" />
         <StatBox label="Open groups" value={data.groups_open} hint="One task each, in Tasks" status={data.groups_open ? "watch" : "good"} />
         <StatBox label="Important, open" value={data.important_open} hint={`${data.recurring_open} recurring break(s) open`} status={data.important_open ? "action" : "good"} />
       </ul>
-      <div className="card mt-4 rounded-xl border border-hair bg-surface p-4 text-sm" aria-label="Run sign-off">
+      <div className="card mt-4 rounded-xl border border-hair bg-surface p-4 text-sm" aria-label={`Run sign-off: ${system.label}`}>
         {/* The sign-off is for the whole run, not one group: say so, and what it covers. */}
         <h3 className="font-semibold tracking-tight text-ink">Sign-off for the whole run of {data.run_date}</h3>
         <p className="mt-1 text-ink2">
-          Covers every group and break from this comparison with the core banking system ({data.breaks_seen} break(s)), not one
+          Covers every group and break from this comparison with {system.long} ({data.breaks_seen} break(s)), not one
           group. Each group is decided in its own task; this is the final check that the run as a whole is finished.{" "}
           {data.groups_open
             ? `${data.groups_open} group(s) still open${data.important_open ? `, ${data.important_open} of them important (a note is required to submit)` : ""}.`
@@ -108,11 +114,11 @@ function RunPanel() {
         {(canSubmit || canSign) && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" aria-label="Sign-off note" className={`${INPUT} min-w-[14rem] flex-1`} />
-            {canSubmit && <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.submitReconRun({ note: note || undefined }))}>Submit for sign-off</button>}
+            {canSubmit && <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.submitReconRun({ source_system: source, note: note || undefined }))}>Submit for sign-off</button>}
             {canSign && (
               <>
-                <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.signOffReconRun({ decision: "RETURN", note }))}>Return</button>
-                <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.signOffReconRun({ decision: "SIGN_OFF", note: note || undefined }))}>Sign off</button>
+                <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.signOffReconRun({ source_system: source, decision: "RETURN", note }))}>Return</button>
+                <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.signOffReconRun({ source_system: source, decision: "SIGN_OFF", note: note || undefined }))}>Sign off</button>
               </>
             )}
           </div>
@@ -128,7 +134,7 @@ function groupCause(g) {
 }
 
 /** Read-only look inside one group: its summary and every break in it. Decisions stay in the group's task. */
-function GroupDetail({ groupId, onClose }) {
+function GroupDetail({ groupId, systemLabel, onClose }) {
   const { status, data, error, reload } = useAsync(() => api.reconGroup(groupId), [groupId]);
   return (
     <Modal title={`Group #${groupId}`} onClose={onClose}>
@@ -151,7 +157,7 @@ function GroupDetail({ groupId, onClose }) {
               columns={[
                 { key: "entity", header: "Record", render: (r) => `${r.entity_type} ${r.entity_id}` },
                 { key: "field_name", header: "Field", render: (r) => r.field_name || "(whole record)" },
-                { key: "source_value", header: "Core system" },
+                { key: "source_value", header: systemLabel },
                 { key: "canonical_value", header: "Ours" },
                 { key: "status", header: "Status", render: (r) => STATUS_LABEL[r.status] || r.status },
               ]}
@@ -172,8 +178,8 @@ function GroupDetail({ groupId, onClose }) {
   );
 }
 
-function GroupsTable() {
-  const { status, data, error, reload } = useAsync(() => api.reconGroups(), []);
+function GroupsTable({ source }) {
+  const { status, data, error, reload } = useAsync(() => api.reconGroups({ source_system: source }), [source]);
   const [selectedId, setSelectedId] = useState(null);
   if (status === "loading") return <Loading what="the groups" />;
   if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
@@ -197,7 +203,7 @@ function GroupsTable() {
       onRowClick={(g) => setSelectedId(g.group_id)}
       emptyText="No groups yet: open breaks are grouped when the task bridge next runs."
     />
-    {selectedId && <GroupDetail groupId={selectedId} onClose={() => setSelectedId(null)} />}
+    {selectedId && <GroupDetail groupId={selectedId} systemLabel={SYSTEMS[source].label} onClose={() => setSelectedId(null)} />}
     </>
   );
 }
@@ -233,18 +239,21 @@ function AdminResolve({ row, onDone }) {
 }
 
 /**
- * "Our data vs the core banking system" (specs/reconciliation-groups.md, client point 1): the latest
- * run and its sign-off, the groups (decided in Tasks), and every break with filters, age and export.
- * Read-only apart from sign-off and the admin override: decisions happen in the group tasks.
+ * "Our data vs <another system>" (specs/reconciliation-groups.md, client point 1): the latest run and its
+ * sign-off, the groups (decided in Tasks), and every break with filters, age and export. One section per
+ * source: `source` is "neon" (core banking) or "salesforce" (the CRM), and only that source's breaks,
+ * groups and run are shown. Read-only apart from sign-off and the admin override: decisions happen in
+ * the group tasks.
  */
-export default function CoreSystemSection() {
+export default function CoreSystemSection({ source = "neon" }) {
+  const system = SYSTEMS[source];
   const { user } = useAuth() || {};
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("OPEN");
   const [recurringOnly, setRecurringOnly] = useState(false);
   const [groupFilter, setGroupFilter] = useState("");
   const [selected, setSelected] = useState(null);
-  const { status, data, error, reload } = useAsync(() => api.reconciliationExceptions({ limit: 5000 }), []);
+  const { status, data, error, reload } = useAsync(() => api.reconciliationExceptions({ limit: 5000, source_system: source }), [source]);
 
   const groupIds = [...new Set((data || []).map((r) => r.group_id).filter((g) => g != null))].sort((a, b) => a - b);
   const rows = (data || [])
@@ -254,19 +263,19 @@ export default function CoreSystemSection() {
 
   const exportColumns = [
     ["entity_type", "Record type"], ["entity_id", "Record"], ["field_name", "Field"], ["mismatch_type", "Type"],
-    ["source_value", "Core system"], ["canonical_value", "Ours"], ["status", "Status"], ["resolved_rule", "Cleared by rule"],
+    ["source_value", system.label], ["canonical_value", "Ours"], ["status", "Status"], ["resolved_rule", "Cleared by rule"],
     ["group_id", "Group"], ["first_seen", "First seen"], ["last_seen", "Last seen"], ["times_seen", "Times seen"], ["recurring", "Recurring"],
   ];
 
   return (
     <>
-      <RunPanel />
+      <RunPanel source={source} />
 
-      <Section id="groups" title="Groups" description="Breaks with the same cause are decided together, as one task in Tasks. Important breaks (missing records, key fields, large amounts) are always on their own.">
-        <GroupsTable />
+      <Section id={`${source}-groups`} title="Groups" description="Breaks with the same cause are decided together, as one task in Tasks. Important breaks (missing records, key fields, large amounts) are always on their own.">
+        <GroupsTable source={source} />
       </Section>
 
-      <div role="tablist" aria-label="Filter by mismatch type" className="mt-8 flex flex-wrap gap-1 border-b border-hair pb-2.5">
+      <div role="tablist" aria-label={`Filter by mismatch type: ${system.label}`} className="mt-8 flex flex-wrap gap-1 border-b border-hair pb-2.5">
         {TYPE_TABS.map(([value, label]) => (
           <button
             key={value || "all"}
@@ -282,16 +291,16 @@ export default function CoreSystemSection() {
       </div>
 
       <Section
-        id="exceptions"
+        id={`${source}-exceptions`}
         title="All breaks"
         description="Every difference found, with how long it has been open. Click a row for its details."
         action={
           <div className="flex flex-wrap items-center gap-3">
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status" className={INPUT}>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label={`Status: ${system.label}`} className={INPUT}>
               <option value="">All statuses</option>
               {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
-            <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} aria-label="Group" className={INPUT}>
+            <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} aria-label={`Group: ${system.label}`} className={INPUT}>
               <option value="">All groups</option>
               {groupIds.map((g) => <option key={g} value={String(g)}>Group #{g}</option>)}
               <option value="none">Not in a group</option>
@@ -300,7 +309,7 @@ export default function CoreSystemSection() {
               <input type="checkbox" checked={recurringOnly} onChange={(e) => setRecurringOnly(e.target.checked)} />
               Recurring only
             </label>
-            <button type="button" className={BUTTON} disabled={!rows.length} onClick={() => download("reconciliation-breaks.csv", toCsv(rows, exportColumns))}>Export CSV</button>
+            <button type="button" className={BUTTON} disabled={!rows.length} onClick={() => download(`reconciliation-breaks-${source}.csv`, toCsv(rows, exportColumns))}>Export CSV</button>
           </div>
         }
       >
@@ -308,13 +317,13 @@ export default function CoreSystemSection() {
         {status === "error" && !data && <LoadError error={error} onRetry={reload} />}
         {data && (
           <DataTable
-            caption="Reconciliation exceptions"
+            caption={`Reconciliation exceptions: ${system.label}`}
             columns={[
               { key: "group_id", header: "Group", render: (r) => (r.group_id != null ? `#${r.group_id}` : "—") },
               { key: "entity", header: "Record", render: (r) => `${r.entity_type} ${r.entity_id}` },
               { key: "field_name", header: "Field", render: (r) => r.field_name || "(whole record)" },
               { key: "mismatch_type", header: "Type", render: (r) => MISMATCH_LABEL[r.mismatch_type] || r.mismatch_type },
-              { key: "source_value", header: "Core system" },
+              { key: "source_value", header: system.label },
               { key: "canonical_value", header: "Ours" },
               { key: "status", header: "Status", render: (r) => STATUS_LABEL[r.status] || r.status },
               { key: "age", header: "Open for", render: (r) => (r.status === "OPEN" ? `${r.age} d (${ageBucket(r.age)})` : "—") },
@@ -336,7 +345,7 @@ export default function CoreSystemSection() {
             {selected.entity_type} {selected.entity_id}{selected.field_name ? ` — ${selected.field_name}` : ""}
           </h3>
           <dl className="card mt-4 grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-xl border border-hair bg-surface p-4 text-sm sm:grid-cols-3">
-            <div><dt className="text-ink2">Core system value</dt><dd className="font-medium text-ink">{selected.source_value ?? "—"}</dd></div>
+            <div><dt className="text-ink2">{system.label} value</dt><dd className="font-medium text-ink">{selected.source_value ?? "—"}</dd></div>
             <div><dt className="text-ink2">Our value</dt><dd className="font-medium text-ink">{selected.canonical_value ?? "—"}</dd></div>
             <div><dt className="text-ink2">Status</dt><dd className="font-medium text-ink">{STATUS_LABEL[selected.status] || selected.status}</dd></div>
             <div><dt className="text-ink2">First seen</dt><dd className="font-medium text-ink">{fmtDateTime(selected.first_seen)}</dd></div>

@@ -1,6 +1,16 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Multi-Source Reconciliation (Neon slice)
+# MAGIC # Multi-Source Reconciliation (core banking and CRM)
+# MAGIC
+# MAGIC **Two sources, chosen with the `source` parameter** (default `neon`):
+# MAGIC * `neon` - core banking, as below.
+# MAGIC * `salesforce` - the CRM (added 2026-09-29): each Salesforce Account (`bronze_salesforce_accounts`,
+# MAGIC   from `multi_source_salesforce_ingestion.py`) is matched to our customer by Account Number =
+# MAGIC   `customer_id` and compared on `name` and `country`, against our Corporate and SME customers only
+# MAGIC   (a CRM holds business customers, so retail customers missing from it aren't breaks). Runs as the
+# MAGIC   `salesforce_reconciliation` task, and skips when that run didn't load Salesforce, so stale CRM
+# MAGIC   data is never compared. Everything below the comparison - automatic clearing, ageing, keeping
+# MAGIC   reviewers' decisions - is shared, keyed by `source_system`.
 # MAGIC
 # MAGIC Per `specs/multi-source-reconciliation.md`. Compares `bronze_neon_customers` /
 # MAGIC `bronze_neon_accounts` (written by `multi_source_neon_ingestion.py`, standing in for the
@@ -52,6 +62,19 @@ NUMERIC_TOLERANCE_USD = 1.00
 
 # COMMAND ----------
 
+dbutils.widgets.text("source", "neon", "Which source to reconcile: neon (core banking) or salesforce (CRM)")
+SOURCE = dbutils.widgets.get("source").strip().lower()
+if SOURCE not in ("neon", "salesforce"):
+    raise ValueError(f"Unknown source {SOURCE!r}: use neon or salesforce")
+
+if SOURCE == "salesforce":
+    # Only compare CRM data loaded in this same run; debugValue lets the notebook run by hand too.
+    loaded = dbutils.jobs.taskValues.get(taskKey="salesforce_ingest", key="status", default="skipped", debugValue="loaded")
+    if loaded != "loaded" or not spark.catalog.tableExists("bronze_salesforce_accounts"):
+        dbutils.notebook.exit(f"skipped: Salesforce was not loaded in this run ({loaded})")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Latest row per entity
 # MAGIC
@@ -73,8 +96,9 @@ def latest_per_entity(table_name: str, entity_col: str):
         .drop("_rn")
     )
 
-bronze_customers = latest_per_entity("bronze_neon_customers", "customer_id")
-bronze_accounts = latest_per_entity("bronze_neon_accounts", "account_id")
+if SOURCE == "neon":
+    bronze_customers = latest_per_entity("bronze_neon_customers", "customer_id")
+    bronze_accounts = latest_per_entity("bronze_neon_accounts", "account_id")
 
 # COMMAND ----------
 
@@ -184,13 +208,28 @@ def reconcile(bronze_df, canonical_df, entity_type: str, key_col: str, fields: l
 
 # COMMAND ----------
 
-customer_fields = [("name", False), ("segment", False), ("risk_rating", False), ("branch_id", False)]
-account_fields = [("type", False), ("currency", False), ("balance", True)]
+if SOURCE == "neon":
+    customer_fields = [("name", False), ("segment", False), ("risk_rating", False), ("branch_id", False)]
+    account_fields = [("type", False), ("currency", False), ("balance", True)]
 
-customer_exceptions = reconcile(bronze_customers, canonical_customers, "customer", "customer_id", customer_fields)
-account_exceptions = reconcile(bronze_accounts, canonical_accounts, "account", "account_id", account_fields)
+    customer_exceptions = reconcile(bronze_customers, canonical_customers, "customer", "customer_id", customer_fields)
+    account_exceptions = reconcile(bronze_accounts, canonical_accounts, "account", "account_id", account_fields)
 
-parts = [e for e in [customer_exceptions, account_exceptions] if e is not None]
+    parts = [e for e in [customer_exceptions, account_exceptions] if e is not None]
+else:
+    # CRM side: one row per Account. An Account without an Account Number can't be matched to anyone,
+    # so it keeps its Salesforce Id ("SF:001...") and shows as missing in our data.
+    crm_customers = (
+        spark.table("bronze_salesforce_accounts")
+        .select(
+            F.coalesce(F.trim(F.col("AccountNumber")), F.concat(F.lit("SF:"), F.col("Id"))).alias("customer_id"),
+            F.trim(F.col("Name")).alias("name"),
+            F.trim(F.col("BillingCountry")).alias("country"),
+        )
+        .dropDuplicates(["customer_id"])
+    )
+    business_customers = canonical_customers.filter(F.col("segment").isin("Corporate", "SME")).select("customer_id", "name", "country")
+    parts = [reconcile(crm_customers, business_customers, "customer", "customer_id", [("name", False), ("country", False)])]
 
 # COMMAND ----------
 
@@ -230,7 +269,7 @@ else:
     )
     now = F.current_timestamp()
     all_exceptions = (
-        all_exceptions.withColumn("source_system", F.lit("neon"))
+        all_exceptions.withColumn("source_system", F.lit(SOURCE))
         .withColumn("status", F.when(formatting_only, F.lit("AUTO_ACCEPTED")).otherwise(F.lit("OPEN")))
         .withColumn("resolved_rule", F.when(formatting_only, F.lit("FORMATTING_ONLY")))
         .withColumn("detected_at", now)

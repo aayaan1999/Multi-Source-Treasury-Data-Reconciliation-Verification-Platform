@@ -99,6 +99,16 @@ resources:
           notebook_task:
             notebook_path: ./notebooks/multi_source_salesforce_ingestion.py
 
+        - task_key: salesforce_reconciliation
+          description: CRM vs our business customers (name, country) into reconciliation_exceptions; skips when Salesforce wasn't loaded this run.
+          depends_on:
+            - task_key: salesforce_ingest
+            - task_key: quality
+          notebook_task:
+            notebook_path: ./notebooks/multi_source_reconciliation.py
+            base_parameters:
+              source: salesforce
+
         - task_key: load_postgres
           description: Merge Silver/Gold into Neon Postgres in one transaction.
           depends_on:
@@ -107,6 +117,7 @@ resources:
             - task_key: fraud_rules
             - task_key: portfolio_snapshot
             - task_key: pipeline_reconciliation
+            - task_key: salesforce_reconciliation
           # Neon can be suspended and take a moment to wake; one retry covers a slow first connect.
           max_retries: 1
           notebook_task:

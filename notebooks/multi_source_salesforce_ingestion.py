@@ -18,7 +18,8 @@
 # MAGIC
 # MAGIC Input: none (Salesforce REST API)
 # MAGIC Output: Delta table `bronze_salesforce_accounts`; one row per run in Neon `ingestion_runs`
-# MAGIC (shown under "Recent ingestions" on the Data ingestion tab).
+# MAGIC (shown under "Recent ingestions" on the Data ingestion tab); task value `status`
+# MAGIC (loaded / skipped / failed), which the `salesforce_reconciliation` task checks before comparing.
 
 # COMMAND ----------
 
@@ -58,7 +59,7 @@ dbutils.widgets.text("output_table", "bronze_salesforce_accounts", "Output Delta
 SECRET_SCOPE = dbutils.widgets.get("secret_scope")
 OUTPUT_TABLE = dbutils.widgets.get("output_table")
 SOURCE_KEY = "salesforce"                       # the app's source key (backend/app/connectors.py)
-SOQL_QUERY = "SELECT Id, Name, Industry, BillingCountry, CreatedDate FROM Account"
+SOQL_QUERY = "SELECT Id, AccountNumber, Name, Industry, BillingCountry, CreatedDate FROM Account"
 API_VERSION = "v60.0"
 
 # COMMAND ----------
@@ -112,6 +113,7 @@ def setting(key):
 
 INSTANCE_URL, CLIENT_ID, CLIENT_SECRET = setting("instance_url"), setting("client_id"), setting("client_secret")
 if not (INSTANCE_URL and CLIENT_ID and CLIENT_SECRET):
+    dbutils.jobs.taskValues.set(key="status", value="skipped")
     dbutils.notebook.exit("skipped: Salesforce is not connected in the app")
 INSTANCE_URL = INSTANCE_URL.rstrip("/")
 
@@ -151,6 +153,7 @@ try:
     auth = get_token()
 except Exception as e:
     record_run("failed", 0, str(e))
+    dbutils.jobs.taskValues.set(key="status", value="failed")
     dbutils.notebook.exit(f"failed: {e}")
 
 # COMMAND ----------
@@ -176,6 +179,7 @@ try:
         response = requests.get(f"{auth['instance_url']}{page['nextRecordsUrl']}", headers=headers, timeout=60)
 except Exception as e:
     record_run("failed", 0, f"Account query failed: {e}")
+    dbutils.jobs.taskValues.set(key="status", value="failed")
     dbutils.notebook.exit(f"failed: Account query failed: {e}")
 
 # COMMAND ----------
@@ -189,8 +193,10 @@ except Exception as e:
 
 # COMMAND ----------
 
-SCHEMA = "Id string, Name string, Industry string, BillingCountry string, CreatedDate string"
-rows = [{k: r.get(k) for k in ("Id", "Name", "Industry", "BillingCountry", "CreatedDate")} for r in records]
+# AccountNumber carries the bank's customer_id - the key the CRM reconciliation matches on
+# (multi_source_reconciliation.py with source=salesforce).
+SCHEMA = "Id string, AccountNumber string, Name string, Industry string, BillingCountry string, CreatedDate string"
+rows = [{k: r.get(k) for k in ("Id", "AccountNumber", "Name", "Industry", "BillingCountry", "CreatedDate")} for r in records]
 
 salesforce_df = (
     spark.createDataFrame(rows, schema=SCHEMA)
@@ -215,4 +221,5 @@ salesforce_df = (
 count = spark.table(OUTPUT_TABLE).count()
 print(f"{OUTPUT_TABLE}: {count} rows")
 record_run("success", count, f"{count} Accounts loaded into {OUTPUT_TABLE}")
+dbutils.jobs.taskValues.set(key="status", value="loaded")      # read by the salesforce_reconciliation task
 dbutils.notebook.exit(f"loaded: {count} Accounts")

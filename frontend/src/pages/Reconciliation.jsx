@@ -3,16 +3,17 @@ import CoreSystemSection from "../reconciliation/CoreSystemSection";
 import PipelineSection from "../reconciliation/PipelineSection";
 
 /**
- * Two checks (specs/pipeline-reconciliation.md, specs/reconciliation-groups.md): did every source's
- * data survive our cleaning, and does our data match the bank's core system? Each section loads on its
- * own, so one failing never blanks the other. Decisions happen in Tasks; this tab is the overview.
+ * Three checks (specs/pipeline-reconciliation.md, specs/reconciliation-groups.md): did every source's
+ * data survive our cleaning, does our data match the bank's core system, and does it match the CRM
+ * (Salesforce)? Each section loads on its own, so one failing never blanks another. Decisions happen in
+ * Tasks; this tab is the overview.
  */
 export default function Reconciliation() {
   return (
     <PageShell
       title="Reconciliation"
       eyebrow="Multi-source reconciliation"
-      subtitle="Two checks: did every source's data survive our cleaning (received vs kept), and does our data match the bank's core system?"
+      subtitle="Three checks: did every source's data survive our cleaning (received vs kept), and does our data match the bank's core system and its CRM?"
     >
       <PipelineSection />
 
@@ -24,7 +25,18 @@ export default function Reconciliation() {
         </p>
       </div>
 
-      <CoreSystemSection />
+      <CoreSystemSection source="neon" />
+
+      <div className="mt-14 border-t border-hair pt-8">
+        <h2 className="text-lg font-semibold tracking-tight text-ink">Our data vs the CRM (Salesforce)</h2>
+        <p className="mt-0.5 text-sm text-ink2">
+          Our Corporate and SME customers compared with the Salesforce Accounts that carry their customer number, on name and
+          country. Customers missing from the CRM, Accounts we don&apos;t know and names or countries that disagree all show here;
+          differences in spelling style only clear themselves.
+        </p>
+      </div>
+
+      <CoreSystemSection source="salesforce" />
     </PageShell>
   );
 }

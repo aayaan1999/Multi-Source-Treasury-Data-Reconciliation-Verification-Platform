@@ -84,6 +84,31 @@ This is a deliberate scope cut, not an oversight: reconciling IMF or Google Shee
 inventing a second source to compare them against, which doesn't exist. If a second branch-cost
 feed or macro-data feed is ever added, reconciliation logic could extend to them then.
 
+## 3a. Salesforce (CRM) slice - built and run live 2026-09-29
+
+- **Source:** `bronze_salesforce_accounts` (from `multi_source_salesforce_ingestion.py`, now including
+  `AccountNumber`). The demo org holds the app's 71 Corporate and SME customers as Accounts
+  (`scripts/seed_salesforce_accounts.py`), with `customer_id` as Account Number; Salesforce's own
+  sample companies were deleted.
+- **Rule:** `multi_source_reconciliation.py` with `source=salesforce`: match Account Number =
+  `customer_id`; compare `name` and `country` exactly (after trimming) against our **Corporate and SME**
+  customers only - a CRM holding business customers is correct not to hold retail ones. An Account with
+  no number can't be matched and is kept as `SF:<Salesforce Id>`. Everything after the comparison
+  (automatic clearing of formatting-only differences, first/last/times seen, keeping reviewers'
+  decisions) is shared with the core-banking slice, keyed by `source_system = 'salesforce'`.
+- **Job:** task `salesforce_reconciliation` of `bank-data-pipeline`, after `salesforce_ingest` and
+  `quality`, before `load_postgres`. Skips (task value `status` from `salesforce_ingest`) when that run
+  didn't load Salesforce, so stale CRM data is never compared.
+- **Screen:** the Reconciliation tab's section "Our data vs the CRM (Salesforce)" - the same component
+  as core banking (`CoreSystemSection source="salesforce"`), with its own run, sign-off, groups and
+  breaks; `/reconciliation`, `/reconciliation/groups` and `/reconciliation/run` take `source_system`.
+- **Live run 185495439151899 (2026-09-29), all 10 tasks succeeded,** against the differences planted by
+  `scripts/plant_salesforce_breaks.py`: exactly 5 breaks - CN0001 name formatting only (cleared
+  automatically), CN0008 name, CN0002 country, CN0027 missing in the CRM, CNCRM01 missing in our data.
+  `create_groups` then made 4 groups (missing records and the name break important, due next day).
+  Their Camunda tasks start the next time the poll worker runs (Camunda wasn't running on 2026-09-29).
+  Core banking's 31 breaks were unaffected.
+
 ## 4. A Real Dependency This Spec Cannot Resolve on Its Own
 
 Reconciliation needs the two sides to reference the same entity by a **shared key** —

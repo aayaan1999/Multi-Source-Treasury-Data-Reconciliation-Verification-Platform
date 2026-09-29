@@ -154,3 +154,20 @@ def test_the_preparer_cant_sign_off_their_own_run(client, db, breaks):
     client.post(f"{API}/reconciliation/run/submit", headers=cfo, json={"note": "prepared by the CFO"})
     r = client.post(f"{API}/reconciliation/run/signoff", headers=cfo, json={"decision": "SIGN_OFF"})
     assert r.status_code == 409 and "prepared" in r.json()["detail"]
+
+
+def test_each_source_sees_only_its_own_breaks_and_groups(client, auth, db, breaks):
+    """The Reconciliation tab has one section per source (core banking, CRM); neither shows the other's rows."""
+    db.execute("""INSERT INTO reconciliation_exceptions (source_system, entity_type, entity_id, field_name, source_value,
+                  canonical_value, mismatch_type, status, detected_at, first_seen, last_seen, times_seen)
+                  VALUES ('salesforce', 'customer', 'CN0008', 'name', 'Haddad Construction LLC', 'Haddad Contracting LLC',
+                          'VALUE_MISMATCH', 'OPEN', now(), now(), now(), 1)""")
+    crm = client.get(f"{API}/reconciliation", headers=auth, params={"source_system": "salesforce", "limit": 5000}).json()
+    core = client.get(f"{API}/reconciliation", headers=auth, params={"source_system": "neon", "limit": 5000}).json()
+    everything = client.get(f"{API}/reconciliation", headers=auth, params={"limit": 5000}).json()
+    assert [r["entity_id"] for r in crm] == ["CN0008"]
+    assert core and all(r["source_system"] == "neon" for r in core)
+    assert len(everything) == len(core) + 1
+    assert client.get(f"{API}/reconciliation/groups", headers=auth, params={"source_system": "salesforce"}).json() == []
+    run = client.get(f"{API}/reconciliation/run", headers=auth, params={"source_system": "salesforce"}).json()
+    assert run["source_system"] == "salesforce" and run["run_date"]

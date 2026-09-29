@@ -40,9 +40,12 @@ def summary():
 # ---- Core-system reconciliation: groups, run sign-off (specs/reconciliation-groups.md) ------------
 
 @router.get("/groups")
-def groups(status: Optional[str] = None, limit: int = Query(500, le=5000)):
-    """Groups of breaks with the same cause (one task each), important ones first."""
-    where, params = ("WHERE status = %s", (status,)) if status else ("", ())
+def groups(status: Optional[str] = None, source_system: Optional[str] = None, limit: int = Query(500, le=5000)):
+    """Groups of breaks with the same cause (one task each), important ones first. source_system picks one
+    source (neon = core banking, salesforce = CRM); without it, every source."""
+    clauses = [(c, v) for c, v in (("status", status), ("source_system", source_system)) if v]
+    where = f"WHERE {' AND '.join(f'{c} = %s' for c, _ in clauses)}" if clauses else ""
+    params = tuple(v for _, v in clauses)
     return query(
         f"""SELECT group_id, source_system, entity_type, field_name, mismatch_type, pattern, important, break_count,
                    total_difference, largest_difference, requires_second_approval, team, status, decision,
@@ -175,13 +178,15 @@ def list_exceptions(
     status: Optional[str] = None,
     entity_type: Optional[str] = None,
     mismatch_type: Optional[str] = None,
+    source_system: Optional[str] = None,          # neon (core banking) or salesforce (CRM); all when omitted
     # Up to 5000: the Reconciliation page fetches the whole table once (unfiltered) and filters its
     # tabs/status in the browser, so this must return every row. The table is hundreds-to-thousands
     # of rows, not millions; move filtering back server-side if it ever outgrows this cap.
     limit: int = Query(200, le=5000),
 ):
     clauses, params = [], []
-    for col, val in (("status", status), ("entity_type", entity_type), ("mismatch_type", mismatch_type)):
+    for col, val in (("status", status), ("entity_type", entity_type), ("mismatch_type", mismatch_type),
+                     ("source_system", source_system)):
         if val:
             clauses.append(f"r.{col} = %s")
             params.append(val)

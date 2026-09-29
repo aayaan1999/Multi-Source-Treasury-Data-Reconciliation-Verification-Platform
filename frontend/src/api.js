@@ -181,7 +181,7 @@ export const api = {
   // Core-system reconciliation groups and run sign-off (specs/reconciliation-groups.md)
   reconGroups: (params) => request(`/reconciliation/groups${query(params)}`),
   reconGroup: (groupId) => request(`/reconciliation/groups/${groupId}`),
-  reconRun: () => request("/reconciliation/run"),
+  reconRun: (source) => request(`/reconciliation/run${query({ source_system: source })}`),
   submitReconRun: (body) => request("/reconciliation/run/submit", { method: "POST", body }),
   signOffReconRun: (body) => request("/reconciliation/run/signoff", { method: "POST", body }),
   // Received vs kept per source, country and table (specs/pipeline-reconciliation.md)
