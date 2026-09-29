@@ -730,6 +730,21 @@ CREATE TABLE source_connectors (
     last_sync_at   timestamptz
 );
 
+-- One row per source-notebook run (e.g. Salesforce), written by the notebook itself; shown under
+-- "Recent ingestions" on the Data Ingestion screen (ING-4).
+CREATE TABLE ingestion_runs (
+    run_id          bigserial PRIMARY KEY,
+    source_key      text NOT NULL,
+    data_name       text NOT NULL,
+    status          text NOT NULL CHECK (status IN ('success', 'failed')),
+    rows_received   bigint NOT NULL DEFAULT 0,
+    message         text,
+    databricks_run  jsonb,
+    ran_at          timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ingestion_runs_recent_idx ON ingestion_runs (ran_at DESC);
+
 -- ---------------------------------------------------------------------------------------------
 -- 5. Sync and mapping tables
 -- ---------------------------------------------------------------------------------------------

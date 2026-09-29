@@ -23,15 +23,14 @@ SOURCE_TYPES = {
         "name": "Core banking files", "code": "FILES", "detail": "CSV files in the landing volume (Lebanon, Saudi Arabia, Qatar)",
         "builtin": True, "fields": [],
     },
+    # OAuth 2.0 client credentials with a Salesforce External Client App (the only kind new orgs can create
+    # since Spring '26, and it doesn't allow the username-password flow). The Run As user is set in Salesforce.
     "salesforce": {
-        "name": "Salesforce", "code": "SF", "detail": "CRM: customers and relationship managers",
+        "name": "Salesforce", "code": "SF", "detail": "CRM: Accounts",
         "fields": [
-            ("instance_url", "Instance URL", "url", True, "https://your-domain.my.salesforce.com"),
-            ("client_id", "Client ID / Consumer key", "text", True, "3MVG9..."),
-            ("client_secret", "Client secret", "secret", True, ""),
-            ("username", "Username", "text", True, "integration.user@bank.com"),
-            ("password", "Password", "secret", True, ""),
-            ("security_token", "Security token", "secret", False, "Only if your org requires one"),
+            ("instance_url", "Instance URL (My Domain)", "url", True, "https://your-domain.my.salesforce.com"),
+            ("client_id", "Consumer key", "text", True, "3MVG9..."),
+            ("client_secret", "Consumer secret", "secret", True, ""),
         ],
     },
     "postgresql": {
@@ -126,14 +125,15 @@ def databricks_configured() -> bool:
 
 
 def connect_to_databricks_pipeline(source_key: str, config: dict, secrets: dict) -> dict:
-    """Hands a new source to the Databricks ingestion pipeline: its credentials go into the secret scope
-    as `<source>-<field>` (e.g. salesforce-password), which the ingestion notebooks read. Returns where
-    the credentials went; never the credentials themselves.
+    """Hands a new source to the Databricks ingestion pipeline: its settings and credentials go into the
+    secret scope as `<source>-<field>` (e.g. salesforce-client_secret), which the source's notebook reads
+    (notebooks/multi_source_salesforce_ingestion.py). Non-secret settings go there too, so the notebook
+    needs nothing else. Returns where the credentials went; never the credentials themselves.
 
     Not connected to Databricks: nothing is stored and the caller saves the source without credentials."""
-    if not secrets:
-        return {"credentials": "none_needed", "detail": "No credentials to store"}
     if not databricks_configured():
+        if not secrets:
+            return {"credentials": "none_needed", "detail": "No credentials to store"}
         return {"credentials": "not_stored",
                 "detail": "The app isn't connected to Databricks, so the credentials were not stored anywhere. Connect again once it is."}
     from .routers.refresh import _api                     # the Jobs API client: never logs the token
@@ -142,9 +142,31 @@ def connect_to_databricks_pipeline(source_key: str, config: dict, secrets: dict)
     except HTTPException as e:
         if "already exists" not in str(e.detail).lower():
             raise
-    for field, value in secrets.items():
+    for field, value in {**config, **secrets}.items():
         _api("POST", "/api/2.0/secrets/put", {"scope": SECRET_SCOPE, "key": f"{source_key}-{field}", "string_value": value})
+    stale = {s["key"] for s in _api("GET", f"/api/2.0/secrets/list?scope={SECRET_SCOPE}").get("secrets", [])
+             if s["key"].startswith(f"{source_key}-")} - {f"{source_key}-{f}" for f in {**config, **secrets}}
+    for key in stale:                                      # e.g. a field an older version of the form asked for
+        _api("POST", "/api/2.0/secrets/delete", {"scope": SECRET_SCOPE, "key": key})
+    if not secrets:
+        return {"credentials": "none_needed", "detail": f"Settings stored in the Databricks secret scope {SECRET_SCOPE}"}
     return {"credentials": "databricks", "detail": f"Credentials stored in the Databricks secret scope {SECRET_SCOPE}"}
+
+
+def forget_in_databricks(source_key: str) -> None:
+    """Disconnect: deletes the source's settings and credentials from the secret scope, so the pipeline
+    skips it and nothing is left behind. Nothing to do when the app isn't connected to Databricks."""
+    if not databricks_configured():
+        return
+    from .routers.refresh import _api
+    try:
+        keys = _api("GET", f"/api/2.0/secrets/list?scope={SECRET_SCOPE}").get("secrets", [])
+    except HTTPException as e:
+        if "does not exist" in str(e.detail).lower():
+            return
+        raise
+    for key in (k["key"] for k in keys if k["key"].startswith(f"{source_key}-")):
+        _api("POST", "/api/2.0/secrets/delete", {"scope": SECRET_SCOPE, "key": key})
 
 
 def test_connection(source_key: str, values: dict) -> dict:

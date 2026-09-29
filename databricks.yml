@@ -13,6 +13,9 @@ variables:
   landing_path:
     description: Folder the CSVs are uploaded to (Unity Catalog volume path, no trailing slash).
     default: /Volumes/dbw_bankx_treasury_poc/raw/raw/resources
+  trigger_pause_status:
+    description: UNPAUSED runs the job when files land; PAUSED leaves it to Run all sources now / Refresh now.
+    default: UNPAUSED
 
 targets:
   default:
@@ -30,7 +33,7 @@ resources:
         enabled: true
 
       trigger:
-        pause_status: UNPAUSED
+        pause_status: ${var.trigger_pause_status}
         file_arrival:
           url: ${var.landing_path}/
           # Uploading 8 files takes a while: wait until the folder has been quiet for 2 minutes
@@ -90,6 +93,11 @@ resources:
             - task_key: quality
           notebook_task:
             notebook_path: ./notebooks/pipeline_reconciliation.py
+
+        - task_key: salesforce_ingest
+          description: Salesforce Accounts to bronze_salesforce_accounts (connected from the app's Data ingestion tab; skips when not connected).
+          notebook_task:
+            notebook_path: ./notebooks/multi_source_salesforce_ingestion.py
 
         - task_key: load_postgres
           description: Merge Silver/Gold into Neon Postgres in one transaction.

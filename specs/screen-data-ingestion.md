@@ -72,8 +72,29 @@ tagged by country (Lebanon, Saudi Arabia, Qatar, plus "Group" for bank-wide tabl
   `source_connectors`; one `SOURCE_CONNECTED` audit row, without secrets.
 - A connected card shows **Configure** (the saved settings, secrets empty, plus **Disconnect**) and
   **Sync**. Every change updates the page in place. CFO/admin only, like Refresh now.
-- Not yet: a notebook that actually reads each new source with those credentials. The pipeline job
-  still ingests the core banking files only (ING-1 part 2).
+- Non-secret settings (instance URL, client ID...) are also put in the scope, so a source's notebook needs
+  nothing else; fields an older form asked for are deleted from the scope. **Disconnect** deletes all of
+  the source's keys from the scope.
+
+## 3b. Salesforce, end to end (2026-09-29)
+
+- **Salesforce side:** an **External Client App** with **Enable Client Credentials Flow** and a **Run As
+  (Username)** in its Policies. New orgs can't create Connected Apps since Spring '26, and External
+  Client Apps don't support the username-password flow, so the form asks only for the **Instance URL
+  (My Domain)**, **Consumer key** and **Consumer secret**. The token request must go to the My Domain
+  address; `login.salesforce.com` is refused for this flow.
+- **Pipeline:** `notebooks/multi_source_salesforce_ingestion.py` is the `salesforce_ingest` task of
+  `bank-data-pipeline` (no dependencies; runs alongside the core banking load). It reads
+  `bank-data-sources/salesforce-{instance_url,client_id,client_secret}`, signs in with client
+  credentials, reads every page of `SELECT Id, Name, Industry, BillingCountry, CreatedDate FROM Account`
+  into `bronze_salesforce_accounts` (tagged `source_system = SALESFORCE`) and writes one row to Neon
+  `ingestion_runs` (migration 019), which "Recent ingestions" lists. Not connected → exits "skipped";
+  sign-in or query failure → records "failed" with Salesforce's error code and exits without failing
+  the pipeline run.
+- **Not yet:** Salesforce Accounts are not merged into `customers` or compared with them
+  (`specs/multi-source-reconciliation.md` covers the Neon slice only).
+- `databricks.yml` has a `trigger_pause_status` variable (default UNPAUSED). The 2026-09-29 deploy used
+  `--var trigger_pause_status=PAUSED` to keep file-arrival runs off, as they were in the workspace.
 
 ## 4. Acceptance criteria
 

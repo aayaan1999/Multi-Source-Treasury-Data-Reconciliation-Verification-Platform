@@ -79,6 +79,20 @@ def _real_recent(rows: list) -> list:
     return recent
 
 
+def _source_runs() -> list:
+    """Loads recorded by the source notebooks themselves (ingestion_runs, e.g. Salesforce), newest first."""
+    rows = query("""SELECT source_key, data_name, status, rows_received, message, ran_at
+                    FROM ingestion_runs ORDER BY ran_at DESC LIMIT 20""")
+    out = []
+    for r in rows:
+        spec = connectors.SOURCE_TYPES.get(r["source_key"], {"name": r["source_key"]})
+        failed = r["status"] == "failed"
+        out.append({"source": spec["name"], "type": "API", "data": r["data_name"], "received": r["rows_received"],
+                    "kept": r["rows_received"], "held": 0, "status": r["status"],
+                    "reason": r["message"] if failed else None, "at": r["ran_at"].isoformat()})
+    return out
+
+
 def _demo_recent(now: datetime) -> list:
     return [{**{k: v for k, v in r.items() if k != "minutes_ago"}, "held": r["received"] - r["kept"],
              "reason": r.get("reason"), "at": (now - timedelta(minutes=r["minutes_ago"])).isoformat()}
@@ -89,9 +103,11 @@ def _demo_recent(now: datetime) -> list:
 def overview():
     now = datetime.now(timezone.utc)
     rows = _latest_run()
+    source_runs = _source_runs()
     real = bool(rows)
-    recent = _real_recent(rows) if real else _demo_recent(now)
+    recent = _real_recent(rows) if real else _demo_recent(now)       # the stat cards: the latest pipeline run
     failed = [r for r in recent if r["status"] == "failed"]
+    listed = sorted(source_runs + ([] if source_runs and not real else recent), key=lambda r: r["at"], reverse=True)
     sources = source_list()
     return {
         "trigger": PIPELINE_TRIGGER,
@@ -111,7 +127,7 @@ def overview():
         "schedules": {"demo": True, "items": [{"source": s["source"], "runs": s["runs"],
                                                 "next_at": (now + timedelta(hours=s["next_hours"])).isoformat()}
                                                for s in DEMO["schedules"]]},
-        "recent": {"demo": not real, "items": recent},
+        "recent": {"demo": not real and not source_runs, "items": listed},
         "upload_formats": UPLOAD_FORMATS,
     }
 
@@ -183,6 +199,7 @@ def disconnect_source(key: str, user: dict = Depends(current_user)):
     _can_manage(user)
     if connectors.source(key).get("builtin"):
         raise HTTPException(409, "The core banking files are part of the pipeline itself and can't be disconnected here")
+    connectors.forget_in_databricks(key)
     write("DELETE FROM source_connectors WHERE source_key = %s", (key,), returning=False)
     _audit(user, "SOURCE_DISCONNECTED", key, {})
     return {"source": _card(key, None)}
