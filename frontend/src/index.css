@@ -100,6 +100,15 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+/* A dropdown's open list takes its colours from the options, not the page: a select with a transparent
+   background (the Ask a question filter chips) opened as the browser's white list with the theme's white
+   text in dark mode - unreadable until hovered. Every option now uses the theme's surface and ink. */
+select option,
+select optgroup {
+  background-color: var(--surface-1);
+  color: var(--ink);
+}
+
 /* The header is a charcoal brand band in every theme: its own tokens, so the Tailwind colour utilities
    inside it (text-ink, border-hair, bg-accent...) pick up the brand values. */
 .brand-header {
@@ -132,297 +141,73 @@ body {
   transform: translateY(-2px);
 }
 
-/* ---- Ask a question tab: the look of the client demo overview (project-docs/client-demo/Client-Demo-Overview.html):
-   navy and gold, uppercase letter-spaced labels, square cards with a navy or gold top rule. The shared tokens are
-   redefined inside .ask-page, so the tables and chips in it follow; the header bar keeps the app's own branding. */
-.ask-page {
-  --ask-navy: #14305c;
-  --ask-navy-deep: #0f2447;
-  --ask-gold: #c09a45;
-  --ask-gold-soft: #e8c878;
-  --ask-blue: #2f6db3;
-  --ask-tint: #f2f6fb;
-  --ask-tint2: #e8eef7;
-  --ask-heading: var(--ask-navy);
-  --ask-label: var(--ask-blue);
-  --page: #f7f9fc;
-  --surface-1: #ffffff;
-  --ink: #172238;
-  --ink-2: #4d5a70;
-  --muted: #7c889c;
-  --border: #d6deea;
-  --grid: #e8eef7;
-  --series-1: #14305c;
-  --series-1-soft: rgba(20, 48, 92, 0.08);
-  --on-accent: #ffffff;
-  --shadow-card: 0 2px 6px rgba(20, 48, 92, 0.05);
-  min-height: calc(100vh - 7rem);
-  background: var(--page);
+/* ---- AI assistant and Data ingestion (the client demo deck, project-docs/client-demo/AppBay-Client-Demo.pdf,
+   slides 3 and 12): the app's own charcoal and yellow, with the brand yellow for the assistant mark, the send
+   button, primary "Browse files" and the section pills. */
+.pill-brand {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--brand-yellow) 30%, transparent);
   color: var(--ink);
-  font-family: "Mulish", "Segoe UI", system-ui, sans-serif;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.btn-brand {
+  background: var(--brand-yellow);
+  color: #20242c;
+  font-weight: 600;
+}
+.btn-brand:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+.btn-dark {
+  background: var(--brand-dark);
+  color: #ffffff;
+  font-weight: 600;
+}
+:root[data-theme="dark"] .btn-dark {
+  background: var(--brand-yellow);
+  color: #20242c;
 }
 @media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) .ask-page {
-    --ask-tint: rgba(255, 255, 255, 0.04);
-    --ask-tint2: rgba(255, 255, 255, 0.07);
-    --ask-heading: var(--ask-gold-soft);
-    --ask-label: #8fb3e6;
-    --page: #0c1d3a;
-    --surface-1: #13294d;
-    --ink: #eef2f9;
-    --ink-2: #b7c3d8;
-    --muted: #8ea0bd;
-    --border: rgba(255, 255, 255, 0.12);
-    --grid: rgba(255, 255, 255, 0.08);
-    --series-1: #e8c878;
-    --series-1-soft: rgba(232, 200, 120, 0.16);
-    --on-accent: #0f2447;
-    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.35);
+  :root:where(:not([data-theme="light"])) .btn-dark {
+    background: var(--brand-yellow);
+    color: #20242c;
   }
 }
-:root[data-theme="dark"] .ask-page {
-  --ask-tint: rgba(255, 255, 255, 0.04);
-  --ask-tint2: rgba(255, 255, 255, 0.07);
-  --ask-heading: var(--ask-gold-soft);
-  --ask-label: #8fb3e6;
-  --page: #0c1d3a;
-  --surface-1: #13294d;
-  --ink: #eef2f9;
-  --ink-2: #b7c3d8;
-  --muted: #8ea0bd;
-  --border: rgba(255, 255, 255, 0.12);
-  --grid: rgba(255, 255, 255, 0.08);
-  --series-1: #e8c878;
-  --series-1-soft: rgba(232, 200, 120, 0.16);
-  --on-accent: #0f2447;
-  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.35);
-}
-
-.ask-eyebrow {
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--ask-gold);
-}
-.ask-label {
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--ask-label);
-}
-.ask-label.gold {
-  color: var(--ask-gold);
-}
-
-/* The dark cover band: navy gradient, gold eyebrow, white headline with a gold second line, gold bar. */
-.ask-hero {
-  position: relative;
-  overflow: hidden;
-  background: radial-gradient(ellipse at 80% 20%, #1d3f73 0%, var(--ask-navy) 45%, var(--ask-navy-deep) 100%);
-  color: #dfe7f3;
-  padding: 2.25rem 2rem 1.75rem;
-}
-.ask-hero::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 6px;
-  background: linear-gradient(90deg, var(--ask-navy) 0%, #3b557c 55%, var(--ask-gold) 100%);
-}
-.ask-hero h1 {
-  margin-top: 0.9rem;
-  font-size: clamp(1.9rem, 3.4vw, 2.75rem);
-  font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+/* The user's question: a dark bubble on the right. */
+.chat-question {
+  background: var(--brand-dark);
   color: #ffffff;
 }
-.ask-hero h1 em {
-  font-style: normal;
-  color: var(--ask-gold-soft);
+:root[data-theme="dark"] .chat-question {
+  background: #3a404b;
 }
-.ask-hero p {
-  max-width: 46rem;
-  font-size: 0.95rem;
-  line-height: 1.65;
-  color: #c7d3e6;
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .chat-question {
+    background: #3a404b;
+  }
 }
-.ask-goldbar {
-  width: 100px;
-  height: 4px;
-  background: var(--ask-gold);
-  margin: 1.1rem 0;
+/* The assistant's mark: a yellow square with a four-point star. */
+.chat-mark {
+  background: var(--brand-yellow);
+  color: #20242c;
 }
-.ask-pillars {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: 0.75rem 0;
-  margin-top: 1.5rem;
+/* A heading with the short vertical bar in front, used by the ingestion sections. */
+.bar-heading {
+  border-left: 3px solid var(--ink);
+  padding-left: 0.6rem;
 }
-.ask-pillars div {
-  border-left: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 0.1rem 1.1rem;
+/* A stat card's coloured top edge. */
+.top-edge {
+  border-top: 4px solid var(--brand-yellow);
 }
-.ask-pillars div:first-child {
-  border-left: none;
-  padding-left: 0;
-}
-.ask-pillars b {
-  display: block;
-  color: #ffffff;
-  font-size: 1rem;
-  margin-bottom: 0.2rem;
-}
-.ask-pillars span {
-  font-size: 0.75rem;
-  color: #a9b8d0;
-}
-
-/* Section heading with the navy rule under it. */
-.ask-h2 {
-  font-size: 1.35rem;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  margin-top: 0.35rem;
-}
-.ask-rule {
-  position: relative;
-  height: 3px;
-  background: var(--ask-tint2);
-  margin: 0.75rem 0 1rem;
-}
-.ask-rule::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 3px;
-  width: 110px;
-  background: var(--ask-heading);
-}
-
-/* Square cards with a navy (or gold) top rule. */
-.ask-card {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-top: 4px solid var(--ask-heading);
-  box-shadow: var(--shadow-card);
-  padding: 1rem 1.1rem;
-}
-.ask-card.gold {
-  border-top-color: var(--ask-gold);
-}
-/* A previous question in the grid: a smaller card that opens the saved answer. */
-.ask-tile {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--ask-heading);
-  padding: 0.75rem 0.9rem;
-  transition: border-color 0.15s;
-}
-.ask-tile:hover {
-  border-color: var(--ask-gold);
-}
-.ask-tile:focus-visible {
-  outline: 2px solid var(--ask-gold);
-  outline-offset: 2px;
-}
-.ask-card.soft {
-  background: var(--ask-tint);
-  border: none;
-  box-shadow: none;
-}
-.ask-card .card {
-  border-radius: 0;
-}
-
-/* The four-step "how it works" strip, with the gold arrows between steps. */
-.ask-flow {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 1rem 1.25rem;
-}
-.ask-flow > div {
-  position: relative;
-  background: var(--ask-tint);
-  border-top: 3px solid var(--ask-label);
-  padding: 0.8rem 0.9rem;
-}
-.ask-flow > div:last-child {
-  background: var(--ask-navy);
-  border-top-color: var(--ask-gold);
-}
-.ask-flow > div:last-child h3,
-.ask-flow > div:last-child p {
-  color: #ffffff;
-}
-.ask-flow > div:not(:last-child)::after {
-  content: "▶";
-  position: absolute;
-  right: -1rem;
-  top: 42%;
-  color: var(--ask-gold);
-  font-size: 0.7rem;
-}
-.ask-flow .n {
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: var(--ask-gold);
-}
-.ask-flow h3 {
-  font-size: 0.9rem;
-  font-weight: 800;
-  margin: 0.15rem 0 0.25rem;
-  color: var(--ink);
-}
-.ask-flow p {
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: var(--ink-2);
-}
-
-/* Buttons and chips: navy primary (gold in dark), square-ish outlines like the document's pills. */
-.ask-primary {
-  background: var(--series-1);
-  color: var(--on-accent);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-.ask-primary:hover:not(:disabled) {
-  filter: brightness(1.12);
-}
-.ask-chip {
-  border: 1px solid var(--border);
-  background: var(--surface-1);
-  color: var(--ink-2);
-}
-.ask-chip:hover:not(:disabled) {
-  border-color: var(--ask-gold);
-  color: var(--ink);
-}
-
-/* A notice on an answer (what wasn't applied): the document's gold callout. */
-.ask-notice {
-  border-left: 4px solid var(--ask-gold);
-  background: var(--ask-tint);
-  padding: 0.55rem 0.85rem;
-}
-
-/* Tables inside the tab: the document's mini-table - small uppercase letter-spaced headers. */
-.ask-page table thead th {
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-  background: transparent;
-}
-.ask-page .card.rounded-xl {
-  border-radius: 0;
+.top-edge.bad {
+  border-top-color: var(--critical);
 }
 
 /* Small uppercase pill label used above a headline - "kicker" per aifina.ae's module pages

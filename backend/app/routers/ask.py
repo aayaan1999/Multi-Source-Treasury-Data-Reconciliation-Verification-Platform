@@ -65,6 +65,12 @@ def history(limit: int = Query(10, ge=1, le=service.PAGE_MAX), before: Optional[
     return service.history(user, limit, before)
 
 
+@router.get("/context")
+def context(user: dict = Depends(current_user)):
+    """The assistant's side panel: which data it reads, how fresh it is, and this user's scope."""
+    return service.context(user)
+
+
 @router.delete("/history")
 def clear_history(user: dict = Depends(current_user)):
     return {"cleared": service.clear_history(user)}

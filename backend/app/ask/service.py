@@ -466,3 +466,57 @@ def export_rows(user: dict, entry_id: str, filters: dict, question: str) -> tupl
         raise HTTPException(409, ran["clarify"]["question"])
     _audit(user, "ASK_EXPORT", entry_id, {"question": question, "filters": clean, "rows": len(ran["rows"])})
     return ENTRIES[entry_id], clean, ran
+
+
+# ---- the AI assistant's side panel: what it reads from, how fresh that is, and the user's scope ------
+ROLE_ACCESS = {"admin": "Admin: all data", "approver": "Approver: all data", "reviewer": "Reviewer: all data",  # every role may run every approved query today
+               "analyst": "Analyst: all data"}
+
+
+def _safe_one(sql: str, params: tuple = ()) -> Optional[dict]:
+    """One row, or None if the table is empty or not there yet (a fresh database before the first load)."""
+    try:
+        rows = query(sql, params)
+    except Exception as e:                       # a missing table must not break the whole panel
+        if "does not exist" not in str(e):
+            raise
+        return None
+    return rows[0] if rows else None
+
+
+def context(user: dict) -> dict:
+    """GET /ask/context. `answerable` says whether the assistant can answer questions about that area
+    yet; the others are listed so it's clear what it doesn't cover (see the backlog, AST-*)."""
+    load = _safe_one("SELECT max(detected_at) AS at, sum(received_rows) AS received, sum(rejected_rows) AS held "
+                     "FROM pipeline_reconciliation WHERE detected_at = (SELECT max(detected_at) FROM pipeline_reconciliation)")
+    groups = _safe_one("SELECT count(*) AS n FROM reconciliation_groups WHERE status <> 'CLOSED'")
+    kpi = _safe_one("SELECT max(calculation_date) AS day FROM kpi_daily_summary")
+    breaches = _safe_one("SELECT count(*) AS n FROM breaches WHERE status = 'OPEN'")
+    report = _safe_one("SELECT d.name, i.period, i.due_date FROM report_instances i JOIN report_definitions d USING (report_id) "
+                       "WHERE i.status <> 'SUBMITTED' ORDER BY i.due_date NULLS LAST LIMIT 1")
+    countries = []
+    if kpi and kpi["day"]:
+        rows = _safe_one("SELECT array_agg(DISTINCT country ORDER BY country) AS names FROM country_performance_summary "
+                         "WHERE calculation_date = (SELECT max(calculation_date) FROM country_performance_summary)")
+        countries = (rows or {}).get("names") or []
+
+    def at(value):
+        return value.isoformat() if value else None
+
+    areas = [
+        {"key": "load", "label": "Latest load", "answerable": True, "as_of": at(load and load["at"]),
+         "detail": f"{int(load['received'] or 0):,} records, {int(load['held'] or 0)} held back" if load and load["at"] else "No load yet"},
+        {"key": "kpi", "label": "KPI summary", "answerable": True, "as_of": at(kpi and kpi["day"]),
+         "detail": "8 KPIs" if kpi and kpi["day"] else "No KPIs yet"},
+        {"key": "portfolio", "label": "Portfolio & branches", "answerable": True, "as_of": at(kpi and kpi["day"]),
+         "detail": "Loans, IFRS 9, branches"},
+        {"key": "breaches", "label": "Limit breaches", "answerable": True, "as_of": None,
+         "detail": f"{(breaches or {}).get('n', 0)} open"},
+        {"key": "reconciliation", "label": "Reconciliation", "answerable": False, "as_of": None,
+         "detail": f"{(groups or {}).get('n', 0)} open groups"},
+        {"key": "reports", "label": "Regulatory reports", "answerable": False, "as_of": None,
+         "detail": f"{report['name']} {report['period']}" if report else "None due"},
+    ]
+    period = kpi["day"].strftime("%b %Y") if kpi and kpi["day"] else None
+    return {"areas": areas, "scope": {"countries": countries, "period": period,
+                                      "access": ROLE_ACCESS.get(user["role"], user["role"].title())}}

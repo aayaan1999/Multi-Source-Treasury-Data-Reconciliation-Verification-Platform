@@ -315,6 +315,37 @@ breach creates a Compliance task. Two **placeholder** limits set 2026-09-23: cap
 
 ---
 
+## 9. Data ingestion screen and AI assistant: demo content to make real (manager review, 2026-09-29)
+
+**Today (built 2026-09-29, not yet checked in a browser):** both tabs now follow the client demo deck
+(`project-docs/client-demo/AppBay-Client-Demo.pdf`, slides 3 and 12). The **Data ingestion** tab
+(`/ingestion`, first in the menu, `specs/screen-data-ingestion.md`) shows the **real** latest pipeline run
+from `pipeline_reconciliation`: files, records received / kept / held back, sources that delivered
+nothing, and one "Recent ingestions" row per source, country and data type. Everything else on it is
+**demo content** from `DEMO` in `backend/app/routers/ingestion.py`, labelled "Demo data" on screen: the
+six source connectors and their status, "Sources connected 5 / 6", the scheduled pulls, and file
+upload, which checks type and size in the browser but sends nothing. With no pipeline run in the
+database, the stat cards and "Recent ingestions" fall back to demo rows too, also labelled. The **AI
+assistant** tab (`/ask`, last in the menu) lists six areas under "Querying": four it answers from, and
+Reconciliation and Regulatory reports shown unticked because it can't answer questions about them yet.
+
+| ID | Task | Size | Bank input | Status |
+|---|---|---|---|---|
+| ING-1 | Connector registry: a `source_connectors` table (type, target, country, credentials reference - never the secret itself - status, last check) replacing `DEMO["connectors"]`; "Connect" opens a real setup form; status from a periodic connection check | L | Each source's system, delivery method and credentials owner (same as FLOW-1c) | todo - demo only |
+| ING-2 | Schedules from the real jobs: next run and cadence per connector from the Databricks Jobs API (`databricks.yml` today has one file-arrival trigger, shown as "Schedule: on file arrival"), replacing `DEMO["schedules"]` | M | Pull times per source | todo - demo only |
+| ING-3 | File upload for real: `POST /ingestion/uploads` streams the file to the landing volume (`/Volumes/.../resources`), which starts the pipeline by its file-arrival trigger; virus/size/type checks server-side; one audit row per upload; admin/CFO only. XLSX/JSON/XML need readers in Notebook 1; PDF needs a table-extraction step first (`PREREQUISITES.md` question 8) | L | Which sources may be uploaded by hand, and who may upload | todo - browser-only demo |
+| ING-4 | Failed loads from the source side: connector errors (e.g. "authentication expired") recorded per attempt in an `ingestion_runs` table, so a source that never reached Databricks still shows as failed (today only "No rows delivered" from the completeness check, FLOW-1b, counts) | M | - | todo |
+| ING-5 | "Recent ingestions" across several runs, not just the latest, with a filter by source and date and a drill-down to the rejected records (reuse the Reconciliation tab's `/reconciliation/pipeline/{id}/records`) | S | - | todo - latest run only |
+| ING-6 | Remove the demo fallback (`_demo_recent`) once the pipeline always has a run in every environment, so an empty database says "No loads yet" instead of showing demo rows | S | - | todo |
+| AST-1 | Assistant answers about reconciliation: an approved query over `reconciliation_groups` / `reconciliation_items` (open groups by cause, largest breaks, second approvals), added to the catalogue, prompt examples and the golden question set (`scripts/eval_ask.py`); then tick "Reconciliation" | M | - | todo |
+| AST-2 | Assistant answers about regulatory reports: report calendar and line values from `report_instances` / `report_line_items`, with the drill-to-source link to the report line; then tick "Regulatory reports" | M | The bank's report list (same as CHT-1) | todo |
+| AST-3 | "View records" to the exact rows: today it opens the matching screen (e.g. Portfolio for loan questions); pass the answer's filters so that screen opens already filtered | S | - | todo |
+
+**Done when:** every block on the Data ingestion tab reads from a real source (no "Demo data" labels
+left) and the assistant ticks every area listed under "Querying".
+
+---
+
 ## Why this order
 
 1. **5 + 6** - relabelling rules and grouping flags into cases makes the Tasks screen credible
@@ -333,6 +364,7 @@ breach creates a Compliance task. Two **placeholder** limits set 2026-09-23: cap
 - SLAs per team and task-creation sign-off (TSK-3/4)
 - Reconciliation tolerances, harmless causes, key fields, second-approval rule, owning team and deadlines, escalation age, run sign-off requirement (REC-1/3/4/5/7); core-banking transaction export (REC-6)
 - Official FX source per currency; which LBP rate per report (FX-2/3)
+- Each source system's delivery method, credentials owner and pull times; who may upload files by hand (ING-1/2/3)
 - Source-system list and transaction-code lists (SRC-4)
 - A reliable company identifier (DUP-2)
 - List of reports and filters the chatbot must cover (CHT-1)

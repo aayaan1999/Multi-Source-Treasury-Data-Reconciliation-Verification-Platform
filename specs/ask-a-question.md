@@ -254,24 +254,38 @@ Response:
 than trusting rows sent from the browser; the sheet includes the question, filters, source table and
 as-of date. Reuses `backend/app/exports.py` (`_sheet` / `_save`).
 
-## 8. The panel on Reports (CHT-3)
+## 8. The AI assistant tab (CHT-3)
 
-- A question box at the top of the Reports screen, with 4-6 example questions as clickable chips.
-- While waiting: "Working it out…" — the laptop model takes ~6 s, so the wait must be visible.
-- **Answer card:** "What I understood" as chips (each removable or changeable from a short list,
-  which re-runs without the model) → the table (same number formatting as the rest of the app) →
-  "Source: branch_performance_summary, as of 28 Sep 2026" → **Export to Excel**.
-- **Clarify:** the question and its buttons. **Unsupported:** "I can answer questions about …" plus
-  the example chips.
+Its own tab, **AI assistant** (`/ask`, last in the menu), laid out as in the client demo deck
+(`project-docs/client-demo/AppBay-Client-Demo.pdf`, slide 12) since the 2026-09-29 manager review; it
+replaced the earlier navy-and-gold "Ask a question" page. Heading "Ask about your data" with an
+"AI data assistant" pill. Two columns:
+
+- **The chat** (left). Your question in a dark bubble on the right; the answer beside the assistant's
+  yellow mark, oldest at the top, scrolling to the newest. Under the chat: example questions as chips,
+  then the question box with a yellow send button. While waiting: "Working it out…" (the laptop model
+  takes ~5 s warm, up to ~35 s cold - see `llm.py`).
+- **Answer:** a one-line summary built only from the returned rows (`summarise()` in
+  `frontend/src/ask/answer.js`: the row count, and the first row only when the answer is sorted by a
+  measure) plus a link to the screen with the rows behind it (`DRILL`, e.g. loan questions → Portfolio;
+  backlog AST-3 makes it open already filtered) → any notice → the table, or bars when it's one measure
+  across 2-12 named rows (with "Show as table") → "What I understood" chips (each removable or
+  changeable, which re-runs without the model) → **Sources:** the source table with its as-of date and
+  the approved query's name → **Export to Excel**.
+- **Clarify:** the question and its buttons. **Unsupported:** why, and what to ask instead.
+- **Side panel** (right), from `GET /ask/context`: **Querying** - the areas the assistant reads, each
+  with its freshness (latest load time, KPI date, open breaches), ticked when it can answer from them;
+  Reconciliation and Regulatory reports are listed unticked until AST-1/2. **Scope** - the countries in
+  the latest data, the period and the user's access. **How answers work.** **Recent questions** - see
+  below.
 - Every answer is saved on the server for the user who asked it (`ask_history`, migration 017;
-  newest 200 kept per user), so it comes back after logging out and in again. Answers from this login
-  are shown in full; earlier ones appear under **Previous questions** as a grid of tiles (question,
-  report, row count, when asked): the newest 5, then 10 more per **Show more**
-  (`GET /ask/history?limit=&before=`, a cursor so new answers don't shift the pages). Opening a tile
-  shows the answer in full as it was saved, without asking again; a chip edit on it replaces the saved
-  copy. **Clear these answers** deletes the user's list (`DELETE /ask/history`) but never the
-  `audit_log` rows. On login and logout the browser's copy is emptied, so the next person at the same
-  browser sees only their own list.
+  newest 200 kept per user), so it comes back after logging out and in again. This login's answers are
+  in the chat; earlier ones are listed under **Recent questions**: the newest 5, then 10 more per
+  **Show more** (`GET /ask/history?limit=&before=`, a cursor so new answers don't shift the pages).
+  Opening one puts it back in the chat as it was saved, without asking again; a chip edit on it
+  replaces the saved copy. **Clear these answers** deletes the user's list (`DELETE /ask/history`) but
+  never the `audit_log` rows. On login and logout the browser's copy is emptied, so the next person at
+  the same browser sees only their own list.
 
 ## 9. Audit (CHT-4)
 

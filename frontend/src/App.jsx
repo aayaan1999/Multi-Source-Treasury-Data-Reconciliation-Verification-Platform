@@ -6,6 +6,7 @@ import { applyLimits } from "./kpi/kpiConfig";
 import Ask from "./pages/Ask";
 import AuditOversight from "./pages/AuditOversight";
 import Dashboard from "./pages/Dashboard";
+import Ingestion from "./pages/Ingestion";
 import KpiDetail from "./pages/KpiDetail";
 import Login from "./pages/Login";
 import Performance from "./pages/Performance";
@@ -44,6 +45,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/ingestion" element={<RequireAuth><Ingestion /></RequireAuth>} />
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
       <Route path="/kpi/:key" element={<RequireAuth><KpiDetail /></RequireAuth>} />
       <Route path="/portfolio" element={<RequireAuth><Portfolio /></RequireAuth>} />

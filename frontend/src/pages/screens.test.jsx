@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import App from "../App";
@@ -103,6 +103,8 @@ describe("Screen 4: scenario modelling", () => {
     const calls = stub();
     renderAt("/scenario");
     await screen.findByRole("group", { name: "Preset scenarios" });
+    // The saved-scenarios list is requested just after the presets appear; count from after the page's own loads.
+    await waitFor(() => expect(calls.some((c) => c.endsWith("/scenario/saved"))).toBe(true));
     const before = calls.length;
     fireEvent.change(screen.getByRole("slider", { name: "Currency devaluation" }), { target: { value: "30" } });
     fireEvent.change(screen.getByRole("slider", { name: "Deposit outflow" }), { target: { value: "20" } });

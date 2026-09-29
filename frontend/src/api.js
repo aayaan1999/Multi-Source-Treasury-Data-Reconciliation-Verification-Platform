@@ -156,6 +156,9 @@ export const api = {
   exportAsk: (body) => download("/ask/export", { method: "POST", body, fallbackName: "answer.xlsx" }),
   askHistory: (params) => request(`/ask/history?${new URLSearchParams(params)}`),   // one page of this user's saved answers
   clearAskHistory: () => request("/ask/history", { method: "DELETE" }),
+  askContext: () => request("/ask/context"),                         // the assistant's side panel
+  // Data ingestion (specs/screen-data-ingestion.md): real latest-run figures + labelled demo connectors
+  ingestionOverview: () => request("/ingestion/overview"),
 
   // Screen 6 - everything except task state/actions, which go straight to Tasklist (tasklistApi.js)
   exceptionDetail: (params) => request(`/workflow/exceptions/detail${query(params)}`),

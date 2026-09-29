@@ -1,0 +1,66 @@
+# Spec: Data Ingestion screen
+
+**Status:** Built 2026-09-29 (backend + frontend, with tests); not yet checked in a browser. Part real,
+part demo content - see section 3.
+**Reference:** client demo deck, `project-docs/client-demo/AppBay-Client-Demo.pdf`, slide 3 ("Step 1 -
+Data Ingestion: every source, one way in"); requested in the manager review of 2026-09-29.
+**Backlog:** `project-docs/CLIENT-FEEDBACK-BACKLOG.md` section 9 (ING-1..6) turns the demo parts into
+real data.
+
+---
+
+## 1. Objective
+
+Show where the bank's data comes from and whether each load worked, before anyone looks at a number
+built from it. The deck lists four points, all on this screen:
+
+1. Multi-source ingestion: core banking, ERP, CRM, databases and spreadsheets.
+2. Upload files (CSV, XLSX, JSON, XML, PDF) or connect a live source.
+3. Scheduled and automatic pulls, so no one has to remember.
+4. Status tracked for every load: records received, success or failure.
+
+## 2. Layout (as in the deck)
+
+`/ingestion`, first tab in the menu. "Data ingestion" pill, heading "Bring data in", then:
+
+- **Top right:** "Schedule: on file arrival" (the pipeline's real trigger, `databricks.yml`) and **Run
+  all sources now** (CFO/admin only). It starts the Databricks job through Refresh now
+  (`POST /refresh`, `specs/refresh-now.md`) and says plainly when the app isn't connected to Databricks
+  (503).
+- **Four stat cards** with a yellow top edge (red when there are failed loads): Sources connected,
+  Files in latest run, Records ingested (kept · held back with a reason), Failed loads (with the first
+  failure).
+- **Left:** Upload files (drag and drop or Browse files; the accepted formats; one row per file with a
+  progress bar) and Scheduled pulls (source, cadence, next pull).
+- **Right:** Connect a source (six connector cards: Connected, or a Connect button) and Recent
+  ingestions (source, type, data, records received, status with the held-back count or failure reason,
+  last run).
+
+## 3. Real and demo content
+
+`GET /api/v1/ingestion/overview` (`backend/app/routers/ingestion.py`) returns the whole screen in one
+call. Each block carries `demo: true|false`, and every demo block shows a **Demo data** label that
+explains itself on hover or focus, the same pattern as the existing "Assumption" labels.
+
+| Block | Source | Real? |
+|---|---|---|
+| Files, records received / kept / held back, failed loads | Latest run in `pipeline_reconciliation` (Notebooks 1-2 via `load_to_postgres.py`) | **Real** when a run exists; demo rows otherwise |
+| Recent ingestions | Same rows, one per source × country × data type; "failed" = the completeness check's "No rows delivered" (FLOW-1b) | **Real** when a run exists; demo rows otherwise |
+| Schedule button | `databricks.yml` file-arrival trigger | Real (hard-coded label matching the file) |
+| Run all sources now | Refresh now, Databricks Jobs API | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
+| Sources connected, Connect a source | `DEMO["connectors"]` | Demo (ING-1) |
+| Scheduled pulls | `DEMO["schedules"]` | Demo (ING-2) |
+| Upload files | Browser only: type and 2 GB size checked, progress shown, **nothing sent** | Demo (ING-3) |
+
+The live data today has one source system, `CORE_CSV`: CSV files per data type from the landing volume,
+tagged by country (Lebanon, Saudi Arabia, Qatar, plus "Group" for bank-wide tables). It shows as
+"Lebanon Core Banking · File (CSV) · transactions.csv" and so on.
+
+## 4. Acceptance criteria
+
+- [x] Screen matches the deck's slide 3 layout and lists all four points - built, not yet checked in a browser
+- [x] Stat cards and Recent ingestions use the real latest run when there is one - `tests/test_ingestion.py`; checked against live Neon on 2026-09-29 (2,635 received, 2,630 kept, 5 held back, 8 files, 18 loads)
+- [x] Every demo block is labelled "Demo data" - `Ingestion.test.jsx`
+- [x] Uploaded files are checked but never sent - `Ingestion.test.jsx`
+- [x] Run all sources now: CFO/admin only; a missing Databricks connection is explained, not an error page - `Ingestion.test.jsx`
+- [ ] Checked in a browser, light and dark theme
