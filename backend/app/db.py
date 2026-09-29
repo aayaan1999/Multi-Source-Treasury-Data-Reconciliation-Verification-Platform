@@ -30,6 +30,18 @@ class _LazyPool(psycopg2.pool.ThreadedConnectionPool):
         conn.autocommit = True
         return conn
 
+    def drop_idle(self) -> None:
+        """Closes every idle connection. Neon drops them all together when it suspends, so after one turns
+        out dead the rest are too: without this, the retry picked up the next dead one and the request still
+        failed (found live 2026-09-29 - three screen calls in a row got 503 after the app sat idle)."""
+        with self._lock:
+            idle, self._pool = self._pool, []
+        for conn in idle:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
 
 def init_pool() -> None:
     """Nothing is opened here, so the API starts even if Neon is suspended or unreachable; /health reports it."""
@@ -81,6 +93,7 @@ def query(sql: str, params: tuple = ()) -> list:
             return rows
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
             _pool.putconn(conn, close=True)
+            _pool.drop_idle()  # the retry must open a fresh connection, not take another dead idle one
             if attempt == 2:
                 raise
         except Exception:
@@ -106,6 +119,7 @@ def write(sql: str, params: tuple = (), returning: bool = True):
             return row
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
             _pool.putconn(conn, close=True)
+            _pool.drop_idle()
             if attempt == 2:
                 raise
         except Exception:
