@@ -40,9 +40,11 @@ if ($l -match '=\s*(\S+)') { $v = $matches[1]; "DATABASE_URL set ($($v.Length) c
 ## 2. Start
 ```powershell
 Set-Location -LiteralPath $root
-& "$root\scripts\run-local.ps1"            # opens 2 PowerShell windows (API, site) and the browser
-& "$root\scripts\run-local.ps1" -NoBrowser # same, without opening a browser tab
+& "$root\scripts\run-local.ps1" -NoBrowser # both servers hidden in the background (no windows); output in logs\*.log
+& "$root\scripts\run-local.ps1"            # same, and opens the browser
+& "$root\scripts\run-local.ps1" -Windows   # old behaviour: 2 PowerShell windows - only if the user asks for it
 ```
+The user does not want extra PowerShell windows: never use `-Windows` unless they ask.
 It waits up to ~40 s for both servers. If Windows blocks the script: `powershell -ExecutionPolicy Bypass -File .\scripts\run-local.ps1`.
 
 ## 3. Verify (from a separate call)
@@ -55,11 +57,11 @@ It waits up to ~40 s for both servers. If Windows blocks the script: `powershell
 try { Invoke-RestMethod -Method Post http://localhost:5173/api/v1/auth/login -ContentType 'application/json' -Body '{"email":"analyst@bankx.demo","password":"definitely-wrong"}' } catch { $_.Exception.Response.StatusCode.value__ }
 ```
 Report: site `http://localhost:5173`, API docs `http://127.0.0.1:8000/docs`, demo emails `analyst@`, `reviewer@`, `approver@`,
-`admin@bankx.demo` (all share the one password the user chose when seeding), and that closing the two windows stops it.
+`admin@bankx.demo` (all share the one password the user chose when seeding), and that `.\scripts\run-local.ps1 -Stop` stops it.
 "No numbers yet" on the dashboard just means the Databricks pipeline hasn't loaded Neon.
 
 ## Stop (only when asked)
-Close the two PowerShell windows, or: for ports 8000 and 5173, `taskkill /PID <owning pid> /T /F`
+`& "$root\scripts\run-local.ps1" -Stop` (ends whatever listens on 8000 and 5173), or by hand: `taskkill /PID <owning pid> /T /F`
 (`Get-NetTCPConnection -LocalPort <port> -State Listen`).
 
 ## First-time setup (only if something is missing)
@@ -92,5 +94,5 @@ cd "<root>\frontend"; npm install                     # always `npm run ...`, ne
 | Launcher: "DATABASE_URL is empty" | Not saved, or pasted into `.env.example` / the other folder's `.env` |
 | `/health` database False, or 503 | Wrong string (typo, `-pooler`, quotes, no `?sslmode=require`), or Neon asleep: retry |
 | Login "Incorrect email or password" | Demo users not seeded on this database, or the password differs: re-seed |
-| Site loads, "Can't reach the server" | API window closed or crashed: read that window's text |
+| Site loads, "Can't reach the server" | API crashed or was stopped: read `logs\api.err.log` |
 | Port 8000 / 5173 in use | An earlier run is still open |
