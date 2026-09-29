@@ -1,3 +1,5 @@
+import time
+
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
@@ -5,6 +7,7 @@ import psycopg2.pool
 from .config import get_settings
 
 _pool = None
+WAIT_SECONDS = 10          # how long a request waits for a free pooled connection before giving up
 
 
 class _LazyPool(psycopg2.pool.ThreadedConnectionPool):
@@ -29,6 +32,20 @@ class _LazyPool(psycopg2.pool.ThreadedConnectionPool):
         conn = super()._connect(key)
         conn.autocommit = True
         return conn
+
+    def getconn(self, key=None):
+        """Waits up to WAIT_SECONDS for a free connection instead of failing at once. psycopg2 raises "connection
+        pool exhausted" the moment every connection is in use - e.g. while warm_pool() holds all of them at startup,
+        or in a burst of more than DB_POOL_MAX requests - which surfaced as intermittent 500s/503s (found 2026-09-29
+        as a flaky /health test)."""
+        deadline = time.monotonic() + WAIT_SECONDS
+        while True:
+            try:
+                return super().getconn(key)
+            except psycopg2.pool.PoolError as e:
+                if "exhausted" not in str(e) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.02)
 
     def drop_idle(self) -> None:
         """Closes every idle connection. Neon drops them all together when it suspends, so after one turns

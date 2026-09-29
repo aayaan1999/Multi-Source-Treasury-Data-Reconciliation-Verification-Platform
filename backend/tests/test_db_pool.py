@@ -90,3 +90,25 @@ def test_after_a_dead_connection_the_retry_gets_a_fresh_one_not_another_dead_idl
     assert db.query("SELECT 1") == [{"ok": 1}]
     assert served[0] in idle and served[1] not in idle     # the retry opened a new connection
     assert all(conn.closed for conn in idle)                # and the other dead ones were thrown away
+
+
+def test_a_request_waits_for_a_free_connection_instead_of_failing(monkeypatch):
+    """Found 2026-09-29 (a flaky /health test): while warm_pool() held every connection at startup, a request
+    got "connection pool exhausted" at once; now it waits for one to come back."""
+    import threading
+    import time
+
+    import psycopg2.pool
+    pool, _ = _fake_pool(monkeypatch, maxconn=1)
+    held = pool.getconn()
+    threading.Timer(0.1, lambda: pool.putconn(held)).start()
+    started = time.monotonic()
+    assert pool.getconn() is held
+    assert time.monotonic() - started >= 0.05
+
+    monkeypatch.setattr(db, "WAIT_SECONDS", 0.05)
+    try:
+        pool.getconn()                                   # still held, and the wait runs out
+        raise AssertionError("expected the pool to give up")
+    except psycopg2.pool.PoolError as e:
+        assert "exhausted" in str(e)
