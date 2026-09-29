@@ -10,6 +10,15 @@ Eight points raised by the bank after the demo walkthrough, each broken into bui
   existing NIM / cost-to-income / ROE assumptions.
 - Status: `todo` / `in progress` / `done` / `blocked (bank)`
 
+**Live check (2026-09-28):** statuses below were re-checked against Neon, Camunda and the running API
+(not a browser - the screens themselves are still unchecked). Migrations 007-016 are all on Neon; the
+pipeline has run live (latest run 2026-09-28, 4 ingest batches); all three Camunda processes are
+deployed and 139 tasks are open across the five teams; every read endpoint answers for all four roles.
+"Ran live" below means the automatic part produced real rows in Neon; the human decision steps are
+listed separately where they haven't been exercised. The same check found and fixed every screen call
+taking 2.5 s+ (the connection pool reconnected to Neon per query - commit `44024fa`); typical calls
+now take ~0.3 s.
+
 **Priority (updated 2026-09-24):** the **target end-to-end flow** below comes first:
 FLOW-1a → FLOW-3 → FLOW-5 → FLOW-6 → FLOW-4 → FLOW-1b/1c. The eight client points follow, in the
 order 5 + 6 → 8 → 1 → 7 → 4 → 2 → 3 (reasoning at the end; 7 moved up on 2026-09-24 when the chatbot
@@ -62,13 +71,13 @@ both, since they catch different problems; point 1 stays as the second kind, pen
 
 | ID | Task | Size | Needs confirming | Status |
 |---|---|---|---|---|
-| FLOW-1a | `source_system`, `source_country`, `ingest_batch_id`, `source_file` on every record from Notebook 1 through Neon (same as SRC-1; prerequisite for per-source reconciliation) - `specs/source-tagging.md` | M | Sources per country; region → country map | built (code + tests done 2026-09-24); migration 007 applied to Neon; notebooks deployed, not yet run live |
-| FLOW-1b | Completeness check: every expected source delivered this run, else flagged (not silently missing from totals) | S | Expected sources and cut-off times | built (code + tests done 2026-09-24) - `specs/pipeline-reconciliation.md` section 9; migration 011 not on Neon, not run live |
+| FLOW-1a | `source_system`, `source_country`, `ingest_batch_id`, `source_file` on every record from Notebook 1 through Neon (same as SRC-1; prerequisite for per-source reconciliation) - `specs/source-tagging.md` | M | Sources per country; region → country map | done: ran live - every customer and all 1,905 transactions carry `source_system` / `source_country` (checked 2026-09-28) |
+| FLOW-1b | Completeness check: every expected source delivered this run, else flagged (not silently missing from totals) | S | Expected sources and cut-off times | done: ran live - migration 011 on Neon; the run flagged `fx_rates` as "No rows delivered" (`specs/pipeline-reconciliation.md` section 9); expected sources still to confirm with the bank |
 | FLOW-1c | Connector + field/code mapping per new source system (file, API or database) | L per source | Each country's systems and delivery method; code lists (SRC-4) | blocked (bank) - demo uses CSV sources only until further notice |
-| FLOW-3 | Pipeline reconciliation: row counts + amount totals per source / data type / run at received, loaded and clean (Notebooks 1-2); one `reconciliation_items` row per gap, drill-down to the rejected records in `data_quality_exceptions`; shown on the Reconciliation tab - `specs/pipeline-reconciliation.md` | L | Which amounts to total (transactions, balances, loans; per currency) | built (code + tests done 2026-09-24); migration 008 applied to Neon; notebook deployed, not yet run live or checked in a browser |
-| FLOW-5 | CFO workflow: new Camunda process - item → CFO → handle or reassign → assignee updates values + comments → submit → CFO approves or returns (loop); per-person assignment tracked in the app (proper Camunda identity, e.g. Keycloak, later); on approval, write to Neon immediately and to `review_outcomes` so Databricks applies it on the next run (not overwritten nightly) | L | Every item to the CFO, or only above an amount? Named people or teams? | built (code + tests done 2026-09-24): 5a workflow + 5b Databricks applying approved corrections - `specs/cfo-reconciliation-workflow.md`; migration 009 not on Neon, Camunda process not deployed, not run live |
-| FLOW-6 | Refresh: daily schedule in `databricks.yml`; "Refresh Now" button (CFO/admin only) starting the job via the Jobs API, status shown ("started 10:42 → updated 10:51"), no overlapping runs. Not instant: a run takes minutes and costs compute | S-M | Is "a few minutes, with progress" acceptable? | built (code + tests done 2026-09-24) - `specs/refresh-now.md`; needs DATABRICKS_HOST/TOKEN in backend/.env; daily schedule vs file-arrival trigger to confirm; not run live |
-| FLOW-4 | CFO dashboard: country breakdown (each country + bank-wide total) and one reporting currency for global totals | M | Reporting currency (₹, USD, ...) | built (code + tests done 2026-09-24) - `specs/cfo-country-view.md`, USD; migration 010 not on Neon, not run live |
+| FLOW-3 | Pipeline reconciliation: row counts + amount totals per source / data type / run at received, loaded and clean (Notebooks 1-2); one `reconciliation_items` row per gap, drill-down to the rejected records in `data_quality_exceptions`; shown on the Reconciliation tab - `specs/pipeline-reconciliation.md` | L | Which amounts to total (transactions, balances, loans; per currency) | done: ran live - 72 per-source rows over 4 runs, 62 matched and 10 with a gap (checked 2026-09-28); not yet checked in a browser |
+| FLOW-5 | CFO workflow: new Camunda process - item → CFO → handle or reassign → assignee updates values + comments → submit → CFO approves or returns (loop); per-person assignment tracked in the app (proper Camunda identity, e.g. Keycloak, later); on approval, write to Neon immediately and to `review_outcomes` so Databricks applies it on the next run (not overwritten nightly) | L | Every item to the CFO, or only above an amount? Named people or teams? | built (code + tests done 2026-09-24): 5a workflow + 5b Databricks applying approved corrections - `specs/cfo-reconciliation-workflow.md`. Partly live: migration 009 on Neon, `reconciliation-review` deployed, 9 gaps waiting with the CFO; item 32 was reassigned and submitted back on 2026-09-24 but the CFO's final approval - and so 5b (Databricks applying the correction) - has never run |
+| FLOW-6 | Refresh: daily schedule in `databricks.yml`; "Refresh Now" button (CFO/admin only) starting the job via the Jobs API, status shown ("started 10:42 → updated 10:51"), no overlapping runs. Not instant: a run takes minutes and costs compute | S-M | Is "a few minutes, with progress" acceptable? | built (code + tests done 2026-09-24) - `specs/refresh-now.md`; needs DATABRICKS_HOST/TOKEN in backend/.env (still unset on 2026-09-28: `/refresh/status` returns 503); daily schedule vs file-arrival trigger to confirm; not run live |
+| FLOW-4 | CFO dashboard: country breakdown (each country + bank-wide total) and one reporting currency for global totals | M | Reporting currency (₹, USD, ...) | built (code + tests done 2026-09-24) - `specs/cfo-country-view.md`, USD. Ran live: 3 countries per day in `country_performance_summary` (24, 25 and 28 Sep), `/kpi-summary/countries` answers; not yet checked in a browser |
 
 **Recommendation on FLOW-5:** if every item goes to the CFO first, the CFO becomes a bottleneck.
 Suggest: the CFO sees everything, large items go to the CFO first, smaller ones go straight to the
@@ -142,14 +151,14 @@ complicate the shared one. All types appear in the same Tasks screen, labelled b
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| REC-1 | Automatic clearing: rules step after the comparison (tolerance, formatting-only; timing once REC-6 exists); rules + limits in a settings table; `resolved_by` = system + `rule` columns; "auto-cleared" filter on screen | M | Tolerances, which harmless causes to accept | built 2026-09-24 (code + tests), not yet run live - `specs/reconciliation-groups.md` |
-| REC-2 | Group by cause across accounts: `reconciliation_groups` table + group id on each break; group view (summary, full list, filters, export) with Accept all / all-except-selected / Correct / Dismiss, reason required; carve-outs split out; one audit row per break | L | - | built 2026-09-24 (code + tests), not yet run live |
-| REC-3 | Safety rules: important breaks (amount, key fields, missing accounts) never grouped for bulk, bulk accept blocked in the backend too; optional second approval above a total | M | Amount limits, key fields, second-approval rule | built 2026-09-24 (code + tests), not yet run live |
-| REC-4 | Tasks: `reconciliation-review` Camunda process; bridge starts one task per group (idempotent, reusing TSK-1's case tracking); outcome worker writes the decision to every break in the group; due dates via TSK-3 | M | Owning team (placeholder: Operations), deadlines | built 2026-09-24 (code + tests), not yet run live |
-| REC-5 | Ageing and recurring breaks: first/last seen + times seen; a rerun reopens a previously accepted break as "Recurring" (new task, never silently re-accepted); age buckets on screen | S-M | Escalation age | built 2026-09-24 (code + tests), not yet run live |
+| REC-1 | Automatic clearing: rules step after the comparison (tolerance, formatting-only; timing once REC-6 exists); rules + limits in a settings table; `resolved_by` = system + `rule` columns; "auto-cleared" filter on screen | M | Tolerances, which harmless causes to accept | done: ran live - a break auto-accepted with its rule recorded - `specs/reconciliation-groups.md` |
+| REC-2 | Group by cause across accounts: `reconciliation_groups` table + group id on each break; group view (summary, full list, filters, export) with Accept all / all-except-selected / Correct / Dismiss, reason required; carve-outs split out; one audit row per break | L | - | done: ran live - 13 groups; two decided through their tasks on 2026-09-24 (group 7 corrected, group 10 accepted), each with one audit row per break; carve-outs not yet exercised |
+| REC-3 | Safety rules: important breaks (amount, key fields, missing accounts) never grouped for bulk, bulk accept blocked in the backend too; optional second approval above a total | M | Amount limits, key fields, second-approval rule | built 2026-09-24 (code + tests); runs live as part of grouping, but the blocked bulk accept and the second approval haven't been tried live |
+| REC-4 | Tasks: `reconciliation-review` Camunda process; bridge starts one task per group (idempotent, reusing TSK-1's case tracking); outcome worker writes the decision to every break in the group; due dates via TSK-3 | M | Owning team (placeholder: Operations), deadlines | done: ran live - `reconciliation-group-review` deployed, one task per group (11 open), the bridge rerun started none twice (2026-09-28) |
+| REC-5 | Ageing and recurring breaks: first/last seen + times seen; a rerun reopens a previously accepted break as "Recurring" (new task, never silently re-accepted); age buckets on screen | S-M | Escalation age | done: ran live - 2 breaks marked Recurring (seen twice) |
 | REC-6 | Transaction-level matching (1:1, then 1:many): transaction feed from core banking, matching notebook (exact → near → one-to-many), matched-pairs table, side-by-side matching screen; runs in Databricks, screens read results only | L | **Transaction export + matching fields** | blocked (bank) |
-| REC-7 | Run sign-off: `reconciliation_runs` table; preparer submits (no open important breaks, or a written explanation), reviewer signs off or returns; signed-off run locked; both logged | M | Whether required; who prepares / signs | built 2026-09-24 (code + tests), not yet run live |
-| REC-8 | Reconciliation tab as the overview: run summary, groups list with "Open task", all-breaks explorer with the new filters, ageing and recurring views, export; resolve popup replaced by the task link | M | Admin override wanted? | built 2026-09-24 (code + tests), not yet run live |
+| REC-7 | Run sign-off: `reconciliation_runs` table; preparer submits (no open important breaks, or a written explanation), reviewer signs off or returns; signed-off run locked; both logged | M | Whether required; who prepares / signs | built 2026-09-24 (code + tests); half live - the 2026-09-24 run was submitted, the sign-off / return step hasn't been done |
+| REC-8 | Reconciliation tab as the overview: run summary, groups list with "Open task", all-breaks explorer with the new filters, ageing and recurring views, export; resolve popup replaced by the task link | M | Admin override wanted? | built 2026-09-24 (code + tests); its endpoints answer against live data (2026-09-28), not yet checked in a browser |
 
 Suggested order inside this point: REC-1 → REC-2 → REC-3 → REC-4 → REC-8 → REC-5 → REC-7; REC-6 once the bank provides a transaction feed.
 
@@ -192,10 +201,10 @@ show as two exposures (top-20 exposures, concentration, segment totals).
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| DUP-1 | Name normalisation (drop Ltd / SAL / Pvt / Inc, case, punctuation) + known-abbreviation list | S | Abbreviation list (optional) | built 2026-09-24 (code + tests), not yet run live - `specs/entity-matching.md` |
-| DUP-2 | Candidate matching: fuzzy name + shared registration/tax ID, phone, address → `entity_match_candidates` | M | **A reliable ID, e.g. commercial registration no.** | built 2026-09-24 (code + tests), not yet run live - name-based until a registration number exists |
-| DUP-3 | Review queue: each candidate pair becomes a task; a human confirms or rejects (never auto-merge) | M | - | built 2026-09-24 (code + tests), not yet run live |
-| DUP-4 | `master_entity_id` on customers; exposure/concentration aggregates group by it; originals untouched | M | - | built 2026-09-24 (code + tests), not yet run live - top exposures per group (Notebook 6) |
+| DUP-1 | Name normalisation (drop Ltd / SAL / Pvt / Inc, case, punctuation) + known-abbreviation list | S | Abbreviation list (optional) | done: ran live (feeds DUP-2's 30 candidates) - `specs/entity-matching.md` |
+| DUP-2 | Candidate matching: fuzzy name + shared registration/tax ID, phone, address → `entity_match_candidates` | M | **A reliable ID, e.g. commercial registration no.** | done: ran live - 30 candidate pairs in `entity_match_candidates`; name-based until a registration number exists |
+| DUP-3 | Review queue: each candidate pair becomes a task; a human confirms or rejects (never auto-merge) | M | - | built 2026-09-24 (code + tests); 30 review tasks started live, none confirmed or rejected yet |
+| DUP-4 | `master_entity_id` on customers; exposure/concentration aggregates group by it; originals untouched | M | - | built 2026-09-24 (code + tests) - top exposures per group (Notebook 6); nothing to roll up live yet, since no pair has been confirmed (`customer_entity` is empty) |
 
 **Done when:** confirmed duplicates roll up into one exposure; nothing is merged without a human decision.
 
@@ -231,8 +240,8 @@ structuring = **genuine AML red flag**; duplicate = **operational fault**.
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
 | FRD-1 | Reclassify flags into **THRESHOLD** (reporting) / **SUSPICIOUS** (AML or fraud pattern) / **OPERATIONAL**; update routing + UI labels | S | - | done: live since the 2026-09-24 run (94 Suspicious / 2 Threshold / 2 Operational) |
-| FRD-2 | New suspicious patterns possible with current data: dormant account reactivated; pass-through (in and out same day); activity too big for segment; many round amounts; splitting across a customer's accounts | M | - | built 2026-09-24 (code + tests), not yet run live - five patterns, `specs/notebook-05-fraud-business-rules.md` 3a |
-| FRD-3 | Thresholds and typologies from config, not hard-coded constants | S | **Bank's AML typologies + reporting thresholds** | built 2026-09-24 (code + tests), not yet run live - `app_settings['fraud.rules']`, migration 013 |
+| FRD-2 | New suspicious patterns possible with current data: dormant account reactivated; pass-through (in and out same day); activity too big for segment; many round amounts; splitting across a customer's accounts | M | - | done: ran live - all five patterns flagged real rows (dormant 1, pass-through 2, round amounts 3, split 2, unusual for segment 3) - `specs/notebook-05-fraud-business-rules.md` 3a |
+| FRD-3 | Thresholds and typologies from config, not hard-coded constants | S | **Bank's AML typologies + reporting thresholds** | done: live - `app_settings['fraud.rules']`, migration 013; values are placeholders until the bank supplies its own |
 | FRD-4 | Real fraud signals (account takeover, new device/IP, new beneficiary) - future Notebook 7 | L | **Device/login/beneficiary data** | blocked (bank) |
 
 **Done when:** nothing is called "fraud" just for being large; each flag says *why* it's suspicious.
@@ -249,10 +258,10 @@ transaction hit by two rules = two tasks; no priority, severity or due date; rec
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| TSK-1 | Case grouping: one task per account + day (or per pattern) listing all related flags | M | - | built 2026-09-24 (code + tests), not yet run live - `specs/task-cases.md` |
-| TSK-2 | Severity score per case; only above a threshold becomes a task, the rest go to a daily digest | M | Severity rules | built 2026-09-24 (code + tests), not yet run live - daily digest for Low |
-| TSK-3 | Due date by severity/team; overdue badge on Tasks and Audit & Oversight | S | **SLA per team** | built 2026-09-24 (code + tests), not yet run live - due dates + overdue on Tasks |
-| TSK-4 | Written task-creation policy (what, who, how fast) shown in the UI | S | **Sign-off** | built 2026-09-24 (code + tests), not yet run live - policy shown on Tasks from settings; bank sign-off pending |
+| TSK-1 | Case grouping: one task per account + day (or per pattern) listing all related flags | M | - | done: ran live - 81 cases for 2026-09-15 to 09-28, one task each - `specs/task-cases.md` |
+| TSK-2 | Severity score per case; only above a threshold becomes a task, the rest go to a daily digest | M | Severity rules | done: ran live - 68 High / 13 Medium; no Low cases so far, so the daily digest is still empty live |
+| TSK-3 | Due date by severity/team; overdue badge on Tasks and Audit & Oversight | S | **SLA per team** | built 2026-09-24 (code + tests) - due dates set on live cases; the overdue badge not yet checked in a browser |
+| TSK-4 | Written task-creation policy (what, who, how fast) shown in the UI | S | **Sign-off** | built 2026-09-24 (code + tests) - policy shown on Tasks from settings (`/workflow/policy` answers live); bank sign-off pending |
 
 **Done when:** the queue holds cases, not raw flags, each with a priority and a deadline.
 
@@ -262,7 +271,7 @@ transaction hit by two rules = two tasks; no priority, severity or due date; rec
 
 > A chat box in Reports: "Give me the report for X, Y, Z" → a table.
 
-**Today:** nothing. Reports has fixed views with PDF/Excel export and an insert-only `audit_log`.
+**Today (2026-09-23):** nothing. Reports has fixed views with PDF/Excel export and an insert-only `audit_log`.
 
 **Decision (2026-09-24): rule-based, no AI.** The chatbot only has to fill approved reports, so
 fixed rules parse the question; nothing leaves the bank and no external-AI approval is needed. A
@@ -270,13 +279,19 @@ controlled AI parser can replace CHT-2 later without touching CHT-1/3/4 (the ear
 number-checking guardrail is dropped: there is no model text to check). Proposal - confirm with the
 bank and the source-of-truth doc owner.
 
+**Superseded 2026-09-28 (CHT-2 only):** at the manager's request, CHT-2's rule-based parser was replaced
+by a **self-hosted language model** (Ollama on the laptop now, vLLM inside the bank later) that only
+*picks* one of 11 approved queries; plain code reads dates, counts and names from the text, and the
+model never writes SQL or produces a number. Built as the "Ask a question" tab - `specs/ask-a-question.md`.
+The bank still needs to confirm this replaces the 2026-09-24 decision (spec section on open items).
+
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| CHT-1 | Catalogue of approved, read-only queries (KPIs, report lines, portfolio/branch aggregates) with allowed filters; reads precomputed summary tables only | M | Which reports it must answer | todo |
-| CHT-2 | Rule-based parser: synonym list ("NPL" = "bad loans"), branch/product/customer names from the database, date and currency phrases, fuzzy matching for typos; read-only DB role | M | - | todo |
-| CHT-3 | Answer panel on Reports: table, "filters used", Excel export (reuse existing export); unclear or missing filter → follow-up question with buttons, never a guess | M | - | todo |
-| CHT-4 | Every question, matched query, filters and row count written to `audit_log` | S | - | todo |
-| CHT-5 | Test set of sample questions, each with its expected query + filters | S | - | todo |
+| CHT-1 | Catalogue of approved, read-only queries (KPIs, report lines, portfolio/branch aggregates) with allowed filters; reads precomputed summary tables only | M | Which reports it must answer | built 2026-09-28 - 11 approved queries; the bank's report list still needed |
+| CHT-2 | Rule-based parser: synonym list ("NPL" = "bad loans"), branch/product/customer names from the database, date and currency phrases, fuzzy matching for typos; read-only DB role | M | - | built 2026-09-28 **as a self-hosted model + word lists** (see note above); ran live 2026-09-28 against qwen2.5:3b via the API (answer, clarify and "can't exclude" all correct) |
+| CHT-3 | Answer panel on Reports: table, "filters used", Excel export (reuse existing export); unclear or missing filter → follow-up question with buttons, never a guess | M | - | built 2026-09-28 - on its own "Ask a question" tab rather than inside Reports; used from the admin login on 2026-09-28 (audited), not yet walked through end to end |
+| CHT-4 | Every question, matched query, filters and row count written to `audit_log` | S | - | done: live - each question is an `ASK_QUESTION` row with query, filters, status, row count and time |
+| CHT-5 | Test set of sample questions, each with its expected query + filters | S | - | done - golden 54 (0 wrong tables), hard 29, held-out 30 (1 wrong, since fixed, so no longer blind); `scripts/eval_ask.py` |
 
 **Done when:** a typed question returns an exportable table whose every number came from the database, with the filters shown and the request audited; anything it can't parse gets a follow-up question.
 
@@ -291,10 +306,10 @@ breach creates a Compliance task. Two **placeholder** limits set 2026-09-23: cap
 
 | ID | Task | Size | Bank input | Status |
 |---|---|---|---|---|
-| BRC-1 | Three levels per limit: regulatory minimum / internal risk appetite / early warning (early warning = notification, not a task) | M | **Official values per level** | built 2026-09-24 (code + tests), not yet run live - `specs/breach-levels.md` |
-| BRC-2 | Consecutive-days rule per limit (e.g. breached 3 days running) in `breach_check.py` | S | **Rule per limit** | built 2026-09-24 (code + tests), not yet run live |
-| BRC-3 | Deadline from `resolution_days`; due date + overdue shown on breach tasks and Audit & Oversight | S | Deadlines | built 2026-09-24 (code + tests), not yet run live |
-| BRC-4 | Tiles read thresholds from `limits` via the API - one source of truth, remove the copy in `kpiConfig.js` | M | - | built 2026-09-24 (code + tests), not yet run live - tiles read /kpi-summary/limits |
+| BRC-1 | Three levels per limit: regulatory minimum / internal risk appetite / early warning (early warning = notification, not a task) | M | **Official values per level** | done: ran live - 7 limits with levels (all placeholders); 2026-09-24 breaches: CAR early warning (notification only), NPL / ROE / dollarization at appetite level (tasks) - `specs/breach-levels.md` |
+| BRC-2 | Consecutive-days rule per limit (e.g. breached 3 days running) in `breach_check.py` | S | **Rule per limit** | built 2026-09-24 (code + tests); live, but every limit is set to 1 day, so the multi-day rule hasn't actually been exercised |
+| BRC-3 | Deadline from `resolution_days`; due date + overdue shown on breach tasks and Audit & Oversight | S | Deadlines | done: ran live - open breaches due 2026-10-24 from `resolution_days` |
+| BRC-4 | Tiles read thresholds from `limits` via the API - one source of truth, remove the copy in `kpiConfig.js` | M | - | built 2026-09-24 (code + tests) - tiles read /kpi-summary/limits, which answers live; tiles not yet checked in a browser |
 
 **Done when:** the bank's own limits drive both the tiles and the breach tasks, at the right level, with deadlines.
 
