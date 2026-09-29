@@ -99,9 +99,12 @@ feed or macro-data feed is ever added, reconciliation logic could extend to them
 - **Job:** task `salesforce_reconciliation` of `bank-data-pipeline`, after `salesforce_ingest` and
   `quality`, before `load_postgres`. Skips (task value `status` from `salesforce_ingest`) when that run
   didn't load Salesforce, so stale CRM data is never compared.
-- **Screen:** the Reconciliation tab's section "Our data vs the CRM (Salesforce)" - the same component
-  as core banking (`CoreSystemSection source="salesforce"`), with its own run, sign-off, groups and
-  breaks; `/reconciliation`, `/reconciliation/groups` and `/reconciliation/run` take `source_system`.
+- **Screen:** one Reconciliation tab section, "Our data vs the source systems", with a **Source** filter
+  (All sources / Core banking system / CRM (Salesforce)) that applies to the run summary, the groups and
+  the breaks together. All sources: the summary boxes add up the sources, each source keeps its own run
+  sign-off, and the groups and breaks tables gain a Source column (values headed "Their value"); one
+  source: the value column is named after it ("Core system", "CRM"). `/reconciliation`,
+  `/reconciliation/groups` and `/reconciliation/run` also take `source_system`.
 - **Live run 185495439151899 (2026-09-29), all 10 tasks succeeded,** against the differences planted by
   `scripts/plant_salesforce_breaks.py`: exactly 5 breaks - CN0001 name formatting only (cleared
   automatically), CN0008 name, CN0002 country, CN0027 missing in the CRM, CNCRM01 missing in our data.

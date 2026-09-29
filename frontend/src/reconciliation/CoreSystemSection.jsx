@@ -10,10 +10,13 @@ import StatBox from "../components/StatBox";
 import useAsync from "../hooks/useAsync";
 import { fmtAmount } from "./pipeline";
 
+// The systems our data is compared with: filter label, what their values are called, and in sentences.
 export const SYSTEMS = {
-  neon: { label: "Core system", long: "the core banking system" },
-  salesforce: { label: "CRM", long: "the CRM (Salesforce)" },
+  neon: { name: "Core banking system", label: "Core system", long: "the core banking system" },
+  salesforce: { name: "CRM (Salesforce)", label: "CRM", long: "the CRM (Salesforce)" },
 };
+const SOURCE_KEYS = Object.keys(SYSTEMS);
+const systemOf = (key) => SYSTEMS[key] || { name: key, label: key, long: key };
 
 const MISMATCH_LABEL = {
   VALUE_MISMATCH: "Value mismatch",
@@ -57,18 +60,14 @@ function download(filename, text) {
 }
 
 /** The latest run: what it found and cleared, what's open, and its sign-off (preparer, then a second person). */
-function RunPanel({ source }) {
+/** The latest run of one source and its sign-off (a run is signed off per source). */
+function SignOff({ run, reload }) {
   const { user } = useAuth() || {};
-  const system = SYSTEMS[source];
-  const { status, data, error, reload } = useAsync(() => api.reconRun(source), [source]);
+  const system = systemOf(run.source_system);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
-  if (status === "loading") return <Loading what="the latest run" />;
-  if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
-  if (!data.run_date) return <p className="mt-4 text-sm text-ink2">No comparison with {system.long} has run yet.</p>;
-
-  const signoff = data.signoff;
+  const signoff = run.signoff;
   const canSign = ["approver", "admin"].includes(user?.role) && signoff?.status === "SUBMITTED" && signoff.prepared_by !== user?.user_id;
   const canSubmit = !signoff || signoff.status === "RETURNED";
 
@@ -87,43 +86,62 @@ function RunPanel({ source }) {
   }
 
   return (
+    <div className="card rounded-xl border border-hair bg-surface p-4 text-sm" aria-label={`Run sign-off: ${system.name}`}>
+      {/* The sign-off is for the whole run of one source, not one group: say so, and what it covers. */}
+      <h3 className="font-semibold tracking-tight text-ink">{system.name}: sign-off for the whole run of {run.run_date}</h3>
+      <p className="mt-1 text-ink2">
+        Covers every group and break from this comparison with {system.long} ({run.breaks_seen} break(s)), not one group. Each
+        group is decided in its own task; this is the final check that the run as a whole is finished.{" "}
+        {run.groups_open
+          ? `${run.groups_open} group(s) still open${run.important_open ? `, ${run.important_open} of them important (a note is required to submit)` : ""}.`
+          : "All groups are decided."}
+      </p>
+      <p className="mt-2 text-ink">
+        <strong>Status:</strong>{" "}
+        {!signoff && "not submitted yet."}
+        {signoff?.status === "SUBMITTED" && `submitted by ${signoff.prepared_by_name}${signoff.prepare_note ? ` ("${signoff.prepare_note}")` : ""}, waiting for a second person.`}
+        {signoff?.status === "SIGNED_OFF" && `signed off by ${signoff.signed_by_name} (prepared by ${signoff.prepared_by_name}).`}
+        {signoff?.status === "RETURNED" && `returned by ${signoff.signed_by_name}: "${signoff.sign_note}". Fix and resubmit.`}
+      </p>
+      {(canSubmit || canSign) && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" aria-label={`Sign-off note: ${system.name}`} className={`${INPUT} min-w-[14rem] flex-1`} />
+          {canSubmit && <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.submitReconRun({ source_system: run.source_system, note: note || undefined }))}>Submit for sign-off</button>}
+          {canSign && (
+            <>
+              <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.signOffReconRun({ source_system: run.source_system, decision: "RETURN", note }))}>Return</button>
+              <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.signOffReconRun({ source_system: run.source_system, decision: "SIGN_OFF", note: note || undefined }))}>Sign off</button>
+            </>
+          )}
+        </div>
+      )}
+      {formError && <p role="alert" className="mt-2 text-sm" style={{ color: "var(--critical)" }}>{formError}</p>}
+    </div>
+  );
+}
+
+const sum = (runs, key) => runs.reduce((total, r) => total + (r[key] || 0), 0);
+
+/** Latest run per source: summary boxes for the sources shown (added up for "All sources") and each one's sign-off. */
+function RunPanel({ source }) {
+  const { status, data, error, reload } = useAsync(() => Promise.all(SOURCE_KEYS.map((key) => api.reconRun(key))), []);
+  if (status === "loading") return <Loading what="the latest runs" />;
+  if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
+  const runs = data.filter((r) => r.run_date && (!source || r.source_system === source));
+  if (!runs.length) {
+    return <p className="mt-4 text-sm text-ink2">No comparison with {source ? systemOf(source).long : "any source system"} has run yet.</p>;
+  }
+  const hint = runs.length === 1 ? `Run of ${runs[0].run_date}` : `Latest run of ${runs.length} sources`;
+  return (
     <>
-      <ul className="mt-6 grid grid-cols-2 gap-5 lg:grid-cols-4" aria-label={`Latest run: ${system.label}`}>
-        <StatBox label="Breaks in the latest run" value={data.breaks_seen} hint={`Run of ${data.run_date}`} />
-        <StatBox label="Cleared automatically" value={data.auto_cleared} hint="Formatting only" />
-        <StatBox label="Open groups" value={data.groups_open} hint="One task each, in Tasks" status={data.groups_open ? "watch" : "good"} />
-        <StatBox label="Important, open" value={data.important_open} hint={`${data.recurring_open} recurring break(s) open`} status={data.important_open ? "action" : "good"} />
+      <ul className="mt-6 grid grid-cols-2 gap-5 lg:grid-cols-4" aria-label="Latest run">
+        <StatBox label="Breaks in the latest run" value={sum(runs, "breaks_seen")} hint={hint} />
+        <StatBox label="Cleared automatically" value={sum(runs, "auto_cleared")} hint="Formatting only" />
+        <StatBox label="Open groups" value={sum(runs, "groups_open")} hint="One task each, in Tasks" status={sum(runs, "groups_open") ? "watch" : "good"} />
+        <StatBox label="Important, open" value={sum(runs, "important_open")} hint={`${sum(runs, "recurring_open")} recurring break(s) open`} status={sum(runs, "important_open") ? "action" : "good"} />
       </ul>
-      <div className="card mt-4 rounded-xl border border-hair bg-surface p-4 text-sm" aria-label={`Run sign-off: ${system.label}`}>
-        {/* The sign-off is for the whole run, not one group: say so, and what it covers. */}
-        <h3 className="font-semibold tracking-tight text-ink">Sign-off for the whole run of {data.run_date}</h3>
-        <p className="mt-1 text-ink2">
-          Covers every group and break from this comparison with {system.long} ({data.breaks_seen} break(s)), not one
-          group. Each group is decided in its own task; this is the final check that the run as a whole is finished.{" "}
-          {data.groups_open
-            ? `${data.groups_open} group(s) still open${data.important_open ? `, ${data.important_open} of them important (a note is required to submit)` : ""}.`
-            : "All groups are decided."}
-        </p>
-        <p className="mt-2 text-ink">
-          <strong>Status:</strong>{" "}
-          {!signoff && "not submitted yet."}
-          {signoff?.status === "SUBMITTED" && `submitted by ${signoff.prepared_by_name}${signoff.prepare_note ? ` ("${signoff.prepare_note}")` : ""}, waiting for a second person.`}
-          {signoff?.status === "SIGNED_OFF" && `signed off by ${signoff.signed_by_name} (prepared by ${signoff.prepared_by_name}).`}
-          {signoff?.status === "RETURNED" && `returned by ${signoff.signed_by_name}: "${signoff.sign_note}". Fix and resubmit.`}
-        </p>
-        {(canSubmit || canSign) && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" aria-label="Sign-off note" className={`${INPUT} min-w-[14rem] flex-1`} />
-            {canSubmit && <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.submitReconRun({ source_system: source, note: note || undefined }))}>Submit for sign-off</button>}
-            {canSign && (
-              <>
-                <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.signOffReconRun({ source_system: source, decision: "RETURN", note }))}>Return</button>
-                <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.signOffReconRun({ source_system: source, decision: "SIGN_OFF", note: note || undefined }))}>Sign off</button>
-              </>
-            )}
-          </div>
-        )}
-        {formError && <p role="alert" className="mt-2 text-sm" style={{ color: "var(--critical)" }}>{formError}</p>}
+      <div className="mt-4 grid gap-3">
+        {runs.map((run) => <SignOff key={run.source_system} run={run} reload={reload} />)}
       </div>
     </>
   );
@@ -179,16 +197,18 @@ function GroupDetail({ groupId, systemLabel, onClose }) {
 }
 
 function GroupsTable({ source }) {
-  const { status, data, error, reload } = useAsync(() => api.reconGroups({ source_system: source }), [source]);
+  const { status, data, error, reload } = useAsync(() => api.reconGroups(), []);
   const [selectedId, setSelectedId] = useState(null);
   if (status === "loading") return <Loading what="the groups" />;
   if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
+  const groups = data.filter((g) => !source || g.source_system === source);
   return (
     <>
     <DataTable
       caption="Groups of breaks"
       columns={[
         { key: "group_id", header: "Group", render: (g) => `#${g.group_id}` },
+        ...(source ? [] : [{ key: "source_system", header: "Source", render: (g) => systemOf(g.source_system).name }]),
         { key: "pattern", header: "Cause", render: groupCause },
         { key: "break_count", header: "Breaks", align: "right" },
         { key: "total_difference", header: "Total difference", align: "right", render: (g) => (g.total_difference == null ? "—" : fmtAmount(g.total_difference)) },
@@ -196,14 +216,16 @@ function GroupsTable({ source }) {
         { key: "status", header: "Status", render: (g) => (g.status === "CLOSED" ? `Decided: ${g.decision?.toLowerCase()}` : "Open: decide in Tasks") },
         { key: "due_date", header: "Due" },
       ]}
-      rows={data}
+      rows={groups}
       rowKey={(g) => g.group_id}
       rowFlag={(g) => (g.important && g.status !== "CLOSED" ? { kind: "loss", label: "Important" } : null)}
       selectedKey={selectedId}
       onRowClick={(g) => setSelectedId(g.group_id)}
       emptyText="No groups yet: open breaks are grouped when the task bridge next runs."
     />
-    {selectedId && <GroupDetail groupId={selectedId} systemLabel={SYSTEMS[source].label} onClose={() => setSelectedId(null)} />}
+    {selectedId && (
+      <GroupDetail groupId={selectedId} systemLabel={systemOf(groups.find((g) => g.group_id === selectedId)?.source_system).label} onClose={() => setSelectedId(null)} />
+    )}
     </>
   );
 }
@@ -239,43 +261,63 @@ function AdminResolve({ row, onDone }) {
 }
 
 /**
- * "Our data vs <another system>" (specs/reconciliation-groups.md, client point 1): the latest run and its
- * sign-off, the groups (decided in Tasks), and every break with filters, age and export. One section per
- * source: `source` is "neon" (core banking) or "salesforce" (the CRM), and only that source's breaks,
- * groups and run are shown. Read-only apart from sign-off and the admin override: decisions happen in
- * the group tasks.
+ * "Our data vs the source systems" (specs/reconciliation-groups.md, client point 1; specs/multi-source-
+ * reconciliation.md 3a): the latest runs and their sign-offs, the groups (decided in Tasks), and every break
+ * with filters, age and export. One Source filter - all sources, the core banking system or the CRM
+ * (Salesforce) - applies to all three; with all sources the tables gain a Source column. Read-only apart from
+ * sign-off and the admin override: decisions happen in the group tasks.
  */
-export default function CoreSystemSection({ source = "neon" }) {
-  const system = SYSTEMS[source];
+export default function CoreSystemSection({ initialSource = "" }) {
+  const [source, setSource] = useState(initialSource);
+  const system = source ? SYSTEMS[source] : null;
+  const valueLabel = system ? system.label : "Their value";
   const { user } = useAuth() || {};
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("OPEN");
   const [recurringOnly, setRecurringOnly] = useState(false);
   const [groupFilter, setGroupFilter] = useState("");
   const [selected, setSelected] = useState(null);
-  const { status, data, error, reload } = useAsync(() => api.reconciliationExceptions({ limit: 5000, source_system: source }), [source]);
+  const { status, data, error, reload } = useAsync(() => api.reconciliationExceptions({ limit: 5000 }), []);
 
-  const groupIds = [...new Set((data || []).map((r) => r.group_id).filter((g) => g != null))].sort((a, b) => a - b);
-  const rows = (data || [])
+  const shown = (data || []).filter((r) => !source || r.source_system === source);
+  const groupIds = [...new Set(shown.map((r) => r.group_id).filter((g) => g != null))].sort((a, b) => a - b);
+  const rows = shown
     .filter((r) => (!statusFilter || r.status === statusFilter) && (!typeFilter || r.mismatch_type === typeFilter) && (!recurringOnly || r.recurring))
     .filter((r) => !groupFilter || (groupFilter === "none" ? r.group_id == null : String(r.group_id) === groupFilter))
     .map((r) => ({ ...r, age: ageDays(r.first_seen || r.detected_at) }));
 
   const exportColumns = [
-    ["entity_type", "Record type"], ["entity_id", "Record"], ["field_name", "Field"], ["mismatch_type", "Type"],
-    ["source_value", system.label], ["canonical_value", "Ours"], ["status", "Status"], ["resolved_rule", "Cleared by rule"],
+    ["source_system", "Source"], ["entity_type", "Record type"], ["entity_id", "Record"], ["field_name", "Field"], ["mismatch_type", "Type"],
+    ["source_value", valueLabel], ["canonical_value", "Ours"], ["status", "Status"], ["resolved_rule", "Cleared by rule"],
     ["group_id", "Group"], ["first_seen", "First seen"], ["last_seen", "Last seen"], ["times_seen", "Times seen"], ["recurring", "Recurring"],
   ];
 
   return (
     <>
+      <div className="mt-6 flex flex-wrap items-center gap-3" role="group" aria-label="Source system">
+        <label htmlFor="recon-source" className="text-sm font-medium text-ink">Source</label>
+        <select
+          id="recon-source"
+          value={source}
+          onChange={(e) => {
+            setSource(e.target.value);
+            setGroupFilter("");                            // a group belongs to one source
+          }}
+          className={INPUT}
+        >
+          <option value="">All sources</option>
+          {SOURCE_KEYS.map((key) => <option key={key} value={key}>{SYSTEMS[key].name}</option>)}
+        </select>
+        <span className="text-sm text-ink2">Applies to the run summary, the groups and the breaks below.</span>
+      </div>
+
       <RunPanel source={source} />
 
-      <Section id={`${source}-groups`} title="Groups" description="Breaks with the same cause are decided together, as one task in Tasks. Important breaks (missing records, key fields, large amounts) are always on their own.">
+      <Section id="recon-groups" title="Groups" description="Breaks with the same cause are decided together, as one task in Tasks. Important breaks (missing records, key fields, large amounts) are always on their own.">
         <GroupsTable source={source} />
       </Section>
 
-      <div role="tablist" aria-label={`Filter by mismatch type: ${system.label}`} className="mt-8 flex flex-wrap gap-1 border-b border-hair pb-2.5">
+      <div role="tablist" aria-label="Filter by mismatch type" className="mt-8 flex flex-wrap gap-1 border-b border-hair pb-2.5">
         {TYPE_TABS.map(([value, label]) => (
           <button
             key={value || "all"}
@@ -291,16 +333,16 @@ export default function CoreSystemSection({ source = "neon" }) {
       </div>
 
       <Section
-        id={`${source}-exceptions`}
+        id="recon-exceptions"
         title="All breaks"
         description="Every difference found, with how long it has been open. Click a row for its details."
         action={
           <div className="flex flex-wrap items-center gap-3">
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label={`Status: ${system.label}`} className={INPUT}>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status" className={INPUT}>
               <option value="">All statuses</option>
               {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
-            <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} aria-label={`Group: ${system.label}`} className={INPUT}>
+            <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} aria-label="Group" className={INPUT}>
               <option value="">All groups</option>
               {groupIds.map((g) => <option key={g} value={String(g)}>Group #{g}</option>)}
               <option value="none">Not in a group</option>
@@ -309,7 +351,7 @@ export default function CoreSystemSection({ source = "neon" }) {
               <input type="checkbox" checked={recurringOnly} onChange={(e) => setRecurringOnly(e.target.checked)} />
               Recurring only
             </label>
-            <button type="button" className={BUTTON} disabled={!rows.length} onClick={() => download(`reconciliation-breaks-${source}.csv`, toCsv(rows, exportColumns))}>Export CSV</button>
+            <button type="button" className={BUTTON} disabled={!rows.length} onClick={() => download(`reconciliation-breaks-${source || "all-sources"}.csv`, toCsv(rows, exportColumns))}>Export CSV</button>
           </div>
         }
       >
@@ -317,13 +359,14 @@ export default function CoreSystemSection({ source = "neon" }) {
         {status === "error" && !data && <LoadError error={error} onRetry={reload} />}
         {data && (
           <DataTable
-            caption={`Reconciliation exceptions: ${system.label}`}
+            caption="Reconciliation exceptions"
             columns={[
               { key: "group_id", header: "Group", render: (r) => (r.group_id != null ? `#${r.group_id}` : "—") },
+              ...(source ? [] : [{ key: "source_system", header: "Source", render: (r) => systemOf(r.source_system).name }]),
               { key: "entity", header: "Record", render: (r) => `${r.entity_type} ${r.entity_id}` },
               { key: "field_name", header: "Field", render: (r) => r.field_name || "(whole record)" },
               { key: "mismatch_type", header: "Type", render: (r) => MISMATCH_LABEL[r.mismatch_type] || r.mismatch_type },
-              { key: "source_value", header: system.label },
+              { key: "source_value", header: valueLabel },
               { key: "canonical_value", header: "Ours" },
               { key: "status", header: "Status", render: (r) => STATUS_LABEL[r.status] || r.status },
               { key: "age", header: "Open for", render: (r) => (r.status === "OPEN" ? `${r.age} d (${ageBucket(r.age)})` : "—") },
@@ -345,7 +388,7 @@ export default function CoreSystemSection({ source = "neon" }) {
             {selected.entity_type} {selected.entity_id}{selected.field_name ? ` — ${selected.field_name}` : ""}
           </h3>
           <dl className="card mt-4 grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-xl border border-hair bg-surface p-4 text-sm sm:grid-cols-3">
-            <div><dt className="text-ink2">{system.label} value</dt><dd className="font-medium text-ink">{selected.source_value ?? "—"}</dd></div>
+            <div><dt className="text-ink2">{systemOf(selected.source_system).label} value</dt><dd className="font-medium text-ink">{selected.source_value ?? "—"}</dd></div>
             <div><dt className="text-ink2">Our value</dt><dd className="font-medium text-ink">{selected.canonical_value ?? "—"}</dd></div>
             <div><dt className="text-ink2">Status</dt><dd className="font-medium text-ink">{STATUS_LABEL[selected.status] || selected.status}</dd></div>
             <div><dt className="text-ink2">First seen</dt><dd className="font-medium text-ink">{fmtDateTime(selected.first_seen)}</dd></div>
