@@ -57,8 +57,8 @@ function stubApi({ latest = TODAY, history = [YESTERDAY, TODAY], latestStatus = 
 }
 
 function signIn() {
-  localStorage.setItem("bdp_token", "tok");
-  localStorage.setItem("bdp_user", JSON.stringify(USER));
+  sessionStorage.setItem("bdp_token", "tok");
+  sessionStorage.setItem("bdp_user", JSON.stringify(USER));
 }
 
 function renderApp(path = "/") {
@@ -97,7 +97,7 @@ describe("sign in", () => {
 
     expect(await screen.findByRole("list", { name: "Key indicators" })).toBeInTheDocument();
     expect(JSON.parse(calls.find((c) => c.url.endsWith("/auth/login")).body)).toEqual({ email: "cfo@bankx.demo", password: "secret" });
-    expect(localStorage.getItem("bdp_token")).toBe("tok");
+    expect(sessionStorage.getItem("bdp_token")).toBe("tok");
     expect(screen.getByText("Chief Financial Officer (CFO)")).toBeInTheDocument();       // their job, not a role code
   });
 
@@ -119,7 +119,7 @@ describe("sign in", () => {
     await user.type(screen.getByLabelText("Password"), "wrong");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Incorrect email or password");
-    expect(localStorage.getItem("bdp_token")).toBeNull();
+    expect(sessionStorage.getItem("bdp_token")).toBeNull();
   });
 
   it("signs out when the API says the token is no longer valid", async () => {
@@ -127,6 +127,28 @@ describe("sign in", () => {
     stubApi({ latestStatus: 401 });
     renderApp("/");
     expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    expect(sessionStorage.getItem("bdp_token")).toBeNull();
+  });
+
+  it("keeps the sign-in to this tab, and never acts as someone else if it changes underneath", async () => {
+    const { calls } = stubApi();
+    signIn();
+    renderApp("/");
+    expect(await screen.findByRole("list", { name: "Key indicators" })).toBeInTheDocument();
+    expect(localStorage.getItem("bdp_token")).toBeNull();                       // not shared with other tabs
+    // The stored sign-in now belongs to someone else (e.g. an older build in another tab).
+    sessionStorage.setItem("bdp_user", JSON.stringify({ ...USER, user_id: 99, name: "CRO" }));
+    const sent = calls.length;
+    await userEvent.setup().click(screen.getByRole("link", { name: "Portfolio & credit risk" }));
+    expect(await screen.findByText(/signed out because this tab's sign-in changed to someone else/)).toBeInTheDocument();
+    expect(calls.slice(sent).some((c) => c.url.includes("/portfolio"))).toBe(false);   // nothing went out as them
+    expect(sessionStorage.getItem("bdp_token")).toBeNull();
+  });
+
+  it("clears a sign-in an older version left in the shared localStorage", async () => {
+    localStorage.setItem("bdp_token", "old-shared-token");
+    vi.resetModules();
+    await import("./api");
     expect(localStorage.getItem("bdp_token")).toBeNull();
   });
 });

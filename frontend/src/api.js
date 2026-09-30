@@ -12,21 +12,32 @@ export class ApiError extends Error {
   }
 }
 
-// localStorage can throw (private windows, blocked storage): the app must still work without it.
+// The sign-in lives in sessionStorage: each tab has its own, so the CFO and the analyst can be signed in
+// side by side in two tabs. (localStorage is shared by every tab: a second sign-in replaced the first
+// tab's token while that tab still showed the first person.) Storage can throw (private windows, blocked
+// storage): the app must still work without it.
 function safeGet(key) {
   try {
-    return localStorage.getItem(key);
+    return sessionStorage.getItem(key);
   } catch {
     return null;
   }
 }
 function safeSet(key, value) {
   try {
-    if (value == null) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
+    if (value == null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, value);
   } catch {
     /* ignore */
   }
+}
+
+// A sign-in an older version left in the shared localStorage is never reused: removed once, on load.
+try {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+} catch {
+  /* ignore */
 }
 
 export const session = {
@@ -53,7 +64,33 @@ export function setUnauthorizedHandler(fn) {
   onUnauthorized = fn;
 }
 
+// The person this tab shows (set by auth.jsx). A request never goes out as anyone else: if the stored
+// sign-in no longer matches (changed underneath this tab), the tab signs out instead of acting for them.
+let owner = null;
+let onSessionChanged = () => {};
+export function setSessionOwner(userId, handler) {
+  owner = userId ?? null;
+  if (handler) onSessionChanged = handler;
+}
+export const SESSION_CHANGED = "You were signed out because this tab's sign-in changed to someone else. Sign in again.";
+
+function checkOwner() {
+  if (owner != null && session.user()?.user_id !== owner) {
+    onSessionChanged();
+    throw new ApiError(401, SESSION_CHANGED);
+  }
+}
+
+// An older build still open in another tab signs in through the shared localStorage: that is a change
+// of person too.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === TOKEN_KEY || e.key === USER_KEY) onSessionChanged();
+  });
+}
+
 async function send(path, { method = "GET", body } = {}) {
+  if (path !== "/auth/login") checkOwner();
   const headers = { Accept: "application/json" };
   const token = session.token();
   if (token) headers.Authorization = `Bearer ${token}`;

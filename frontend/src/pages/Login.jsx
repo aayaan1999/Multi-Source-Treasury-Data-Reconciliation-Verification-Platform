@@ -15,7 +15,7 @@ const ROLES = [
 ];
 
 export default function Login() {
-  const { user, login } = useAuth();
+  const { user, login, notice } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
@@ -101,6 +101,10 @@ export default function Login() {
           <p className="mt-1.5 text-sm text-ink2">
             Sign in as one of the bank's people. Each sees their own screens and tasks.
           </p>
+
+          {notice && (
+            <p role="status" className="mt-5 rounded-lg border border-hair bg-surface p-3 text-sm text-ink">{notice}</p>
+          )}
 
           <form onSubmit={submit} className="mt-7">
             <label className="block text-sm font-medium text-ink2">

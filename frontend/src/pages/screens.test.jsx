@@ -92,8 +92,8 @@ function stub(overrides = {}) {
 }
 
 function renderAt(path) {
-  localStorage.setItem("bdp_token", "tok");
-  localStorage.setItem("bdp_user", JSON.stringify(USER));
+  sessionStorage.setItem("bdp_token", "tok");
+  sessionStorage.setItem("bdp_user", JSON.stringify(USER));
   return render(<MemoryRouter initialEntries={[path]}><AuthProvider><App /></AuthProvider></MemoryRouter>);
 }
 
