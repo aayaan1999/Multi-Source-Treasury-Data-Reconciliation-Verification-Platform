@@ -122,6 +122,8 @@ export const api = {
   kpiCountries: () => request("/kpi-summary/countries"),   // specs/cfo-country-view.md
   kpiLimits: () => request("/kpi-summary/limits"),         // specs/breach-levels.md
   kpiBreakdown: (key) => request(`/kpi-summary/${key}/breakdown`),
+  // specs/kpi-explanations.md: useModel=false answers at once with the code-built text
+  kpiExplanation: (key, useModel = true) => request(`/kpi-summary/${key}/explanation?use_model=${useModel}`),
 
   // Screen 2 and the drill-downs from Screen 5
   portfolioOverview: () => request("/portfolio/overview"),

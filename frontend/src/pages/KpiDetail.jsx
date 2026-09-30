@@ -7,6 +7,7 @@ import PageShell, { Loading, LoadError } from "../components/PageShell";
 import Section from "../components/Section";
 import TrendPanel from "../components/TrendPanel";
 import useAsync from "../hooks/useAsync";
+import KpiExplanation from "../kpi/KpiExplanation";
 import { formatDay, formatValue, isNum } from "../kpi/format";
 import { KPI_BY_KEY } from "../kpi/kpiConfig";
 import { computeDelta, statusOf, STATUS_META } from "../kpi/status";
@@ -137,6 +138,12 @@ export default function KpiDetail() {
           )}
         </div>
       </div>
+
+      <Section id="why" title="Why it looks like this" description="Worked out from the data: where it stands against its limit, how it has moved, and what moved it where the data can show that. The local AI model may reword it to read more easily; its wording is only shown if every number and claim matches the data.">
+        <div className="card rounded-xl border border-hair bg-surface p-5">
+          <KpiExplanation kpiKey={key} />
+        </div>
+      </Section>
 
       <Section id="trend-data" title="Trend & data" description="What actually moved, in plain terms - every sentence here comes from the numbers above, not a generated summary.">
         <div className="card rounded-xl border border-hair bg-surface p-5">

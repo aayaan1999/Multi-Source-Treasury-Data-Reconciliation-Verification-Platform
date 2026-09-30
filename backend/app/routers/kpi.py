@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..db import query, query_one
+from ..kpi_explain import explain
 from ..security import current_user
 
 router = APIRouter(prefix="/kpi-summary", tags=["screen 1 - executive summary"], dependencies=[Depends(current_user)])
@@ -343,3 +344,13 @@ def breakdown(key: str):
         "assumptions_applied": [a for a in (latest_row.get("assumptions_applied") or []) if key in a],
         "history_series": HISTORY_SERIES[key]() if key in HISTORY_SERIES else [],
     }
+
+
+@router.get("/{key}/explanation")
+def explanation(key: str, use_model: bool = True):
+    """Why the KPI looks the way it does, in plain words (specs/kpi-explanations.md): written by the local
+    model from facts code worked out, every number checked against them, or by code alone when the
+    model is off, slow, or used a number that isn't in the data. The response says which."""
+    if key not in KPI_BREAKDOWN:
+        raise HTTPException(404, f"Unknown KPI: {key}")
+    return explain(key, use_model)

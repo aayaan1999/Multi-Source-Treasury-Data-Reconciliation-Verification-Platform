@@ -94,30 +94,36 @@ Examples:
 {examples}"""
 
 
-def classify(question: str) -> dict:
-    """Returns the model's JSON as a dict. Raises Unavailable when there is no usable answer."""
+def chat(messages: list, response_format: dict = None, temperature: float = 0) -> str:
+    """One chat-completions call to the configured model server; returns the reply's text. Raises
+    Unavailable when there is no usable answer. Shared by Ask a question and the KPI explanations."""
     if not configured():
         raise Unavailable("no model server configured (LLM_BASE_URL / LLM_MODEL)")
     base = os.environ["LLM_BASE_URL"].rstrip("/")
-    body = {
-        "model": os.environ["LLM_MODEL"],
-        "temperature": 0,
-        "messages": [{"role": "system", "content": system_prompt()}, {"role": "user", "content": question}],
-        "response_format": {"type": "json_schema", "json_schema": {"name": "ask_request", "schema": schema()}},
-    }
+    body = {"model": os.environ["LLM_MODEL"], "temperature": temperature, "messages": messages}
+    if response_format:
+        body["response_format"] = response_format
     headers = {"Content-Type": "application/json"}
     if os.environ.get("LLM_API_KEY"):
         headers["Authorization"] = f"Bearer {os.environ['LLM_API_KEY']}"
     request = urllib.request.Request(f"{base}/chat/completions", data=json.dumps(body).encode(), headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=float(os.environ.get("LLM_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS))) as response:
-            content = json.loads(response.read())["choices"][0]["message"]["content"]
+            return json.loads(response.read())["choices"][0]["message"]["content"]
     except urllib.error.HTTPError as e:
         raise Unavailable(f"model server refused the request ({e.code})")
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise Unavailable(f"model server unreachable: {getattr(e, 'reason', e)}")
     except (KeyError, IndexError, ValueError):
         raise Unavailable("model server sent an unexpected response")
+
+
+def classify(question: str) -> dict:
+    """Returns the model's JSON as a dict. Raises Unavailable when there is no usable answer."""
+    content = chat(
+        [{"role": "system", "content": system_prompt()}, {"role": "user", "content": question}],
+        response_format={"type": "json_schema", "json_schema": {"name": "ask_request", "schema": schema()}},
+    )
     try:
         result = json.loads(content)
     except (TypeError, ValueError):

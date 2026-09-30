@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import Ingestion from "./Ingestion";
 import { formProblems } from "../ingestion/forms";
@@ -167,6 +167,113 @@ describe("Data ingestion", () => {
     expect(within(files).getByText("positions.parquet")).toBeTruthy();
     expect(within(files).getByText("DOCX isn't accepted")).toBeTruthy();
     expect(api.runAllSources).not.toHaveBeenCalled();
+  });
+
+  describe("upload box, edge cases", () => {
+    const pick = (files) => fireEvent.change(screen.getByLabelText("Choose files to upload"), { target: { files } });
+    const problemOf = (name) => within(screen.getByRole("list", { name: "Files" })).getByText(name).closest("li").textContent;
+
+    it("names a file with no extension plainly instead of treating its name as the type", async () => {
+      await show();
+      pick([new File(["a"], "README")]);
+      expect(problemOf("README")).toContain("No file type (add .csv, .json, …)");
+    });
+
+    it("reads the type case-insensitively and from the last dot", async () => {
+      await show();
+      pick([new File(["a"], "LOANS.CSV"), new File(["a"], "branches.v2.json"), new File(["a"], "backup.csv.zip")]);
+      expect(problemOf("LOANS.CSV")).not.toContain("accepted");
+      expect(problemOf("branches.v2.json")).not.toContain("accepted");
+      expect(problemOf("backup.csv.zip")).toContain("ZIP isn't accepted");
+    });
+
+    it("refuses an empty file, and a file over 2 GB", async () => {
+      await show();
+      const huge = new File(["a"], "huge.csv");
+      Object.defineProperty(huge, "size", { value: 2 * 1024 ** 3 + 1 });
+      const limit = new File(["a"], "limit.csv");
+      Object.defineProperty(limit, "size", { value: 2 * 1024 ** 3 });
+      pick([new File([], "empty.csv"), huge, limit]);
+      expect(problemOf("empty.csv")).toContain("The file is empty");
+      expect(problemOf("huge.csv")).toContain("Larger than 2 GB");
+      expect(problemOf("limit.csv")).not.toContain("Larger than 2 GB");       // exactly 2 GB is allowed
+    });
+
+    it("flags the same file added twice", async () => {
+      await show();
+      pick([new File(["abc"], "loans.csv")]);
+      pick([new File(["abc"], "loans.csv")]);
+      const rows = within(screen.getByRole("list", { name: "Files" })).getAllByText("loans.csv");
+      expect(rows).toHaveLength(2);
+      expect(rows[0].closest("li").textContent).toContain("Already added");
+    });
+
+    it("finishes each accepted file and says it wasn't sent; a refused one never shows progress", async () => {
+      vi.useFakeTimers();
+      try {
+        await show();
+        pick([new File(["a"], "loans.csv"), new File(["x"], "notes.docx")]);
+        await act(async () => { vi.advanceTimersByTime(2000); });
+        expect(problemOf("loans.csv")).toContain("100%");
+        expect(problemOf("loans.csv")).toContain("Checked - not sent");
+        expect(problemOf("notes.docx")).not.toContain("%");
+        expect(toastText()).toContain("loans.csv uploaded (demo)");
+        expect(toastText()).not.toContain("notes.docx uploaded");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("leaving the page mid-upload stops its timers (no toast afterwards)", async () => {
+      vi.useFakeTimers();
+      try {
+        let view;
+        await act(async () => { view = render(<MemoryRouter><Ingestion /></MemoryRouter>); });
+        pick([new File(["a"], "loans.csv")]);
+        const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+        view.unmount();
+        await act(async () => { vi.advanceTimersByTime(3000); });
+        expect(vi.getTimerCount()).toBe(0);
+        expect(errors).not.toHaveBeenCalled();
+        errors.mockRestore();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("dropping files works like picking them, and dragging over the text inside doesn't flicker", async () => {
+      await show();
+      const zone = screen.getByText("Drag & drop files here").parentElement;
+      fireEvent.dragOver(zone);
+      const leave = createEvent.dragLeave(zone);          // jsdom drops relatedTarget from drag event options
+      Object.defineProperty(leave, "relatedTarget", { value: screen.getByText("Drag & drop files here") });
+      fireEvent(zone, leave);
+      expect(zone.className).toContain("border-[var(--brand-yellow)]");            // still highlighted over a child
+      fireEvent.drop(zone, { dataTransfer: { files: [new File(["a"], "fx.csv")] } });
+      expect(within(screen.getByRole("list", { name: "Files" })).getByText("fx.csv")).toBeTruthy();
+      expect(zone.className).not.toContain("border-[var(--brand-yellow)]");
+    });
+  });
+
+  it("recent ingestions sort by any column, newest run first to start with", async () => {
+    api.ingestionOverview.mockResolvedValue({ ...OVERVIEW, recent: { demo: false, items: [
+      ...OVERVIEW.recent.items,
+      { source: "Qatar Core Banking", type: "File (CSV)", data: "loans.csv", received: 320, kept: 320, held: 0, status: "success", reason: null, at: "2026-09-29T09:00:00Z" },
+    ] } });
+    await show();
+    const table = screen.getByRole("table", { name: "Recent ingestions" });
+    const firstCells = () => within(table).getAllByRole("row").slice(1).map((r) => r.querySelector("td").textContent);
+    expect(firstCells()[0]).toBe("Qatar Core Banking");                                     // newest first
+    expect(within(table).getByRole("columnheader", { name: /Last run/ }).getAttribute("aria-sort")).toBe("descending");
+    fireEvent.click(within(table).getByRole("button", { name: /Records received/ }));
+    expect(firstCells()).toEqual(["Group Core Banking", "Qatar Core Banking", "Lebanon Core Banking"]);   // 0, 320, 1,419
+    fireEvent.click(within(table).getByRole("button", { name: /Records received/ }));
+    expect(firstCells()[0]).toBe("Lebanon Core Banking");
+    expect(within(table).getByRole("columnheader", { name: /Records received/ }).getAttribute("aria-sort")).toBe("descending");
+    fireEvent.click(within(table).getByRole("button", { name: /Status/ }));
+    expect(firstCells()[0]).toBe("Group Core Banking");                                     // "Failed" before "Success"
+    fireEvent.click(within(table).getByRole("button", { name: /Source/ }));
+    expect(firstCells()).toEqual(["Group Core Banking", "Lebanon Core Banking", "Qatar Core Banking"]);
   });
 
   it("only the CFO and admins can connect sources or start a run", async () => {

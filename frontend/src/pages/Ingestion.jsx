@@ -197,6 +197,12 @@ function SectionHead({ title, text, demo }) {
   );
 }
 
+/** "LOANS.CSV" -> "CSV", "branches.v2.json" -> "JSON"; "" for a name with no type ("README", ".env"). */
+export function fileType(name) {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toUpperCase() : "";
+}
+
 /**
  * Drop or pick files. Demo only (backlog ING-3): each file's type and size are checked here and a progress
  * bar shown, but nothing is sent - the file never leaves the browser.
@@ -207,25 +213,35 @@ function Upload({ formats, notify }) {
   const input = useRef(null);
   const timers = useRef([]);
 
-  useEffect(() => () => timers.current.forEach(clearInterval), []);
+  // Both kinds of timer (the progress steps and the finish) stop when the page goes, so nothing updates
+  // a page that's gone. clearTimeout and clearInterval share one id space in browsers.
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   function add(list) {
+    const seen = new Set(files.filter((f) => !f.problem).map((f) => `${f.name}|${f.size}`));
     const next = Array.from(list || []).map((file, i) => {
-      const ext = (file.name.split(".").pop() || "").toUpperCase();
-      const problem = !formats.includes(ext) ? `${ext || "This file type"} isn't accepted` : file.size > MAX_BYTES ? "Larger than 2 GB" : null;
-      return { id: `${Date.now()}-${i}-${file.name}`, name: file.name, ext, progress: problem ? 0 : 5, problem };
+      const ext = fileType(file.name);
+      const key = `${file.name}|${file.size}`;
+      const problem = !ext ? "No file type (add .csv, .json, …)"
+        : !formats.includes(ext) ? `${ext} isn't accepted`
+        : file.size === 0 ? "The file is empty"
+        : file.size > MAX_BYTES ? "Larger than 2 GB"
+        : seen.has(key) ? "Already added"
+        : null;
+      if (!problem) seen.add(key);
+      return { id: `${Date.now()}-${i}-${file.name}`, name: file.name, size: file.size, ext, progress: problem ? 0 : 5, problem };
     });
     setFiles((current) => [...next, ...current]);
     next.filter((f) => !f.problem).forEach((f) => {
       const timer = setInterval(() => {
         setFiles((current) => current.map((c) => (c.id === f.id ? { ...c, progress: Math.min(100, c.progress + 19) } : c)));
       }, 250);
-      timers.current.push(timer);
-      setTimeout(() => {
+      const done = setTimeout(() => {
         clearInterval(timer);
         setFiles((current) => current.map((c) => (c.id === f.id ? { ...c, progress: 100 } : c)));
         notify?.(`${f.name} uploaded (demo): checked in the browser, not sent to the pipeline yet`, "success");
       }, 1500);
+      timers.current.push(timer, done);
     });
   }
 
@@ -244,7 +260,10 @@ function Upload({ formats, notify }) {
             e.preventDefault();
             setDragging(true);
           }}
-          onDragLeave={() => setDragging(false)}
+          onDragLeave={(e) => {
+            // Moving over the text or button inside the zone isn't leaving it.
+            if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false);
+          }}
           onDrop={(e) => {
             e.preventDefault();
             setDragging(false);
@@ -406,13 +425,14 @@ function Recent({ recent }) {
       <DataTable
         caption="Recent ingestions"
         columns={[
-          { key: "source", header: "Source", render: (r) => <span className="font-medium">{r.source}</span> },
-          { key: "type", header: "Type" },
-          { key: "data", header: "Data" },
-          { key: "received", header: "Records received", align: "right", render: (r) => formatNumber(r.received, 0) },
+          { key: "source", header: "Source", sort: true, render: (r) => <span className="font-medium">{r.source}</span> },
+          { key: "type", header: "Type", sort: true },
+          { key: "data", header: "Data", sort: true },
+          { key: "received", header: "Records received", align: "right", sort: true, render: (r) => formatNumber(r.received, 0) },
           {
             key: "status",
             header: "Status",
+            sort: (r) => (PILL[r.status] || [r.status])[0],
             render: (r) => (
               <span className="inline-flex flex-col items-start gap-0.5">
                 <StatusPill status={r.status} />
@@ -421,9 +441,10 @@ function Recent({ recent }) {
               </span>
             ),
           },
-          { key: "at", header: "Last run", render: (r) => <span className="text-ink2">{formatDateTime(r.at)}</span> },
+          { key: "at", header: "Last run", sort: true, render: (r) => <span className="text-ink2">{formatDateTime(r.at)}</span> },
         ]}
         rows={recent.items}
+        defaultSort={{ key: "at", dir: "desc" }}
         rowKey={(r) => `${r.source}|${r.data}|${r.at}`}
       />
     </section>
