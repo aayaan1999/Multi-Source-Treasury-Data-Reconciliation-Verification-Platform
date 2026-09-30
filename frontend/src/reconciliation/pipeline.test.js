@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { correctableFields, currencyLines, fmtAmount, gapSummary, statusText, taskStep } from "./pipeline";
+import { correctableFields, currencyLines, fmtAmount, gapSummary, statusText } from "./pipeline";
 
 // The Lebanon accounts item from specs/pipeline-reconciliation.md section 7.
 const lebanonAccounts = {
@@ -32,17 +32,12 @@ describe("pipeline reconciliation helpers", () => {
 });
 
 
-describe("CFO workflow helpers", () => {
-  it("knows each step by its BPMN id or its name", () => {
-    expect(taskStep({ taskDefinitionId: "UserTask_CfoReview" })).toBe("CFO_REVIEW");
-    expect(taskStep({ name: "Update values" })).toBe("ASSIGNEE_UPDATE");
-    expect(taskStep({ taskDefinitionId: "UserTask_CfoFinalReview" })).toBe("CFO_FINAL_REVIEW");
-    expect(taskStep({ name: "Fraud Investigation" })).toBeNull();
-  });
-
-  it("words the status, naming the assignee", () => {
-    expect(statusText({ status: "ASSIGNED", assigned_to_name: "Demo Reviewer" })).toBe("Assigned: Demo Reviewer");
-    expect(statusText({ status: "SUBMITTED" })).toBe("Awaiting CFO approval");
+describe("reconciliation task helpers", () => {
+  it("words the status, with the decision once there is one", () => {
+    expect(statusText({ status: "WITH_TEAM" })).toBe("With the team");
+    expect(statusText({ status: "AWAITING_CFO", decision: "CORRECT" })).toBe("Waiting for CFO approval (corrected)");
+    expect(statusText({ status: "DECIDED", decision: "ACCEPT" })).toBe("Decided (accepted)");
+    expect(statusText({ status: "SUPERSEDED" })).toBe("Replaced by a newer run");
   });
 
   it("never offers the record's key as a field to correct", () => {

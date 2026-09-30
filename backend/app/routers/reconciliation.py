@@ -1,15 +1,12 @@
-"""Reconciliation tab: reads/resolves specs/multi-source-reconciliation.md's
-`reconciliation_exceptions` (Neon-slice bronze_neon_* vs this app's own canonical *_clean data), and
-reads specs/pipeline-reconciliation.md's `pipeline_reconciliation` items (received vs kept per
-source, country and table - FLOW-3), with the rejected records behind each one. Pipeline items also
-carry the CFO workflow (specs/cfo-reconciliation-workflow.md, FLOW-5): the Camunda process decides
-the steps; these endpoints record what happens at each one (reassign, corrections, submit, return).
+"""Reconciliation tab and reconciliation tasks (specs/reconciliation-approvals.md).
 
-Standalone from Screen 6 - not routed through Camunda. Both handle "a flagged discrepancy needs a
-human decision," but this one is data-layer verification (does our copy of the data match the
-second Neon project standing in for a Core Banking System?), not a regulatory/fraud workflow, and
-there's no BPMN process or candidate-group routing for it (deliberately: see the decision to keep
-this a plain read/resolve screen instead of a fourth Camunda candidate group).
+Two checks: pipeline gaps (specs/pipeline-reconciliation.md: rows a delivery sent that we couldn't
+load) and core-system breaks (specs/multi-source-reconciliation.md, specs/reconciliation-groups.md: our
+data differs from core banking or the CRM, grouped by cause). Both become tasks on the same Camunda
+process (reconciliation-task): the team decides, the CFO approves important ones, and the CFO signs
+off each run once every task is decided (reconciliation-run-signoff). Camunda runs the steps and the
+bridge workers write the decisions; these endpoints read what the Tasks screen and the Reconciliation
+tab show, and take the corrected values the team enters on a pipeline gap.
 """
 from typing import Literal, Optional
 
@@ -17,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ..db import query, query_one, write
+from ..recon_text import FLAG_FIELD, group_summary, pipeline_summary, run_name
 from ..security import current_user
 
 router = APIRouter(prefix="/reconciliation", tags=["reconciliation"], dependencies=[Depends(current_user)])
@@ -48,8 +46,8 @@ def groups(status: Optional[str] = None, source_system: Optional[str] = None, li
     params = tuple(v for _, v in clauses)
     return query(
         f"""SELECT group_id, source_system, entity_type, field_name, mismatch_type, pattern, important, break_count,
-                   total_difference, largest_difference, requires_second_approval, team, status, decision,
-                   due_date, created_at, closed_at
+                   total_difference, largest_difference, cfo_required, cfo_reason, title, team, status, decision,
+                   due_date, created_at, closed_at, run_id
             FROM reconciliation_groups {where}
             ORDER BY (status = 'CLOSED'), important DESC, break_count DESC, group_id LIMIT %s""",
         (*params, limit),
@@ -60,7 +58,12 @@ def groups(status: Optional[str] = None, source_system: Optional[str] = None, li
 def group_detail(group_id: int):
     """A group and every break in it, for the review popup (carve-outs are picked from this list).
     Breaks decided in this group keep pointing at it; carved-out ones have left it."""
-    g = query_one("SELECT * FROM reconciliation_groups WHERE group_id = %s", (group_id,))
+    g = query_one(
+        """SELECT g.*, ud.name AS decided_by_name, ua.name AS approved_by_name
+           FROM reconciliation_groups g LEFT JOIN users ud ON ud.user_id = g.decided_by
+           LEFT JOIN users ua ON ua.user_id = g.approved_by WHERE g.group_id = %s""",
+        (group_id,),
+    )
     if g is None:
         raise HTTPException(404, "No such group")
     g["breaks"] = query(
@@ -69,6 +72,9 @@ def group_detail(group_id: int):
            FROM reconciliation_exceptions WHERE group_id = %s ORDER BY entity_id LIMIT 5000""",
         (group_id,),
     )
+    g["summary"] = group_summary(g, [b for b in g["breaks"] if b["status"] == "OPEN"] or g["breaks"])
+    g["corrections"] = _corrections("group_id", group_id)
+    g["run"] = _run_brief(g["run_id"])
     return g
 
 
@@ -98,79 +104,7 @@ def run_summary(source_system: str = "neon"):
            FROM reconciliation_groups WHERE source_system = %s""",
         (source_system,),
     )
-    signoff = query_one(
-        """SELECT s.status, s.prepared_at, s.prepare_note, up.name AS prepared_by_name, s.prepared_by,
-                  s.signed_at, s.sign_note, us.name AS signed_by_name
-           FROM reconciliation_signoffs s LEFT JOIN users up ON up.user_id = s.prepared_by
-           LEFT JOIN users us ON us.user_id = s.signed_by
-           WHERE s.run_date = %s AND s.source_system = %s""",
-        (run_date, source_system),
-    )
-    return {"run_date": run_date, "source_system": source_system, **counts, **group_counts, "signoff": signoff}
-
-
-class SubmitRunRequest(BaseModel):
-    source_system: str = "neon"
-    note: Optional[str] = None
-
-
-@router.post("/run/submit")
-def submit_run(body: SubmitRunRequest, user: dict = Depends(current_user)):
-    """The preparer submits the latest run for sign-off. While important breaks are still open, a
-    note saying why is required."""
-    summary = run_summary(body.source_system)
-    if summary["run_date"] is None:
-        raise HTTPException(404, "No reconciliation run yet")
-    if summary["important_open"] and not (body.note or "").strip():
-        raise HTTPException(400, f"{summary['important_open']} important break(s) are still open - add a note explaining why the run can be signed off")
-    if summary["signoff"] and summary["signoff"]["status"] in ("SUBMITTED", "SIGNED_OFF"):
-        raise HTTPException(409, f"This run is already {summary['signoff']['status'].lower().replace('_', ' ')}")
-    write(
-        """WITH up AS (
-               INSERT INTO reconciliation_signoffs (run_date, source_system, status, prepared_by, prepared_at, prepare_note)
-               VALUES (%s, %s, 'SUBMITTED', %s, now(), %s)
-               ON CONFLICT (run_date, source_system) DO UPDATE SET status = 'SUBMITTED', prepared_by = EXCLUDED.prepared_by,
-                   prepared_at = now(), prepare_note = EXCLUDED.prepare_note, signed_by = NULL, signed_at = NULL, sign_note = NULL
-               RETURNING run_date)
-           INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value)
-           SELECT %s, 'RUN_SUBMITTED', 'reconciliation_run', %s, NULL, %s FROM up RETURNING log_id""",
-        (summary["run_date"], body.source_system, user["user_id"], body.note, user["user_id"],
-         f"{body.source_system}:{summary['run_date']}", body.note),
-    )
-    return {"status": "SUBMITTED"}
-
-
-class SignOffRequest(BaseModel):
-    source_system: str = "neon"
-    decision: Literal["SIGN_OFF", "RETURN"]
-    note: Optional[str] = None
-
-
-@router.post("/run/signoff")
-def sign_off_run(body: SignOffRequest, user: dict = Depends(current_user)):
-    """A second person (CFO/approver or admin, never the preparer) signs the run off or returns it."""
-    if user["role"] not in ("approver", "admin"):
-        raise HTTPException(403, "Only the CFO (approver) or an admin can sign off a run")
-    summary = run_summary(body.source_system)
-    signoff = summary.get("signoff")
-    if not signoff or signoff["status"] != "SUBMITTED":
-        raise HTTPException(409, "The run hasn't been submitted for sign-off")
-    if signoff["prepared_by"] == user["user_id"]:
-        raise HTTPException(409, "The person who prepared the run can't also sign it off")
-    if body.decision == "RETURN" and not (body.note or "").strip():
-        raise HTTPException(400, "Say why the run is being returned")
-    new_status = "SIGNED_OFF" if body.decision == "SIGN_OFF" else "RETURNED"
-    write(
-        """WITH up AS (
-               UPDATE reconciliation_signoffs SET status = %s, signed_by = %s, signed_at = now(), sign_note = %s
-               WHERE run_date = %s AND source_system = %s AND status = 'SUBMITTED' RETURNING run_date)
-           INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value)
-           SELECT %s, %s, 'reconciliation_run', %s, 'SUBMITTED', %s FROM up RETURNING log_id""",
-        (new_status, user["user_id"], body.note, summary["run_date"], body.source_system,
-         user["user_id"], "RUN_" + new_status, f"{body.source_system}:{summary['run_date']}", body.note),
-    )
-    return {"status": new_status}
-
+    return {"run_date": run_date, "source_system": source_system, **counts, **group_counts}
 
 
 @router.get("")
@@ -205,9 +139,11 @@ def list_exceptions(
 
 PIPELINE_COLUMNS = """p.recon_id, p.ingest_batch_id, p.source_system, p.source_country, p.source_table,
        p.received_rows, p.clean_rows, p.rejected_rows, p.amount_column, p.unreadable_amount_rows,
-       p.amounts_by_currency, p.has_gap, p.status, p.detected_at, p.note,
-       p.assigned_to, ua.name AS assigned_to_name, p.approved_by, p.approved_at"""
-PIPELINE_FROM = "pipeline_reconciliation p LEFT JOIN users ua ON ua.user_id = p.assigned_to"
+       p.amounts_by_currency, p.has_gap, p.status, p.detected_at, p.note, p.title, p.run_id,
+       p.decision, p.decided_by, ud.name AS decided_by_name, p.decided_at, p.cfo_required, p.cfo_reason,
+       p.approved_by, ua.name AS approved_by_name, p.approved_at"""
+PIPELINE_FROM = """pipeline_reconciliation p LEFT JOIN users ud ON ud.user_id = p.decided_by
+       LEFT JOIN users ua ON ua.user_id = p.approved_by"""
 
 # The newest run of each source: a run is one delivery, and older runs' items stay as history.
 LATEST_RUN_PER_SOURCE = """(p.source_system, p.ingest_batch_id) IN (
@@ -255,9 +191,12 @@ def pipeline_item_records(recon_id: int):
            ORDER BY record_key, flag_label""",
         (item["source_table"], item["source_system"], item["source_country"], item["ingest_batch_id"]),
     )
+    for r in records:
+        r["bad_field"] = FLAG_FIELD.get(r["flag_label"])
     # Every rejected row of the run the log holds has at least one exception, so rejected rows with
     # no records means the item is from an older run whose detail has been replaced.
-    return {"item": item, "records": records, "records_available": bool(records) or item["rejected_rows"] == 0}
+    return {"item": item, "records": records, "records_available": bool(records) or item["rejected_rows"] == 0,
+            "summary": pipeline_summary(item, records), "run": _run_brief(item["run_id"])}
 
 
 def _item(recon_id: int) -> dict:
@@ -267,10 +206,10 @@ def _item(recon_id: int) -> dict:
     return item
 
 
-# ---- CFO workflow (specs/cfo-reconciliation-workflow.md) --------------------------------------
+# ---- Corrected values for a pipeline gap (specs/cfo-reconciliation-workflow.md, reconciliation-approvals.md) --
 
-# Corrections can be proposed while the item is with the CFO (handling it directly) or the assignee.
-EDITABLE_STATUSES = ("WITH_CFO", "ASSIGNED")
+# Values are entered while the team reviews the item; the CFO approves them with the decision.
+EDITABLE_STATUSES = ("WITH_TEAM",)
 
 # Key columns identify the record; correcting one would detach the correction from the record.
 KEY_COLUMNS = {
@@ -280,23 +219,21 @@ KEY_COLUMNS = {
 }
 
 
-@router.get("/assignees")
-def assignees():
-    """Who the CFO can reassign an item to."""
-    return query(
-        "SELECT u.user_id, u.name, r.name AS role FROM users u JOIN roles r ON r.role_id = u.role_id ORDER BY u.name"
-    )
-
-
 @router.get("/pipeline/{recon_id}/corrections")
 def list_corrections(recon_id: int):
     _item(recon_id)
+    return _corrections("recon_id", recon_id)
+
+
+def _corrections(owner_col: str, owner_id: int) -> list:
+    """The values proposed (or approved) for an item or a group; withdrawn ones are left out."""
     return query(
-        """SELECT c.correction_id, c.source_table, c.record_key, c.field_name, c.old_value, c.new_value,
-                  c.status, c.entered_at, ue.name AS entered_by_name, c.approved_at, c.synced_at
-           FROM reconciliation_corrections c JOIN users ue ON ue.user_id = c.entered_by
-           WHERE c.recon_id = %s ORDER BY c.entered_at""",
-        (recon_id,),
+        f"""SELECT c.correction_id, c.source_table, c.record_key, c.field_name, c.old_value, c.new_value,
+                   c.status, c.entered_at, ue.name AS entered_by_name, ua.name AS approved_by_name, c.approved_at, c.synced_at
+            FROM reconciliation_corrections c JOIN users ue ON ue.user_id = c.entered_by
+            LEFT JOIN users ua ON ua.user_id = c.approved_by
+            WHERE c.{owner_col} = %s AND c.status <> 'WITHDRAWN' ORDER BY c.record_key, c.field_name""",
+        (owner_id,),
     )
 
 
@@ -309,10 +246,10 @@ class CorrectionRequest(BaseModel):
 @router.post("/pipeline/{recon_id}/corrections")
 def propose_correction(recon_id: int, body: CorrectionRequest, user: dict = Depends(current_user)):
     """A proposed value for one field of one rejected record behind this item. A second proposal for
-    the same field replaces the first. Kept as PROPOSED until the CFO approves the item."""
+    the same field replaces the first. Kept as PROPOSED until the CFO approves the decision."""
     item = _item(recon_id)
     if item["status"] not in EDITABLE_STATUSES:
-        raise HTTPException(409, f"Corrections can only be added while the item is with the CFO or the assignee (it is {item['status']})")
+        raise HTTPException(409, f"Corrected values can only be entered while the team is reviewing the item (it is {item['status'].lower().replace('_', ' ')})")
     if not body.new_value.strip():
         raise HTTPException(400, "Enter the corrected value")
     rejected = query_one(
@@ -353,49 +290,84 @@ def propose_correction(recon_id: int, body: CorrectionRequest, user: dict = Depe
     return {"correction_id": row["correction_id"]}
 
 
-# event -> (status it must be in, status it moves to). Approval is written by the outcome worker when
-# the Camunda process reaches its service task, not here (spec section 5).
-TRANSITIONS = {
-    "REASSIGNED": ("WITH_CFO", "ASSIGNED"),
-    "SUBMITTED": ("ASSIGNED", "SUBMITTED"),
-    "RETURNED": ("SUBMITTED", "ASSIGNED"),
-}
+# ---- Runs and their sign-off (specs/reconciliation-approvals.md) ---------------------------------
+
+RUN_COLUMNS = """r.run_id, r.source_system, r.run_key, r.run_date, r.status, r.signed_at, r.sign_note,
+       us.name AS signed_by_name, r.created_at,
+       (SELECT count(*) FROM pipeline_reconciliation p WHERE p.run_id = r.run_id AND p.status <> 'SUPERSEDED')
+     + (SELECT count(*) FROM reconciliation_groups g WHERE g.run_id = r.run_id) AS tasks,
+       (SELECT count(*) FROM pipeline_reconciliation p WHERE p.run_id = r.run_id AND p.status IN ('DECIDED', 'APPROVED'))
+     + (SELECT count(*) FROM reconciliation_groups g WHERE g.run_id = r.run_id AND g.status = 'CLOSED') AS decided,
+       (SELECT count(*) FROM pipeline_reconciliation p WHERE p.run_id = r.run_id AND p.status = 'AWAITING_CFO')
+     + (SELECT count(*) FROM reconciliation_groups g WHERE g.run_id = r.run_id AND g.status = 'AWAITING_CFO') AS awaiting_cfo"""
+RUN_FROM = "reconciliation_runs r LEFT JOIN users us ON us.user_id = r.signed_by"
 
 
-class EventRequest(BaseModel):
-    event: Literal["REASSIGNED", "SUBMITTED", "RETURNED"]
-    assignee_user_id: Optional[int] = None
-    comment: Optional[str] = None
+def _with_name(run: dict) -> dict:
+    run["name"] = run_name(run["source_system"], run["run_date"], run["run_key"])
+    return run
 
 
-@router.post("/pipeline/{recon_id}/events")
-def workflow_event(recon_id: int, body: EventRequest, user: dict = Depends(current_user)):
-    """Records a step the Tasks screen just completed in Camunda: status change + one audit row, in
-    one statement. Refused when the item isn't at the step the event belongs to."""
-    item = _item(recon_id)
-    before, after = TRANSITIONS[body.event]
-    detail = body.comment
-    if body.event == "REASSIGNED":
-        assignee = query_one("SELECT user_id, name FROM users WHERE user_id = %s", (body.assignee_user_id,)) if body.assignee_user_id else None
-        if assignee is None:
-            raise HTTPException(400, "Pick who to assign it to")
-        detail = f"assigned to {assignee['name']}" + (f": {body.comment}" if body.comment else "")
-    if body.event == "RETURNED" and not (body.comment or "").strip():
-        raise HTTPException(400, "Say why it's being returned")
-    row = write(
-        """WITH upd AS (
-               UPDATE pipeline_reconciliation SET status = %s, assigned_to = COALESCE(%s, assigned_to)
-               WHERE recon_id = %s AND status = %s RETURNING recon_id),
-           aud AS (
-               INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value)
-               SELECT %s, %s, 'reconciliation_item', recon_id::text, %s, %s FROM upd)
-           SELECT recon_id FROM upd""",
-        (after, body.assignee_user_id if body.event == "REASSIGNED" else None, recon_id, before,
-         user["user_id"], body.event, before, detail),
+def _run_brief(run_id):
+    if run_id is None:
+        return None
+    run = query_one(f"SELECT {RUN_COLUMNS} FROM {RUN_FROM} WHERE r.run_id = %s", (run_id,))
+    return _with_name(run) if run else None
+
+
+@router.get("/runs")
+def current_runs():
+    """Each source's current run (the newest that isn't superseded): how many tasks are decided, how
+    many wait for the CFO, and its sign-off."""
+    return [_with_name(r) for r in query(
+        f"""SELECT DISTINCT ON (r.source_system) {RUN_COLUMNS} FROM {RUN_FROM}
+            WHERE r.status <> 'SUPERSEDED' ORDER BY r.source_system, r.run_id DESC"""
+    )]
+
+
+@router.get("/runs/{run_id}")
+def run_detail(run_id: int):
+    """A run and every task in it, for the sign-off popup: what was decided, by whom, who approved it,
+    and the fixes that go with it."""
+    run = _run_brief(run_id)
+    if run is None:
+        raise HTTPException(404, "No such run")
+    tasks = query(
+        """SELECT 'reconciliation' AS kind, p.recon_id AS id, p.title, p.status, p.decision, ud.name AS decided_by_name,
+                  p.decided_by, ua.name AS approved_by_name, p.cfo_required, p.cfo_reason,
+                  (SELECT count(*) FROM reconciliation_corrections c WHERE c.recon_id = p.recon_id AND c.status <> 'WITHDRAWN') AS fixes
+           FROM pipeline_reconciliation p LEFT JOIN users ud ON ud.user_id = p.decided_by LEFT JOIN users ua ON ua.user_id = p.approved_by
+           WHERE p.run_id = %s AND p.status <> 'SUPERSEDED'
+           UNION ALL
+           SELECT 'recon_group', g.group_id, g.title, g.status, g.decision, ud.name, g.decided_by, ua.name, g.cfo_required, g.cfo_reason,
+                  (SELECT count(*) FROM reconciliation_corrections c WHERE c.group_id = g.group_id AND c.status <> 'WITHDRAWN')
+           FROM reconciliation_groups g LEFT JOIN users ud ON ud.user_id = g.decided_by LEFT JOIN users ua ON ua.user_id = g.approved_by
+           WHERE g.run_id = %s
+           ORDER BY 9 DESC, 3""",
+        (run_id, run_id),
     )
-    if row is None:
-        raise HTTPException(409, f"The item isn't at that step (it is {item['status']})")
-    return {"status": after}
+    for t in tasks:
+        t["title"] = t["title"] or (f"Item #{t['id']}" if t["kind"] == "reconciliation" else f"Group #{t['id']}")
+        t["decided"] = t["status"] in ("DECIDED", "APPROVED", "CLOSED")
+    counts = {}
+    for t in tasks:
+        if t["decided"] and t["decision"]:
+            counts[t["decision"]] = counts.get(t["decision"], 0) + 1
+    words = {"ACCEPT": "accepted", "CORRECT": "corrected", "DISMISS": "dismissed"}
+    decided = sum(t["decided"] for t in tasks)
+    if not tasks:
+        headline = f"The {run['name']} found nothing to review."
+    elif decided == len(tasks):
+        parts = ", ".join(f"{n} {words[d]}" for d, n in counts.items())
+        headline = f"All {len(tasks)} task{'' if len(tasks) == 1 else 's'} from the {run['name']} are decided: {parts}."
+    else:
+        headline = f"{decided} of {len(tasks)} tasks from the {run['name']} are decided."
+    run["tasks"] = tasks
+    run["summary"] = {
+        "headline": headline,
+        "job": "Check the decisions, then sign off the run, or send back the tasks that need another look (say why).",
+    }
+    return run
 
 
 class ResolveRequest(BaseModel):

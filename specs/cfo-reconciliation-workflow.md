@@ -1,5 +1,10 @@
 # Spec: CFO Reconciliation Workflow (FLOW-5)
 
+> **Superseded in part (2026-09-30):** the CFO-first process (sections 3 and 5: CFO review, reassign,
+> update values, CFO final review) is replaced by `specs/reconciliation-approvals.md` — the team decides first,
+> the CFO approves important tasks and data fixes, and signs off each run. Corrected values (section 4)
+> and applying them in Notebook 1 (section 7) still work as described here.
+
 **Status:** 5a (workflow) implemented 2026-09-24 — BPMN, bridge, outcome worker, migration 009,
 backend endpoints, Tasks screen; Notebook 2 stores each rejected row's values. Tested locally
 (pytest, vitest, load test); **the Camunda process has not been deployed or run against a live
@@ -70,6 +75,14 @@ A CFO may add corrections at "CFO review" before approving (handling it directly
 | Assignee submits | `SUBMITTED` | backend |
 | CFO returns | `ASSIGNED` (same assignee) | backend |
 | CFO approves | `APPROVED`, corrections `APPROVED` | outcome worker (authoritative), audit via backend |
+| A newer run of the source arrives | `SUPERSEDED` (only if still `OPEN`/`WITH_CFO` with no corrections), process cancelled | bridge (migration 020) |
+
+Only each source's **newest run** gets a review: `data_quality_exceptions` holds just that run's
+rejected records, so an older run's task could never show them. Each poll first marks untouched
+older-run items `SUPERSEDED` (audit row, `user_id` null, "newer run") and then cancels their
+process, so the task leaves the list; the outcome writer never approves a superseded item. Items
+someone has already worked on (reassigned, submitted, or with a correction) are left for the CFO to
+finish. Superseding is not a decision: nothing is approved or corrected.
 
 Every event writes one `audit_log` row (`object_type` = `reconciliation_item`), and every
 correction one more. The load stays insert-only, so a rerun never resets these statuses.
@@ -111,5 +124,6 @@ locally (no PySpark here).
 ## 8. Open items
 
 1. Confirm the CFO login, and whether every item goes to the CFO or only above an amount.
-2. A new run with the same broken record opens a new item and a new process (FLOW-3 open item 1).
+2. A new run with the same broken record opens a new item and a new process (FLOW-3 open item 1);
+   the previous run's untouched item is superseded (section 5), so only one task per problem stays open.
 3. Per-person access in Camunda needs an identity provider; today every demo user can see all tasks.

@@ -21,6 +21,7 @@ const ITEMS = [
 vi.mock("../api", () => ({
   api: {
     pipelineReconciliation: vi.fn(async () => ITEMS),
+    reconRuns: vi.fn(async () => []),
     pipelineRecords: vi.fn(async (id) => ({
       item: ITEMS.find((i) => i.recon_id === id),
       records_available: true,

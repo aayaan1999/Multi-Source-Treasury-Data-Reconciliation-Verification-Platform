@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  specs/reconciliation-approvals.md. One process for both reconciliation task types: a pipeline gap
+  (recordType "reconciliation", rows we received but couldn't load) and a group of core-system breaks
+  (recordType "recon_group", our data differs from core banking or the CRM). Hand-authored: validate the
+  layout in Camunda Modeler / web.camunda.io before relying on the diagram.
+
+  Team review (teamGroup): decision ACCEPT / CORRECT / DISMISS, decidedByUserId, excludedIds (breaks left
+  out of a group). The recon-record-decision worker checks and saves it and says whether the CFO must
+  approve (an important task, or any data fix). CFO approval: cfoDecision APPROVE / SEND_BACK. The
+  recon-approve worker refuses an approval by the person who decided, or by anyone but the CFO or an
+  admin, and the task comes back with approvalError. No forms: the React Tasks screen completes these
+  tasks through Tasklist's REST API.
+-->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+                   xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   id="Definitions_reconciliation-task"
+                   targetNamespace="http://bankx.example/camunda"
+                   exporter="hand-authored" exporterVersion="1.0">
+
+  <bpmn:process id="reconciliation-task" name="Reconciliation Task" isExecutable="true">
+
+    <bpmn:startEvent id="StartEvent_TaskFound" name="Reconciliation task found">
+      <bpmn:outgoing>Flow_ToTeamReview</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:sequenceFlow id="Flow_ToTeamReview" sourceRef="StartEvent_TaskFound" targetRef="UserTask_TeamReview" />
+
+    <!-- Completed with decision, decidedByUserId and (for a group) excludedIds. Entered again when
+         the decision can't be saved, or the CFO sends it back. -->
+    <bpmn:userTask id="UserTask_TeamReview" name="Team review">
+      <bpmn:extensionElements>
+        <!-- candidateGroups must evaluate to a list (a bare =teamGroup raised EXTRACT_VALUE_ERROR). -->
+        <zeebe:assignmentDefinition candidateGroups="=[teamGroup]" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToTeamReview</bpmn:incoming>
+      <bpmn:incoming>Flow_DecisionRefused</bpmn:incoming>
+      <bpmn:incoming>Flow_SentBackToTeam</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToRecordDecision</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_ToRecordDecision" sourceRef="UserTask_TeamReview" targetRef="ServiceTask_RecordDecision" />
+
+    <!-- camunda/bridge/outcome_worker.py: sets decisionOk, decisionError, needsCfo, cfoReason. -->
+    <bpmn:serviceTask id="ServiceTask_RecordDecision" name="Save the decision">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="recon-record-decision" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToRecordDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToDecisionOk</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_ToDecisionOk" sourceRef="ServiceTask_RecordDecision" targetRef="Gateway_DecisionOk" />
+
+    <bpmn:exclusiveGateway id="Gateway_DecisionOk" name="Decision saved?" default="Flow_DecisionRefused">
+      <bpmn:incoming>Flow_ToDecisionOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_DecisionSaved</bpmn:outgoing>
+      <bpmn:outgoing>Flow_DecisionRefused</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_DecisionSaved" sourceRef="Gateway_DecisionOk" targetRef="Gateway_NeedsCfo">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decisionOk = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_DecisionRefused" sourceRef="Gateway_DecisionOk" targetRef="UserTask_TeamReview" />
+
+    <bpmn:exclusiveGateway id="Gateway_NeedsCfo" name="Important?" default="Flow_NoCfoNeeded">
+      <bpmn:incoming>Flow_DecisionSaved</bpmn:incoming>
+      <bpmn:outgoing>Flow_CfoNeeded</bpmn:outgoing>
+      <bpmn:outgoing>Flow_NoCfoNeeded</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_CfoNeeded" sourceRef="Gateway_NeedsCfo" targetRef="UserTask_CfoApproval">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=needsCfo = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_NoCfoNeeded" sourceRef="Gateway_NeedsCfo" targetRef="EndEvent_Decided" />
+
+    <bpmn:endEvent id="EndEvent_Decided" name="Decided (waits for run sign-off)">
+      <bpmn:incoming>Flow_NoCfoNeeded</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Completed with cfoDecision = "APPROVE" (approvedByUserId) or "SEND_BACK" (sentBackByUserId, sendBackNote). -->
+    <bpmn:userTask id="UserTask_CfoApproval" name="CFO approval">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="cfo" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_CfoNeeded</bpmn:incoming>
+      <bpmn:incoming>Flow_ApprovalRefused</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToCfoDecision</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_ToCfoDecision" sourceRef="UserTask_CfoApproval" targetRef="Gateway_CfoDecision" />
+
+    <bpmn:exclusiveGateway id="Gateway_CfoDecision" name="Approve or send back?" default="Flow_Approve">
+      <bpmn:incoming>Flow_ToCfoDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_SendBack</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Approve</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_SendBack" sourceRef="Gateway_CfoDecision" targetRef="ServiceTask_SendBack">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=cfoDecision = "SEND_BACK"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Approve" sourceRef="Gateway_CfoDecision" targetRef="ServiceTask_Approve" />
+
+    <!-- Reopens the decision for the team (the reason is kept as a comment and an audit row). -->
+    <bpmn:serviceTask id="ServiceTask_SendBack" name="Reopen for the team">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="recon-send-back" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_SendBack</bpmn:incoming>
+      <bpmn:outgoing>Flow_SentBackToTeam</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_SentBackToTeam" sourceRef="ServiceTask_SendBack" targetRef="UserTask_TeamReview" />
+
+    <!-- Checks two different people and the CFO role, then applies the decision; sets approvalOk, approvalError. -->
+    <bpmn:serviceTask id="ServiceTask_Approve" name="Save the approval">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="recon-approve" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToApprovalOk</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_ToApprovalOk" sourceRef="ServiceTask_Approve" targetRef="Gateway_ApprovalOk" />
+
+    <bpmn:exclusiveGateway id="Gateway_ApprovalOk" name="Approval accepted?" default="Flow_ApprovalRefused">
+      <bpmn:incoming>Flow_ToApprovalOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approved</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ApprovalRefused</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_Approved" sourceRef="Gateway_ApprovalOk" targetRef="EndEvent_Approved">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=approvalOk = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ApprovalRefused" sourceRef="Gateway_ApprovalOk" targetRef="UserTask_CfoApproval" />
+
+    <bpmn:endEvent id="EndEvent_Approved" name="Approved by the CFO">
+      <bpmn:incoming>Flow_Approved</bpmn:incoming>
+    </bpmn:endEvent>
+
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="reconciliation-task">
+      <bpmndi:BPMNShape id="StartEvent_TaskFound_di" bpmnElement="StartEvent_TaskFound"><omgdc:Bounds x="152" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_TeamReview_di" bpmnElement="UserTask_TeamReview"><omgdc:Bounds x="240" y="120" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_RecordDecision_di" bpmnElement="ServiceTask_RecordDecision"><omgdc:Bounds x="390" y="120" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_DecisionOk_di" bpmnElement="Gateway_DecisionOk" isMarkerVisible="true"><omgdc:Bounds x="545" y="135" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_NeedsCfo_di" bpmnElement="Gateway_NeedsCfo" isMarkerVisible="true"><omgdc:Bounds x="645" y="135" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Decided_di" bpmnElement="EndEvent_Decided"><omgdc:Bounds x="782" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_CfoApproval_di" bpmnElement="UserTask_CfoApproval"><omgdc:Bounds x="620" y="280" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_CfoDecision_di" bpmnElement="Gateway_CfoDecision" isMarkerVisible="true"><omgdc:Bounds x="775" y="295" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_SendBack_di" bpmnElement="ServiceTask_SendBack"><omgdc:Bounds x="390" y="400" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_Approve_di" bpmnElement="ServiceTask_Approve"><omgdc:Bounds x="880" y="280" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ApprovalOk_di" bpmnElement="Gateway_ApprovalOk" isMarkerVisible="true"><omgdc:Bounds x="1035" y="295" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Approved_di" bpmnElement="EndEvent_Approved"><omgdc:Bounds x="1142" y="302" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_ToTeamReview_di" bpmnElement="Flow_ToTeamReview"><omgdi:waypoint x="188" y="160" /><omgdi:waypoint x="240" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToRecordDecision_di" bpmnElement="Flow_ToRecordDecision"><omgdi:waypoint x="340" y="160" /><omgdi:waypoint x="390" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToDecisionOk_di" bpmnElement="Flow_ToDecisionOk"><omgdi:waypoint x="490" y="160" /><omgdi:waypoint x="545" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DecisionSaved_di" bpmnElement="Flow_DecisionSaved"><omgdi:waypoint x="595" y="160" /><omgdi:waypoint x="645" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DecisionRefused_di" bpmnElement="Flow_DecisionRefused"><omgdi:waypoint x="570" y="135" /><omgdi:waypoint x="570" y="80" /><omgdi:waypoint x="290" y="80" /><omgdi:waypoint x="290" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_NoCfoNeeded_di" bpmnElement="Flow_NoCfoNeeded"><omgdi:waypoint x="695" y="160" /><omgdi:waypoint x="782" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CfoNeeded_di" bpmnElement="Flow_CfoNeeded"><omgdi:waypoint x="670" y="185" /><omgdi:waypoint x="670" y="280" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToCfoDecision_di" bpmnElement="Flow_ToCfoDecision"><omgdi:waypoint x="720" y="320" /><omgdi:waypoint x="775" y="320" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SendBack_di" bpmnElement="Flow_SendBack"><omgdi:waypoint x="800" y="345" /><omgdi:waypoint x="800" y="440" /><omgdi:waypoint x="490" y="440" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SentBackToTeam_di" bpmnElement="Flow_SentBackToTeam"><omgdi:waypoint x="390" y="440" /><omgdi:waypoint x="290" y="440" /><omgdi:waypoint x="290" y="200" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Approve_di" bpmnElement="Flow_Approve"><omgdi:waypoint x="825" y="320" /><omgdi:waypoint x="880" y="320" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToApprovalOk_di" bpmnElement="Flow_ToApprovalOk"><omgdi:waypoint x="980" y="320" /><omgdi:waypoint x="1035" y="320" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Approved_di" bpmnElement="Flow_Approved"><omgdi:waypoint x="1085" y="320" /><omgdi:waypoint x="1142" y="320" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ApprovalRefused_di" bpmnElement="Flow_ApprovalRefused"><omgdi:waypoint x="1060" y="345" /><omgdi:waypoint x="1060" y="390" /><omgdi:waypoint x="670" y="390" /><omgdi:waypoint x="670" y="360" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

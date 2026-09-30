@@ -26,8 +26,8 @@ from pyzeebe import ZeebeWorker, Job, create_insecure_channel
 
 import cases_db
 import duplicates_db
-import recon_groups_db
-import reconciliation_db
+import recon_runs_db
+import recon_tasks_db
 from _env import database_url, zeebe_address
 
 
@@ -94,30 +94,45 @@ async def write_review_outcome(job: Job) -> dict:
     return {}
 
 
-async def write_reconciliation_outcome(job: Job) -> dict:
-    """reconciliation-review's service task (specs/cfo-reconciliation-workflow.md): the CFO approved,
-    so the item and its proposed corrections become APPROVED. The approver is whoever completed the
-    last CFO step (approvedByUserId), falling back to the CFO the process was started for."""
-    v = job.variables
+def _with_conn(fn, *args):
     conn = psycopg2.connect(database_url(), connect_timeout=45)
     try:
-        reconciliation_db.approve(conn, int(v["recordKey"]), int(v.get("approvedByUserId") or v["cfoUserId"]))
+        return fn(conn, *args)
     finally:
         conn.close()
-    return {}
 
 
-async def write_recon_group_outcome(job: Job) -> dict:
-    """reconciliation-group-review's service task (specs/reconciliation-groups.md): the decision for
-    every break in the group except the carve-outs, with the second approver when there was one."""
+# ---- reconciliation-task and reconciliation-run-signoff (specs/reconciliation-approvals.md) ---------
+# Each returns the variables its gateway reads: a refused step (e.g. an approval by the person who
+# decided) goes back to the user task with the reason, instead of failing the job.
+
+async def recon_record_decision(job: Job) -> dict:
     v = job.variables
-    conn = psycopg2.connect(database_url(), connect_timeout=45)
-    try:
-        recon_groups_db.decide(conn, int(v["recordKey"]), v["decision"], v.get("excludedIds") or [],
-                               v["decidedByUserId"], v.get("approvedByUserId"))
-    finally:
-        conn.close()
-    return {}
+    return _with_conn(recon_tasks_db.record_decision, v["recordType"], v["recordKey"], v.get("decision"),
+                      v.get("decidedByUserId"), v.get("excludedIds") or [])
+
+
+async def recon_approve(job: Job) -> dict:
+    v = job.variables
+    return _with_conn(recon_tasks_db.approve, v["recordType"], v["recordKey"], v.get("approvedByUserId"))
+
+
+async def recon_send_back(job: Job) -> dict:
+    v = job.variables
+    _with_conn(recon_tasks_db.send_back, v["recordType"], v["recordKey"], v.get("sentBackByUserId"), v.get("sendBackNote"))
+    # The team sees the CFO's reason; the old decision's outcome is cleared for the next round.
+    return {"decisionError": "", "approvalError": "", "sentBackNote": v.get("sendBackNote") or ""}
+
+
+async def recon_close_run(job: Job) -> dict:
+    v = job.variables
+    return _with_conn(recon_runs_db.close_run, v["recordKey"], v.get("signedByUserId"), v.get("signNote"))
+
+
+async def recon_run_send_back(job: Job) -> dict:
+    v = job.variables
+    return _with_conn(recon_runs_db.send_back_run, v["recordKey"], v.get("sentBackByUserId"), v.get("sendBackTasks") or [],
+                      v.get("sendBackNote"))
 
 
 async def main() -> None:
@@ -128,9 +143,11 @@ async def main() -> None:
     channel = create_insecure_channel(grpc_address=zeebe_address())
     worker = ZeebeWorker(channel)
     worker.task(task_type="write-review-outcome")(write_review_outcome)
-    worker.task(task_type="write-reconciliation-outcome")(write_reconciliation_outcome)
-    worker.task(task_type="write-recon-group-outcome")(write_recon_group_outcome)
-    print(f"write-review-outcome + write-reconciliation-outcome workers listening on {zeebe_address()}...")
+    for task_type, handler in (("recon-record-decision", recon_record_decision), ("recon-approve", recon_approve),
+                               ("recon-send-back", recon_send_back), ("recon-close-run", recon_close_run),
+                               ("recon-run-send-back", recon_run_send_back)):
+        worker.task(task_type=task_type)(handler)
+    print(f"write-review-outcome + reconciliation workers listening on {zeebe_address()}...")
     await worker.work()
 
 

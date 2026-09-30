@@ -11,10 +11,10 @@ import { KPI_BY_KEY } from "../kpi/kpiConfig";
 import { formatDateTime, formatValue } from "../kpi/format";
 import ApprovalChain from "../workflow/ApprovalChain";
 import { TRANSACTION_FLAGS, alertType } from "../workflow/flagTypes";
-import ReconciliationTaskPanel from "../reconciliation/ReconciliationTaskPanel";
+import ReconTaskPanel from "../reconciliation/ReconTaskPanel";
+import { RECON_KINDS } from "../reconciliation/reconTask";
 import CaseReviewPanel from "../workflow/CaseReviewPanel";
 import EntityMatchPanel from "../workflow/EntityMatchPanel";
-import GroupReviewPanel from "../reconciliation/GroupReviewPanel";
 import { Digest, TaskPolicy } from "../workflow/DigestAndPolicy";
 import { byUrgency, daysLeftText, isOverdue, taskDue } from "../workflow/taskDue";
 import { claimTask, completeTask, getVariables, searchTasks } from "../workflow/tasklistApi";
@@ -256,9 +256,12 @@ function ReviewPanel({ task, user, onDone, onClose }) {
 }
 
 const RECORD_TYPE_LABEL = {
-  fraud_case: "Transaction case", data_quality: "Data quality", fraud: "Transaction alert", breach: "Breach", reconciliation: "Reconciliation",
-  entity_match: "Possible duplicate", recon_group: "Core-system break",
+  fraud_case: "Transaction case", data_quality: "Data quality", fraud: "Transaction alert", breach: "Breach",
+  entity_match: "Possible duplicate",
+  // specs/reconciliation-approvals.md: one "Reconciliation" filter covers all three.
+  reconciliation: "Reconciliation: rows not loaded", recon_group: "Reconciliation: data differs", recon_run: "Reconciliation: run sign-off",
 };
+const RECON_FILTER = "__reconciliation";
 const SEVERITY_LABEL = { HIGH: "High", MEDIUM: "Medium", LOW: "Low" };
 
 const SOURCE_TABLE_LABEL = {
@@ -285,6 +288,7 @@ export function recordLabel(task) {
   if (sourceTable === "task_cases") return task.vars.title || `Case #${recordKey}`;
   if (sourceTable === "entity_match_candidates") return task.vars.title || `Possible duplicate #${recordKey}`;
   if (sourceTable === "reconciliation_groups") return task.vars.title || `Reconciliation group #${recordKey}`;
+  if (sourceTable === "reconciliation_runs") return task.vars.title || `Reconciliation run #${recordKey}`;
   if (sourceTable === "breaches") {
     const b = task.breach;
     const kpi = b && KPI_BY_KEY[BREACH_METRIC_KPI[b.metric_name]];
@@ -332,7 +336,7 @@ function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
     if (!data) return [];
     return data.filter((t) => {
       if (completedIds.has(t.id)) return false;
-      if (typeFilter && t.vars.recordType !== typeFilter) return false;
+      if (typeFilter === RECON_FILTER ? !RECON_KINDS.includes(t.vars.recordType) : typeFilter && t.vars.recordType !== typeFilter) return false;
       if (nameFilter && !t.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
       return true;
     });
@@ -356,6 +360,7 @@ function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
           className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40"
         >
           <option value="">All types</option>
+          <option value={RECON_FILTER}>Reconciliation (all)</option>
           {Object.entries(RECORD_TYPE_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </div>
@@ -419,7 +424,8 @@ export default function Tasks() {
               setSelectedTask(null);
               setRefreshKey((k) => k + 1);
             };
-            const Panel = { reconciliation: ReconciliationTaskPanel, fraud_case: CaseReviewPanel, entity_match: EntityMatchPanel, recon_group: GroupReviewPanel }[selectedTask.vars.recordType] || ReviewPanel;
+            const Panel = RECON_KINDS.includes(selectedTask.vars.recordType) ? ReconTaskPanel
+              : { fraud_case: CaseReviewPanel, entity_match: EntityMatchPanel }[selectedTask.vars.recordType] || ReviewPanel;
             return <Panel task={selectedTask} user={user} onClose={() => setSelectedTask(null)} onDone={onDone} />;
           })()}
         </Modal>

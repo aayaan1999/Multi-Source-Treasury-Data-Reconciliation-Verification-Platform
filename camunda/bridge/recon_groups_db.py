@@ -1,20 +1,25 @@
 """Grouping core-system reconciliation breaks by cause (specs/reconciliation-groups.md, client point 1):
 open breaks become groups - one task each, one decision for the whole group - except important
-breaks (missing records, key fields, large amounts), which are always their own group. Plain
-psycopg2, no Zeebe, so it's testable without Camunda.
+breaks (missing records, key fields, large amounts), which are always their own group. Each group
+runs on reconciliation-task (specs/reconciliation-approvals.md): the team decides, and the CFO must
+approve an important group, or one whose differences add up to a large amount. Deciding, approving
+and sending back live in recon_tasks_db, shared with pipeline gaps. Plain psycopg2, no Zeebe, so
+it's testable without Camunda.
 """
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 
 import psycopg2.extras
 
-PROCESS_ID = "reconciliation-group-review"
+PROCESS_ID = "reconciliation-task"
 RECORD_TYPE = "recon_group"
 SOURCE_TABLE = "reconciliation_groups"
 FLAG_LABEL = "RECON_GROUP"
 DECISION_STATUS = {"ACCEPT": "ACCEPTED", "DISMISS": "DISMISSED", "CORRECT": "CORRECTED"}
 ENTITY_LABEL = {"account": "Account", "customer": "Customer"}
 MISMATCH_TEXT = {"MISSING_IN_CANONICAL": "missing in our data", "MISSING_IN_SOURCE": "missing in the source system"}
+# The systems we compare with, as a sentence names them.
+SYSTEM_NAME = {"neon": "core banking", "salesforce": "the CRM"}
 
 
 def settings(conn) -> dict:
@@ -37,6 +42,23 @@ def is_important(b: dict, rules: dict) -> bool:
         return True
     d = difference(b)
     return d is not None and abs(d) >= rules["important_amount"]
+
+
+def cfo_rule(chunk: list, important: bool, rules: dict):
+    """Whether the CFO must approve this group whatever the team decides, and why: an important break
+    (a missing record, a key field, a big difference), or a bulk group whose differences add up to
+    important_amount or more."""
+    if important:
+        b = chunk[0]
+        if b["mismatch_type"] != "VALUE_MISMATCH":
+            return True, "a missing record"
+        if b["field_name"] in rules["important_fields"]:
+            return True, f"a key field ({b['field_name']})"
+        return True, f"a difference of {abs(difference(b)):,.2f}"
+    total_abs = sum(abs(d) for d in (difference(b) for b in chunk) if d is not None)
+    if total_abs >= rules["important_amount"]:
+        return True, f"a total difference of {total_abs:,.2f}"
+    return False, None
 
 
 def _band(d: float, bands: list) -> str:
@@ -93,16 +115,15 @@ def create_groups(conn, today: date = None) -> int:
             for start in range(0, len(members), rules["max_group_size"]):
                 chunk = members[start:start + rules["max_group_size"]]
                 diffs = [d for d in (difference(b) for b in chunk) if d is not None]
-                total_abs = sum(abs(d) for d in diffs)
+                cfo, reason = cfo_rule(chunk, important, rules)
                 cur.execute(
                     """INSERT INTO reconciliation_groups (group_key, source_system, entity_type, field_name, mismatch_type,
                            pattern, important, break_count, total_difference, largest_difference,
-                           requires_second_approval, team, due_date)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING group_id""",
+                           requires_second_approval, cfo_required, cfo_reason, team, due_date)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING group_id""",
                     ("|".join(str(k) for k in key), key[0], key[1], key[2], key[3], key[4], important, len(chunk),
                      round(sum(diffs), 2) if diffs else None, max((abs(d) for d in diffs), default=None),
-                     len(chunk) > 1 and total_abs >= rules["second_approval_total"],
-                     rules["owner_team"], today + timedelta(days=1 if important else due_days)),
+                     cfo, cfo, reason, rules["owner_team"], today + timedelta(days=1 if cfo else due_days)),
                 )
                 group_id = cur.fetchone()["group_id"]
                 cur.execute("UPDATE reconciliation_exceptions SET group_id = %s WHERE exception_id = ANY(%s)",
@@ -112,12 +133,42 @@ def create_groups(conn, today: date = None) -> int:
     return created
 
 
-def title(g: dict) -> str:
-    """E.g. "Account balance +15.00 · 412 accounts · neon" or "Customer C0090 missing in our data · neon"."""
-    entity = ENTITY_LABEL.get(g["entity_type"], g["entity_type"])
-    field = f" {g['field_name']}" if g["field_name"] else ""
-    count = f" · {g['break_count']} {g['entity_type']}s" if g["break_count"] > 1 else ""
-    return f"{entity}{field} {g['pattern']}{count} · {g['source_system']}"
+def breaks_of(conn, group_id: int) -> list:
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """SELECT exception_id, source_system, entity_type, entity_id, field_name, source_value, canonical_value,
+                      mismatch_type, status
+               FROM reconciliation_exceptions WHERE group_id = %s ORDER BY entity_id""",
+            (group_id,),
+        )
+        return cur.fetchall()
+
+
+def title(g: dict, breaks: list) -> str:
+    """One line for the task list that says what's wrong, e.g. "4 accounts: balance 15.00 higher in core
+    banking", 'Customer CN0051: segment is "SME" in core banking, "Retail" here', "Customer CNCRM01: in
+    the CRM but missing from our data"."""
+    system = SYSTEM_NAME.get(g["source_system"], g["source_system"])
+    entity = ENTITY_LABEL.get(g["entity_type"], g["entity_type"].title())
+    n = len(breaks) or g["break_count"]
+    one = breaks[0] if n == 1 and breaks else None
+    who = f"{entity} {one['entity_id']}" if one else f"{n} {entity.lower()}s"
+    field = g["field_name"]
+    if g["mismatch_type"] == "MISSING_IN_CANONICAL":
+        return f"{who}: in {system} but missing from our data"
+    if g["mismatch_type"] == "MISSING_IN_SOURCE":
+        return f"{who}: in our data but missing from {system}"
+    d = difference(one) if one else None
+    if one and d is not None:
+        return f"{who}: {field} {abs(d):,.2f} {'higher' if d > 0 else 'lower'} in {system}"
+    if one:
+        return f'{who}: {field} is "{one["source_value"]}" in {system}, "{one["canonical_value"]}" here'
+    if g["pattern"][:1] in "+-":
+        amount = float(g["pattern"].replace(",", ""))
+        return f"{who}: {field} {abs(amount):,.2f} {'higher' if amount > 0 else 'lower'} in {system}"
+    if g["pattern"].startswith("difference "):
+        return f"{who}: {field} differs from {system} by {g['pattern'][len('difference '):]}"
+    return f"{who}: {field} differs from {system}"
 
 
 def fetch_unstarted(conn) -> list:
@@ -129,67 +180,33 @@ def fetch_unstarted(conn) -> list:
         return cur.fetchall()
 
 
-def process_variables(g: dict) -> dict:
+def process_variables(g: dict, breaks: list) -> dict:
     return {
         "recordType": RECORD_TYPE,
         "sourceTable": SOURCE_TABLE,
         "recordKey": str(g["group_id"]),
         "flagLabel": FLAG_LABEL,
         "teamGroup": g["team"].lower(),                # candidate group of the review step
-        "title": title(g),
-        "severity": "HIGH" if g["important"] else "MEDIUM",
+        "title": title(g, breaks),
+        "severity": "HIGH" if g["cfo_required"] else "MEDIUM",
         "dueDate": g["due_date"].isoformat(),
-        "requiresSecondApproval": g["requires_second_approval"],
+        "cfoRequired": g["cfo_required"],
     }
 
 
-def record_started(conn, group_id: int, process_instance_key: int) -> None:
+def record_started(conn, group_id: int, process_instance_key: int, task_title: str = None) -> None:
+    """The group's task is with the team. A group sent back at run sign-off gets a new process, so the
+    tracking row takes the new key."""
     with conn.cursor() as cur:
-        cur.execute("UPDATE reconciliation_groups SET status = 'OPEN', process_instance_key = %s WHERE group_id = %s AND status = 'PENDING'",
-                    (process_instance_key, group_id))
+        cur.execute(
+            """UPDATE reconciliation_groups SET status = 'OPEN', process_instance_key = %s, title = COALESCE(%s, title)
+               WHERE group_id = %s AND status = 'PENDING'""",
+            (process_instance_key, task_title, group_id),
+        )
         cur.execute(
             """INSERT INTO camunda_process_tracking (record_type, source_table, record_key, flag_label, process_instance_key)
-               VALUES (%s, %s, %s, %s, %s) ON CONFLICT (record_type, source_table, record_key, flag_label) DO NOTHING""",
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (record_type, source_table, record_key, flag_label) DO UPDATE SET process_instance_key = EXCLUDED.process_instance_key""",
             (RECORD_TYPE, SOURCE_TABLE, str(group_id), FLAG_LABEL, process_instance_key),
         )
-    conn.commit()
-
-
-def decide(conn, group_id: int, decision: str, excluded_ids: list, decided_by: int, approved_by=None) -> None:
-    """One decision for every open break in the group except the carve-outs, each with its own audit
-    row; carve-outs leave the group and are regrouped on their own next poll. One transaction;
-    idempotent for a retried job."""
-    status = DECISION_STATUS[decision]
-    excluded = [int(i) for i in (excluded_ids or [])]
-    with conn.cursor() as cur:
-        cur.execute(
-            """UPDATE reconciliation_groups SET status = 'CLOSED', decision = %s, decided_by = %s, approved_by = %s, closed_at = now()
-               WHERE group_id = %s AND status <> 'CLOSED' RETURNING group_id""",
-            (decision, decided_by, approved_by, group_id),
-        )
-        if cur.fetchone() is None:
-            conn.rollback()
-            return
-        cur.execute(
-            """UPDATE reconciliation_exceptions SET group_id = NULL, carved_out = true
-               WHERE group_id = %s AND exception_id = ANY(%s) AND status = 'OPEN'""",
-            (group_id, excluded),
-        )
-        cur.execute(
-            """UPDATE reconciliation_exceptions SET status = %s, resolved_by = %s, resolved_at = now(),
-                      resolution_note = %s
-               WHERE group_id = %s AND status = 'OPEN'
-               RETURNING entity_type, entity_id, mismatch_type, field_name""",
-            (status, decided_by, f"Decided for group #{group_id}", group_id),
-        )
-        audit = [
-            (decided_by, status, "reconciliation_exception",
-             f"{t}:{e}:{m}" + (f":{f}" if f else ""), "OPEN", f"group #{group_id}")
-            for t, e, m, f in cur.fetchall()
-        ]
-        if audit:
-            cur.executemany(
-                "INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value) VALUES (%s, %s, %s, %s, %s, %s)",
-                audit,
-            )
     conn.commit()

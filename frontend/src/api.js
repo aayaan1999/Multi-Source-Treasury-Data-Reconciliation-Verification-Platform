@@ -178,20 +178,19 @@ export const api = {
   // Reconciliation tab (specs/multi-source-reconciliation.md) - standalone from Screen 6/Camunda
   reconciliationExceptions: (params) => request(`/reconciliation${query(params)}`),
   reconciliationSummary: () => request("/reconciliation/summary"),
-  // Core-system reconciliation groups and run sign-off (specs/reconciliation-groups.md)
+  // Core-system reconciliation groups (specs/reconciliation-groups.md) and runs with their sign-off
+  // (specs/reconciliation-approvals.md)
   reconGroups: (params) => request(`/reconciliation/groups${query(params)}`),
   reconGroup: (groupId) => request(`/reconciliation/groups/${groupId}`),
   reconRun: (source) => request(`/reconciliation/run${query({ source_system: source })}`),
-  submitReconRun: (body) => request("/reconciliation/run/submit", { method: "POST", body }),
-  signOffReconRun: (body) => request("/reconciliation/run/signoff", { method: "POST", body }),
+  reconRuns: () => request("/reconciliation/runs"),
+  reconRunDetail: (runId) => request(`/reconciliation/runs/${runId}`),
   // Received vs kept per source, country and table (specs/pipeline-reconciliation.md)
   pipelineReconciliation: (params) => request(`/reconciliation/pipeline${query(params)}`),
   pipelineRecords: (reconId) => request(`/reconciliation/pipeline/${reconId}/records`),
-  // CFO reconciliation workflow (specs/cfo-reconciliation-workflow.md)
+  // Corrected values for a pipeline gap's rejected rows (specs/cfo-reconciliation-workflow.md)
   pipelineCorrections: (reconId) => request(`/reconciliation/pipeline/${reconId}/corrections`),
   proposeCorrection: (reconId, body) => request(`/reconciliation/pipeline/${reconId}/corrections`, { method: "POST", body }),
-  pipelineEvent: (reconId, body) => request(`/reconciliation/pipeline/${reconId}/events`, { method: "POST", body }),
-  assignees: () => request("/reconciliation/assignees"),
   // Task cases, digest and policy (specs/task-cases.md)
   caseDetail: (caseId) => request(`/workflow/cases/${caseId}`),
   entityMatch: (candidateId) => request(`/workflow/entity-matches/${candidateId}`),   // specs/entity-matching.md

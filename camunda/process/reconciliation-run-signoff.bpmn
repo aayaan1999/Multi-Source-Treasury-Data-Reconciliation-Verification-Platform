@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  specs/reconciliation-approvals.md. One per run of a source, started by the bridge once every task in
+  the run is decided. Run sign-off (CFO): signoffDecision SIGN_OFF (signedByUserId, signNote) or
+  SEND_BACK (sentBackByUserId, sendBackNote, sendBackTasks = [{kind, id}]). The workers refuse a
+  sign-off by anyone who decided a task in the run, or by anyone but the CFO or an admin, and the task
+  comes back with signoffError. Hand-authored: validate the layout in Camunda Modeler before relying on it.
+-->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+                   xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   id="Definitions_reconciliation-run-signoff"
+                   targetNamespace="http://bankx.example/camunda"
+                   exporter="hand-authored" exporterVersion="1.0">
+
+  <bpmn:process id="reconciliation-run-signoff" name="Reconciliation Run Sign-off" isExecutable="true">
+
+    <bpmn:startEvent id="StartEvent_RunDecided" name="Every task in the run decided">
+      <bpmn:outgoing>Flow_ToSignoff</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:sequenceFlow id="Flow_ToSignoff" sourceRef="StartEvent_RunDecided" targetRef="UserTask_RunSignoff" />
+
+    <bpmn:userTask id="UserTask_RunSignoff" name="Run sign-off">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="cfo" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToSignoff</bpmn:incoming>
+      <bpmn:incoming>Flow_SignoffRefused</bpmn:incoming>
+      <bpmn:incoming>Flow_SendBackRefused</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToSignoffDecision</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_ToSignoffDecision" sourceRef="UserTask_RunSignoff" targetRef="Gateway_SignoffDecision" />
+
+    <bpmn:exclusiveGateway id="Gateway_SignoffDecision" name="Sign off or send back?" default="Flow_SignOff">
+      <bpmn:incoming>Flow_ToSignoffDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_SendBack</bpmn:outgoing>
+      <bpmn:outgoing>Flow_SignOff</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_SendBack" sourceRef="Gateway_SignoffDecision" targetRef="ServiceTask_SendBackTasks">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=signoffDecision = "SEND_BACK"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_SignOff" sourceRef="Gateway_SignoffDecision" targetRef="ServiceTask_CloseRun" />
+
+    <!-- Checks the signer, then closes the run; sets signoffOk, signoffError. -->
+    <bpmn:serviceTask id="ServiceTask_CloseRun" name="Close the run">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="recon-close-run" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_SignOff</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToCloseOk</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_ToCloseOk" sourceRef="ServiceTask_CloseRun" targetRef="Gateway_CloseOk" />
+
+    <bpmn:exclusiveGateway id="Gateway_CloseOk" name="Sign-off accepted?" default="Flow_SignoffRefused">
+      <bpmn:incoming>Flow_ToCloseOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_SignedOff</bpmn:outgoing>
+      <bpmn:outgoing>Flow_SignoffRefused</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_SignedOff" sourceRef="Gateway_CloseOk" targetRef="EndEvent_SignedOff">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=signoffOk = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_SignoffRefused" sourceRef="Gateway_CloseOk" targetRef="UserTask_RunSignoff" />
+
+    <bpmn:endEvent id="EndEvent_SignedOff" name="Run signed off">
+      <bpmn:incoming>Flow_SignedOff</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Reopens the named tasks; the bridge starts a new task for each, and a new sign-off once
+         they're decided again. Sets signoffOk, signoffError. -->
+    <bpmn:serviceTask id="ServiceTask_SendBackTasks" name="Reopen the named tasks">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="recon-run-send-back" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_SendBack</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToSendBackOk</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_ToSendBackOk" sourceRef="ServiceTask_SendBackTasks" targetRef="Gateway_SendBackOk" />
+
+    <bpmn:exclusiveGateway id="Gateway_SendBackOk" name="Tasks reopened?" default="Flow_SendBackRefused">
+      <bpmn:incoming>Flow_ToSendBackOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_SentBack</bpmn:outgoing>
+      <bpmn:outgoing>Flow_SendBackRefused</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_SentBack" sourceRef="Gateway_SendBackOk" targetRef="EndEvent_SentBack">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=signoffOk = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_SendBackRefused" sourceRef="Gateway_SendBackOk" targetRef="UserTask_RunSignoff" />
+
+    <bpmn:endEvent id="EndEvent_SentBack" name="Tasks sent back">
+      <bpmn:incoming>Flow_SentBack</bpmn:incoming>
+    </bpmn:endEvent>
+
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="reconciliation-run-signoff">
+      <bpmndi:BPMNShape id="StartEvent_RunDecided_di" bpmnElement="StartEvent_RunDecided"><omgdc:Bounds x="152" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_RunSignoff_di" bpmnElement="UserTask_RunSignoff"><omgdc:Bounds x="240" y="120" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_SignoffDecision_di" bpmnElement="Gateway_SignoffDecision" isMarkerVisible="true"><omgdc:Bounds x="395" y="135" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_CloseRun_di" bpmnElement="ServiceTask_CloseRun"><omgdc:Bounds x="500" y="120" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_CloseOk_di" bpmnElement="Gateway_CloseOk" isMarkerVisible="true"><omgdc:Bounds x="655" y="135" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_SignedOff_di" bpmnElement="EndEvent_SignedOff"><omgdc:Bounds x="762" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_SendBackTasks_di" bpmnElement="ServiceTask_SendBackTasks"><omgdc:Bounds x="500" y="260" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_SendBackOk_di" bpmnElement="Gateway_SendBackOk" isMarkerVisible="true"><omgdc:Bounds x="655" y="275" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_SentBack_di" bpmnElement="EndEvent_SentBack"><omgdc:Bounds x="762" y="282" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_ToSignoff_di" bpmnElement="Flow_ToSignoff"><omgdi:waypoint x="188" y="160" /><omgdi:waypoint x="240" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToSignoffDecision_di" bpmnElement="Flow_ToSignoffDecision"><omgdi:waypoint x="340" y="160" /><omgdi:waypoint x="395" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SignOff_di" bpmnElement="Flow_SignOff"><omgdi:waypoint x="445" y="160" /><omgdi:waypoint x="500" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SendBack_di" bpmnElement="Flow_SendBack"><omgdi:waypoint x="420" y="185" /><omgdi:waypoint x="420" y="300" /><omgdi:waypoint x="500" y="300" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToCloseOk_di" bpmnElement="Flow_ToCloseOk"><omgdi:waypoint x="600" y="160" /><omgdi:waypoint x="655" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SignedOff_di" bpmnElement="Flow_SignedOff"><omgdi:waypoint x="705" y="160" /><omgdi:waypoint x="762" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SignoffRefused_di" bpmnElement="Flow_SignoffRefused"><omgdi:waypoint x="680" y="135" /><omgdi:waypoint x="680" y="80" /><omgdi:waypoint x="290" y="80" /><omgdi:waypoint x="290" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToSendBackOk_di" bpmnElement="Flow_ToSendBackOk"><omgdi:waypoint x="600" y="300" /><omgdi:waypoint x="655" y="300" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SentBack_di" bpmnElement="Flow_SentBack"><omgdi:waypoint x="705" y="300" /><omgdi:waypoint x="762" y="300" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SendBackRefused_di" bpmnElement="Flow_SendBackRefused"><omgdi:waypoint x="680" y="325" /><omgdi:waypoint x="680" y="370" /><omgdi:waypoint x="290" y="370" /><omgdi:waypoint x="290" y="200" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -59,12 +59,14 @@ docker compose down -v       # also wipes data - start clean next time
 
 `process/transaction-review.bpmn` and `process/review-outcome-form.form` implement
 `specs/camunda-bpmn-process-design.md` section 3 (hand-authored XML/JSON - open in Camunda
-Modeler or web.camunda.io to check the diagram before deploying). `process/reconciliation-review.bpmn`
-is the CFO reconciliation workflow (`specs/cfo-reconciliation-workflow.md`: CFO review -> reassign ->
-update values -> CFO final review, candidate groups `cfo` and `reconciliation-team`); `deploy.py`
-deploys both, `poll_worker.py` starts one per open reconciliation gap, and `outcome_worker.py` also
-handles its `write-reconciliation-outcome` job. The CFO is the login in `CFO_EMAIL` (default
-`approver@bankx.demo`). `bridge/` has the Python side:
+Modeler or web.camunda.io to check the diagram before deploying). `process/reconciliation-task.bpmn`
+and `process/reconciliation-run-signoff.bpmn` are the reconciliation approvals
+(`specs/reconciliation-approvals.md`): every pipeline gap and core-system break group goes to the team
+(`operations`), important ones and any data fix then to the CFO (`cfo`), and each run is signed off by the
+CFO once every task in it is decided. `deploy.py` deploys all three, `poll_worker.py` starts the tasks and
+sign-offs, and `outcome_worker.py` handles their `recon-*` jobs. The CFO is anyone with the approver or admin
+role, never the person who decided. `reset_reconciliation_demo.py` puts reconciliation back to a clean
+start for a demo (dry run unless `--apply`). `bridge/` has the Python side:
 
 ```bash
 cd camunda/bridge

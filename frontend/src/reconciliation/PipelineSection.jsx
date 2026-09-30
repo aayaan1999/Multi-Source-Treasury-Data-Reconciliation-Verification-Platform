@@ -7,6 +7,7 @@ import Section from "../components/Section";
 import StatBox from "../components/StatBox";
 import useAsync from "../hooks/useAsync";
 import { countryLabel, currencyLines, fmtAmount, gapSummary, statusText } from "./pipeline";
+import RunStatus from "./RunStatus";
 
 function fmtDateTime(iso) {
   return iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -31,7 +32,10 @@ function ItemDetail({ item }) {
         </p>
       )}
       <p className="mt-0.5 text-sm text-ink2">
-        Status: {statusText(item)}{item.status !== "MATCHED" && item.status !== "APPROVED" ? " · handled in Tasks (CFO review)" : ""}
+        Status: {statusText(item)}
+        {["OPEN", "WITH_TEAM", "AWAITING_CFO"].includes(item.status) ? " · decided in Tasks (team review, then the CFO if it's important)" : ""}
+        {item.decided_by_name ? ` · decided by ${item.decided_by_name}` : ""}
+        {item.approved_by_name ? `, approved by ${item.approved_by_name}` : ""}
       </p>
 
       {lines.length > 0 && (
@@ -84,8 +88,8 @@ function ItemDetail({ item }) {
 
 /**
  * "Received vs kept, per source" (FLOW-3): for each source's latest run, what it sent against what
- * survived cleaning, per country and table. Read-only here: gap items are acted on in Tasks, through
- * the CFO workflow (specs/cfo-reconciliation-workflow.md). Loads on its own, so the core-system
+ * survived cleaning, per country and table. Read-only here: gap items are decided in Tasks, and the
+ * run signed off there (specs/reconciliation-approvals.md). Loads on its own, so the core-system
  * comparison below still works if this fails.
  */
 export default function PipelineSection() {
@@ -110,6 +114,7 @@ export default function PipelineSection() {
         <StatBox label="Rows rejected" value={rejected.toLocaleString("en-US")} hint="Received but not kept" />
         <StatBox label="Sources delivered" value={sources} />
       </ul>
+      <RunStatus sources={[...new Set(data.map((r) => r.source_system))]} />
 
       <Section
         id="pipeline"

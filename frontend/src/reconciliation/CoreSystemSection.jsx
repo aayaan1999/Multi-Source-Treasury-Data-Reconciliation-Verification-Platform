@@ -9,6 +9,7 @@ import Section from "../components/Section";
 import StatBox from "../components/StatBox";
 import useAsync from "../hooks/useAsync";
 import { fmtAmount } from "./pipeline";
+import RunStatus from "./RunStatus";
 
 // The systems our data is compared with: filter label, what their values are called, and in sentences.
 export const SYSTEMS = {
@@ -59,70 +60,9 @@ function download(filename, text) {
   URL.revokeObjectURL(url);
 }
 
-/** The latest run: what it found and cleared, what's open, and its sign-off (preparer, then a second person). */
-/** The latest run of one source and its sign-off (a run is signed off per source). */
-function SignOff({ run, reload }) {
-  const { user } = useAuth() || {};
-  const system = systemOf(run.source_system);
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [formError, setFormError] = useState("");
-  const signoff = run.signoff;
-  const canSign = ["approver", "admin"].includes(user?.role) && signoff?.status === "SUBMITTED" && signoff.prepared_by !== user?.user_id;
-  const canSubmit = !signoff || signoff.status === "RETURNED";
-
-  async function send(call) {
-    setFormError("");
-    setBusy(true);
-    try {
-      await call();
-      setNote("");
-      reload();
-    } catch (e) {
-      setFormError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="card rounded-xl border border-hair bg-surface p-4 text-sm" aria-label={`Run sign-off: ${system.name}`}>
-      {/* The sign-off is for the whole run of one source, not one group: say so, and what it covers. */}
-      <h3 className="font-semibold tracking-tight text-ink">{system.name}: sign-off for the whole run of {run.run_date}</h3>
-      <p className="mt-1 text-ink2">
-        Covers every group and break from this comparison with {system.long} ({run.breaks_seen} break(s)), not one group. Each
-        group is decided in its own task; this is the final check that the run as a whole is finished.{" "}
-        {run.groups_open
-          ? `${run.groups_open} group(s) still open${run.important_open ? `, ${run.important_open} of them important (a note is required to submit)` : ""}.`
-          : "All groups are decided."}
-      </p>
-      <p className="mt-2 text-ink">
-        <strong>Status:</strong>{" "}
-        {!signoff && "not submitted yet."}
-        {signoff?.status === "SUBMITTED" && `submitted by ${signoff.prepared_by_name}${signoff.prepare_note ? ` ("${signoff.prepare_note}")` : ""}, waiting for a second person.`}
-        {signoff?.status === "SIGNED_OFF" && `signed off by ${signoff.signed_by_name} (prepared by ${signoff.prepared_by_name}).`}
-        {signoff?.status === "RETURNED" && `returned by ${signoff.signed_by_name}: "${signoff.sign_note}". Fix and resubmit.`}
-      </p>
-      {(canSubmit || canSign) && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" aria-label={`Sign-off note: ${system.name}`} className={`${INPUT} min-w-[14rem] flex-1`} />
-          {canSubmit && <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.submitReconRun({ source_system: run.source_system, note: note || undefined }))}>Submit for sign-off</button>}
-          {canSign && (
-            <>
-              <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.signOffReconRun({ source_system: run.source_system, decision: "RETURN", note }))}>Return</button>
-              <button type="button" className={BUTTON} disabled={busy} onClick={() => send(() => api.signOffReconRun({ source_system: run.source_system, decision: "SIGN_OFF", note: note || undefined }))}>Sign off</button>
-            </>
-          )}
-        </div>
-      )}
-      {formError && <p role="alert" className="mt-2 text-sm" style={{ color: "var(--critical)" }}>{formError}</p>}
-    </div>
-  );
-}
-
 const sum = (runs, key) => runs.reduce((total, r) => total + (r[key] || 0), 0);
 
-/** Latest run per source: summary boxes for the sources shown (added up for "All sources") and each one's sign-off. */
+/** Latest run per source: summary boxes for the sources shown (added up for "All sources") and where each run's sign-off stands. */
 function RunPanel({ source }) {
   const { status, data, error, reload } = useAsync(() => Promise.all(SOURCE_KEYS.map((key) => api.reconRun(key))), []);
   if (status === "loading") return <Loading what="the latest runs" />;
@@ -140,9 +80,7 @@ function RunPanel({ source }) {
         <StatBox label="Open groups" value={sum(runs, "groups_open")} hint="One task each, in Tasks" status={sum(runs, "groups_open") ? "watch" : "good"} />
         <StatBox label="Important, open" value={sum(runs, "important_open")} hint={`${sum(runs, "recurring_open")} recurring break(s) open`} status={sum(runs, "important_open") ? "action" : "good"} />
       </ul>
-      <div className="mt-4 grid gap-3">
-        {runs.map((run) => <SignOff key={run.source_system} run={run} reload={reload} />)}
-      </div>
+      <RunStatus sources={runs.map((r) => r.source_system)} />
     </>
   );
 }
@@ -164,10 +102,10 @@ function GroupDetail({ groupId, systemLabel, onClose }) {
           <dl className="card mt-4 grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-xl border border-hair bg-surface p-4 text-sm sm:grid-cols-3">
             <div><dt className="text-ink2">Breaks</dt><dd className="font-medium text-ink">{data.break_count}</dd></div>
             <div><dt className="text-ink2">Total difference</dt><dd className="font-medium text-ink">{data.total_difference == null ? "—" : fmtAmount(data.total_difference)}</dd></div>
-            <div><dt className="text-ink2">Kind</dt><dd className="font-medium text-ink">{data.important ? "Important, on its own" : data.requires_second_approval ? "Bulk, needs second approval" : "Bulk"}</dd></div>
+            <div><dt className="text-ink2">Kind</dt><dd className="font-medium text-ink">{data.important ? "Important, on its own" : data.cfo_required ? "Bulk, CFO approval needed" : "Bulk"}</dd></div>
             <div><dt className="text-ink2">Team</dt><dd className="font-medium text-ink">{data.team || "—"}</dd></div>
             <div><dt className="text-ink2">Due</dt><dd className="font-medium text-ink">{data.due_date || "—"}</dd></div>
-            <div><dt className="text-ink2">Status</dt><dd className="font-medium text-ink">{data.status === "CLOSED" ? `Decided: ${data.decision?.toLowerCase()}` : "Open"}</dd></div>
+            <div><dt className="text-ink2">Status</dt><dd className="font-medium text-ink">{data.status === "CLOSED" ? `Decided: ${data.decision?.toLowerCase()}` : data.status === "AWAITING_CFO" ? "Waiting for CFO approval" : "Open"}</dd></div>
           </dl>
           <div className="mt-4">
             <DataTable
@@ -212,7 +150,7 @@ function GroupsTable({ source }) {
         { key: "pattern", header: "Cause", render: groupCause },
         { key: "break_count", header: "Breaks", align: "right" },
         { key: "total_difference", header: "Total difference", align: "right", render: (g) => (g.total_difference == null ? "—" : fmtAmount(g.total_difference)) },
-        { key: "important", header: "Kind", render: (g) => (g.important ? "Important, on its own" : g.requires_second_approval ? "Bulk, needs second approval" : "Bulk") },
+        { key: "important", header: "Kind", render: (g) => (g.important ? "Important, on its own" : g.cfo_required ? "Bulk, CFO approval needed" : "Bulk") },
         { key: "status", header: "Status", render: (g) => (g.status === "CLOSED" ? `Decided: ${g.decision?.toLowerCase()}` : "Open: decide in Tasks") },
         { key: "due_date", header: "Due" },
       ]}
@@ -265,7 +203,7 @@ function AdminResolve({ row, onDone }) {
  * reconciliation.md 3a): the latest runs and their sign-offs, the groups (decided in Tasks), and every break
  * with filters, age and export. One Source filter - all sources, the core banking system or the CRM
  * (Salesforce) - applies to all three; with all sources the tables gain a Source column. Read-only apart from
- * sign-off and the admin override: decisions happen in the group tasks.
+ * the admin override: groups are decided, and runs signed off, in Tasks (specs/reconciliation-approvals.md).
  */
 export default function CoreSystemSection({ initialSource = "" }) {
   const [source, setSource] = useState(initialSource);

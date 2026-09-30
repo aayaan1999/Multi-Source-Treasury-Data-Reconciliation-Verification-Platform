@@ -404,14 +404,23 @@ CREATE TABLE reconciliation_groups (
     largest_difference        double precision,
     requires_second_approval  boolean NOT NULL DEFAULT false,
     team                      text NOT NULL,
-    status                    text NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'OPEN', 'CLOSED')),
+    status                    text NOT NULL DEFAULT 'PENDING' CONSTRAINT reconciliation_groups_status_check
+                                  CHECK (status IN ('PENDING', 'OPEN', 'AWAITING_CFO', 'CLOSED')),
     decision                  text,
     due_date                  date NOT NULL,
     process_instance_key      bigint,
     created_at                timestamptz NOT NULL DEFAULT now(),
     decided_by                integer REFERENCES users (user_id),
     approved_by               integer REFERENCES users (user_id),
-    closed_at                 timestamptz
+    closed_at                 timestamptz,
+    -- specs/reconciliation-approvals.md (migration 021): when it was decided and approved, whether
+    -- the CFO must approve it and why, and the run it belongs to.
+    decided_at                timestamptz,
+    approved_at               timestamptz,
+    cfo_required              boolean NOT NULL DEFAULT false,
+    cfo_reason                text,
+    run_id                    bigint,
+    title                     text          -- the task's one-line title, set when it starts
 );
 
 -- 4. Run sign-off: one row per source system per day, prepared by one person, signed off by another.
@@ -427,6 +436,25 @@ CREATE TABLE reconciliation_signoffs (
     sign_note      text,
     PRIMARY KEY (run_date, source_system)
 );
+
+-- specs/reconciliation-approvals.md (migration 021): one row per run of a source (a pipeline delivery,
+-- or a day's comparison with core banking / the CRM), signed off by the CFO once every task is decided.
+CREATE TABLE reconciliation_runs (
+    run_id                bigserial PRIMARY KEY,
+    source_system         text NOT NULL,
+    run_key               text NOT NULL,
+    run_date              date NOT NULL,
+    status                text NOT NULL DEFAULT 'OPEN'
+                              CHECK (status IN ('OPEN', 'IN_SIGNOFF', 'SIGNED_OFF', 'SUPERSEDED')),
+    process_instance_key  bigint,
+    signed_by             integer REFERENCES users (user_id),
+    signed_at             timestamptz,
+    sign_note             text,
+    created_at            timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (source_system, run_key)
+);
+
+ALTER TABLE reconciliation_groups ADD FOREIGN KEY (run_id) REFERENCES reconciliation_runs (run_id);
 
 -- specs/pipeline-reconciliation.md (FLOW-3): one row per run + source + country + table, received
 -- (raw_*) vs kept (*_clean). Insert-only from the load; status owned by the app after first load.
@@ -446,12 +474,21 @@ CREATE TABLE pipeline_reconciliation (
     has_gap                 boolean NOT NULL,
     -- OPEN/MATCHED from the load; the rest from the CFO workflow (specs/cfo-reconciliation-workflow.md).
     status                  text NOT NULL DEFAULT 'OPEN' CONSTRAINT pipeline_reconciliation_status_check
-                                CHECK (status IN ('OPEN', 'MATCHED', 'WITH_CFO', 'ASSIGNED', 'SUBMITTED', 'APPROVED')),
+                                CHECK (status IN ('OPEN', 'MATCHED', 'WITH_TEAM', 'AWAITING_CFO', 'DECIDED', 'APPROVED', 'SUPERSEDED',
+                                                  'WITH_CFO', 'ASSIGNED', 'SUBMITTED')),
     detected_at             timestamptz NOT NULL,
     note                    text,               -- completeness check: "No rows delivered" (FLOW-1b)
     assigned_to             integer REFERENCES users (user_id),
     approved_by             integer REFERENCES users (user_id),
-    approved_at             timestamptz
+    approved_at             timestamptz,
+    -- specs/reconciliation-approvals.md (migration 021)
+    decision                text CHECK (decision IN ('ACCEPT', 'CORRECT', 'DISMISS')),
+    decided_by              integer REFERENCES users (user_id),
+    decided_at              timestamptz,
+    cfo_required            boolean NOT NULL DEFAULT false,
+    cfo_reason              text,
+    run_id                  bigint REFERENCES reconciliation_runs (run_id),
+    title                   text
 );
 
 CREATE INDEX pipeline_reconciliation_source_idx ON pipeline_reconciliation (source_system, detected_at DESC);
@@ -460,7 +497,8 @@ CREATE INDEX pipeline_reconciliation_source_idx ON pipeline_reconciliation (sour
 -- pipeline_reconciliation item; approved by the CFO, then applied by Databricks (synced_at, 5b).
 CREATE TABLE reconciliation_corrections (
     correction_id  bigserial PRIMARY KEY,
-    recon_id       bigint NOT NULL REFERENCES pipeline_reconciliation (recon_id),
+    recon_id       bigint REFERENCES pipeline_reconciliation (recon_id),
+    group_id       bigint REFERENCES reconciliation_groups (group_id),     -- a fix for a core-system break (021)
     source_table   text NOT NULL,
     record_key     text NOT NULL,
     field_name     text NOT NULL,
@@ -468,14 +506,18 @@ CREATE TABLE reconciliation_corrections (
     new_value      text NOT NULL,
     entered_by     integer NOT NULL REFERENCES users (user_id),
     entered_at     timestamptz NOT NULL DEFAULT now(),
-    status         text NOT NULL DEFAULT 'PROPOSED' CHECK (status IN ('PROPOSED', 'APPROVED')),
+    status         text NOT NULL DEFAULT 'PROPOSED' CONSTRAINT reconciliation_corrections_status_check
+                       CHECK (status IN ('PROPOSED', 'APPROVED', 'WITHDRAWN')),
     approved_by    integer REFERENCES users (user_id),
     approved_at    timestamptz,
-    synced_at      timestamptz
+    synced_at      timestamptz,
+    CONSTRAINT reconciliation_corrections_owner_check CHECK ((recon_id IS NULL) <> (group_id IS NULL))
 );
 
 CREATE UNIQUE INDEX reconciliation_corrections_one_per_field
     ON reconciliation_corrections (recon_id, source_table, record_key, field_name) WHERE status = 'PROPOSED';
+CREATE UNIQUE INDEX reconciliation_corrections_one_per_group_field
+    ON reconciliation_corrections (group_id, source_table, record_key, field_name) WHERE status = 'PROPOSED';
 
 -- INFERRED: source doc lists purpose only ("name, frequency, due-day rule, owner").
 CREATE TABLE report_definitions (

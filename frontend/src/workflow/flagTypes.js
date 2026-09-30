@@ -42,7 +42,11 @@ export const TRANSACTION_FLAGS = {
   },
 };
 
-const RECORD_TYPE_ALERT = { data_quality: "Data quality", breach: "Breach", reconciliation: "Reconciliation", entity_match: "Possible duplicate", recon_group: "Core-system break" };
+const RECORD_TYPE_ALERT = {
+  data_quality: "Data quality", breach: "Breach", entity_match: "Possible duplicate",
+  // specs/reconciliation-approvals.md: all three are reconciliation tasks.
+  reconciliation: "Reconciliation: rows not loaded", recon_group: "Reconciliation: data differs", recon_run: "Reconciliation: run sign-off",
+};
 const CASE_TYPE = { SUSPICIOUS: "Suspicious", THRESHOLD: "Threshold", OPERATIONAL: "Operational" };
 
 /** The Tasks list's "Type" cell: Threshold / Suspicious / Operational for a transaction alert,

@@ -1,5 +1,5 @@
-"""Deploys the BPMN processes (transaction-review with its form, and reconciliation-review -
-specs/cfo-reconciliation-workflow.md) to the local Zeebe gateway.
+"""Deploys the BPMN processes (transaction-review with its form; reconciliation-task and
+reconciliation-run-signoff - specs/reconciliation-approvals.md) to the local Zeebe gateway.
 
     python camunda/bridge/deploy.py
 
@@ -22,8 +22,8 @@ async def main() -> None:
     result = await client.deploy_resource(
         str(PROCESS_DIR / "review-outcome-form.form"),  # deploy the form first so the BPMN's formId resolves
         str(PROCESS_DIR / "transaction-review.bpmn"),
-        str(PROCESS_DIR / "reconciliation-review.bpmn"),
-        str(PROCESS_DIR / "reconciliation-group-review.bpmn"),   # specs/reconciliation-groups.md
+        str(PROCESS_DIR / "reconciliation-task.bpmn"),           # pipeline gaps and core-system break groups
+        str(PROCESS_DIR / "reconciliation-run-signoff.bpmn"),
     )
     print(f"Deployed key {result.key}:")
     for resource in result.deployments:

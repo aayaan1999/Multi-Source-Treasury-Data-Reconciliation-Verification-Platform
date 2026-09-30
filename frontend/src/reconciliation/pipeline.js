@@ -27,33 +27,27 @@ export function gapSummary(amountsByCurrency) {
   return moved.length > 1 ? `${first} · +${moved.length - 1} more` : first;
 }
 
-// ---- CFO workflow (specs/cfo-reconciliation-workflow.md, FLOW-5) -----------------------------
-
-// The three user tasks in camunda/process/reconciliation-review.bpmn, by element id or name.
-const STEPS = {
-  UserTask_CfoReview: "CFO_REVIEW", "CFO review": "CFO_REVIEW",
-  UserTask_AssigneeUpdate: "ASSIGNEE_UPDATE", "Update values": "ASSIGNEE_UPDATE",
-  UserTask_CfoFinalReview: "CFO_FINAL_REVIEW", "CFO final review": "CFO_FINAL_REVIEW",
-};
-
-/** Which step of the reconciliation-review process a Tasklist task is. */
-export function taskStep(task) {
-  return STEPS[task.taskDefinitionId] || STEPS[task.name] || null;
-}
+// ---- Reconciliation tasks (specs/reconciliation-approvals.md) ------------------------------------
 
 export const STATUS_LABEL = {
   OPEN: "Open",
   MATCHED: "Matched",
+  WITH_TEAM: "With the team",
+  AWAITING_CFO: "Waiting for CFO approval",
+  DECIDED: "Decided",
+  APPROVED: "Approved by the CFO",
+  SUPERSEDED: "Replaced by a newer run",
+  // the retired CFO-first process, for history
   WITH_CFO: "With CFO",
   ASSIGNED: "Assigned",
   SUBMITTED: "Awaiting CFO approval",
-  APPROVED: "Approved",
 };
 
-/** The Status cell: the workflow step in words, with who it's assigned to. */
+/** The Status cell: the step in words, with the decision once there is one. */
 export function statusText(item) {
   const label = STATUS_LABEL[item.status] || item.status;
-  return item.status === "ASSIGNED" && item.assigned_to_name ? `${label}: ${item.assigned_to_name}` : label;
+  const decision = { ACCEPT: "accepted", CORRECT: "corrected", DISMISS: "dismissed" }[item.decision];
+  return decision && ["AWAITING_CFO", "DECIDED", "APPROVED"].includes(item.status) ? `${label} (${decision})` : label;
 }
 
 // Key columns identify a record, so they can't be corrected (same list as the backend's KEY_COLUMNS).

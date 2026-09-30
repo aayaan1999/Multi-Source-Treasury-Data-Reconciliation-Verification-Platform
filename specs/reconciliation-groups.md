@@ -1,5 +1,10 @@
 # Spec: Core-System Reconciliation, Grouped by Cause (client point 1: REC-1..5, 7, 8)
 
+> **Superseded in part (2026-09-30):** the per-group "second approval" (bulk groups of 100,000 or more)
+> and the two-person run sign-off (section 6) are replaced by `specs/reconciliation-approvals.md`: the CFO
+> approves important groups and data fixes, and signs off each run in Tasks once every group is decided.
+> Grouping, carve-outs, ageing and recurrence still work as described here.
+
 **Status:** Implemented 2026-09-24 — `db/migrations/016_reconciliation_groups.sql`, the reconciliation
 notebook and the load, `camunda/bridge/recon_groups_db.py` + `reconciliation-group-review.bpmn`,
 backend endpoints, the Tasks popup and the Reconciliation tab's core-system section. Tested locally;
