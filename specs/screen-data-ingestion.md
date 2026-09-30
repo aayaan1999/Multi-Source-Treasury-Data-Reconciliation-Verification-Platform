@@ -112,6 +112,14 @@ The upload box sends the day's core banking files straight into the pipeline's l
 - **Checks on the server** (`backend/app/routers/ingestion.py`, `POST /api/v1/ingestion/upload`, raw
   body + `X-File-Name`): the same name rule, not empty, at most 100 MB, UTF-8, and the header row has
   every column Notebook 1 needs for that table (`UPLOAD_FILES`). 400 with the reason otherwise.
+- **A file that would replace the data (added 2026-09-30):** for `customers`, `accounts`, `loans` and
+  `branches`, the server compares the file's record ids with those the platform has now. A file that
+  would remove more than 20% of them (`REPLACE_WARN_SHARE`) is another snapshot or a partial file, so it
+  comes back 409 with the numbers ("would remove 186 of the 214 customers … and add 372 new ones"). The
+  file waits in the box with **Send anyway** (resent with `X-Replace-Confirmed: yes`, recorded in the
+  audit row) and **Don't send**. Daily series (transactions, liquidity, FX, capital) are not checked.
+  Why: on 2026-09-30 the 30 Sep test set, built from other synthetic data, replaced the demo's customers
+  and raised about 500 tasks (180 CRM breaks, 288 possible duplicates, 34 fraud cases).
 - **Writing:** Databricks Files API `PUT /api/2.0/fs/files{path}?overwrite=true` with the app's token
   (the token needs WRITE VOLUME on the volume). Databricks errors come back as 502 with Databricks'
   message; no Databricks settings → 503.

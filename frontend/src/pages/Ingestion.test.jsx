@@ -170,7 +170,7 @@ describe("Data ingestion", () => {
       await show();
       await act(async () => pick([new File(["a"], "Transactions_2026-09-30.csv"), new File(["x"], "notes.docx"), new File(["a"], "loans2.csv")]));
       expect(api.uploadFile).toHaveBeenCalledTimes(1);
-      expect(api.uploadFile.mock.calls[0][0].name).toBe("Transactions_2026-09-30.csv");
+      expect(api.uploadFile.mock.calls[0]).toEqual([expect.objectContaining({ name: "Transactions_2026-09-30.csv" }), { confirmed: false }]);
       expect(rowOf("Transactions_2026-09-30.csv")).toContain("Sent to the pipeline as transactions.csv");
       expect(rowOf("notes.docx")).toContain("DOCX isn't accepted");
       expect(rowOf("loans2.csv")).toContain("Not one of the pipeline's files");
@@ -258,6 +258,25 @@ describe("Data ingestion", () => {
       await show();
       const names = within(screen.getByLabelText("Files the pipeline reads")).getAllByText(/\.csv$/).map((e) => e.textContent);
       expect(names).toEqual(OVERVIEW.upload_files);
+    });
+
+    it("a file that would replace most of the data waits: Send anyway sends it confirmed, Don't send drops it", async () => {
+      const { ApiError } = await import("../api");
+      const WARNING = "customers.csv would remove 186 of the 214 customers the platform has now and add 372 new ones.";
+      api.uploadFile.mockImplementation(async (file, { confirmed } = {}) => {
+        if (!confirmed) throw new ApiError(409, WARNING);
+        return { message: "Sent to the pipeline as customers.csv (400 rows)." };
+      });
+      await show();
+      await act(async () => pick([new File(["a"], "customers.csv"), new File(["b"], "accounts.csv")]));
+      expect(rowOf("customers.csv")).toContain(WARNING);
+      expect(toastText()).toContain("customers.csv is waiting for you");
+      await act(async () => fireEvent.click(within(within(screen.getByRole("list", { name: "Files" })).getByText("customers.csv").closest("li")).getByRole("button", { name: "Send anyway" })));
+      expect(api.uploadFile).toHaveBeenLastCalledWith(expect.objectContaining({ name: "customers.csv" }), { confirmed: true });
+      expect(rowOf("customers.csv")).toContain("Sent to the pipeline as customers.csv");
+      await act(async () => fireEvent.click(within(within(screen.getByRole("list", { name: "Files" })).getByText("accounts.csv").closest("li")).getByRole("button", { name: "Don't send" })));
+      expect(rowOf("accounts.csv")).toContain("Not sent");
+      expect(api.uploadFile).toHaveBeenCalledTimes(3);                  // two first tries + one confirmed
     });
 
     it("someone who can't upload sees why, and a drop sends nothing", async () => {

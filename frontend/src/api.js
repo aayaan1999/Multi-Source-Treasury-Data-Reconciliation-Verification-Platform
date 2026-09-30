@@ -89,7 +89,7 @@ if (typeof window !== "undefined") {
   });
 }
 
-async function send(path, { method = "GET", body, file } = {}) {
+async function send(path, { method = "GET", body, file, headers: extra } = {}) {
   if (path !== "/auth/login") checkOwner();
   const headers = { Accept: "application/json" };
   const token = session.token();
@@ -97,6 +97,7 @@ async function send(path, { method = "GET", body, file } = {}) {
   if (body !== undefined) headers["Content-Type"] = "application/json";
   // A file goes as its own bytes, with its name in a header (no multipart form needed).
   if (file) Object.assign(headers, { "Content-Type": "text/csv", "X-File-Name": encodeURIComponent(file.name) });
+  Object.assign(headers, extra);
 
   let response;
   try {
@@ -202,7 +203,9 @@ export const api = {
   // Data ingestion (specs/screen-data-ingestion.md): real latest-run figures + labelled demo connectors
   ingestionOverview: () => request("/ingestion/overview"),
   // Upload files (specs/screen-data-ingestion.md section 3b): one core banking CSV into the pipeline's landing folder.
-  uploadFile: (file) => request("/ingestion/upload", { method: "POST", file }),
+  // confirmed: send even though it would replace many of the records the platform has now (a 409 first).
+  uploadFile: (file, { confirmed = false } = {}) =>
+    request("/ingestion/upload", { method: "POST", file, headers: confirmed ? { "X-Replace-Confirmed": "yes" } : {} }),
   testSource: (key, values) => request(`/ingestion/sources/${key}/test`, { method: "POST", body: { values } }),
   connectSource: (key, values) => request(`/ingestion/sources/${key}/connect`, { method: "POST", body: { values } }),
   disconnectSource: (key) => request(`/ingestion/sources/${key}`, { method: "DELETE" }),

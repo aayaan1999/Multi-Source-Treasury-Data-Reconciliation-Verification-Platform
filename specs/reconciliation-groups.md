@@ -37,6 +37,15 @@ The bridge groups every `OPEN` break not yet in a group (`app_settings['recon.ru
 - **Second approval:** a bulk group whose total absolute difference is ≥ 100,000 needs a second
   person (the CFO) to approve the decision before it takes effect.
 - A carved-out break becomes a group of one next poll.
+- **Many missing at once → one "check the file" task (added 2026-09-30):** when one pass finds
+  `mass_missing_min` (default 20, `recon.rules` can override) or more records of one type missing the
+  same way from one source, they are a wrong or partial file, not that many separate problems. They
+  become **one** group, not split, titled e.g. "168 customers: in the CRM but missing from our data -
+  check the file that was loaded", which the CFO must approve ("168 missing records at once"). Below
+  the limit, each missing record is still its own task.
+
+  Why: on 2026-09-30 a customers file from another snapshot was uploaded; the Salesforce comparison
+  found 168 customers missing one way or the other and raised 168 separate tasks (plus 12 more).
 
 ## 4. Group tasks (REC-4): `reconciliation-group-review`
 
@@ -88,6 +97,7 @@ override** (the backend refuses it for anyone else).
 - [x] Grouping, important singles, second-approval flag, decisions with carve-outs, idempotent (backend tests)
 - [x] Recurring reopen, auto-cleared stays, no duplicate missing-record breaks (load test)
 - [x] Run sign-off rules and admin-only override (backend tests)
+- [x] Many missing records at once become one CFO task; the limit is a setting (`tests/test_flood_guards.py`)
 - [x] Group popup, carve-outs, second approval; tab helpers (vitest)
 - [x]/[ ] Notebook auto-clearing and seen-again updates — implemented; not run on a cluster
 - [ ] Run live against Camunda and the demo core system

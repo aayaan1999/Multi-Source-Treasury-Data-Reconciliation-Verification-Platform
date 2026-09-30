@@ -139,6 +139,49 @@ def test_the_cfo_can_upload_but_the_analyst_and_auditor_cannot(client, landing):
     assert len(landing) == 1
 
 
+CUSTOMERS_HEADER = "customer_id,name,segment,branch_id,onboard_date,risk_rating,country\n"
+
+
+def customers_file(ids):
+    return (CUSTOMERS_HEADER + "".join(f"{i},N,Retail,BN01,2026-01-01,A,Lebanon\n" for i in ids)).encode()
+
+
+@pytest.fixture
+def platform_has(monkeypatch):
+    """The customer ids the platform has now."""
+    def have(ids):
+        monkeypatch.setattr(ingestion, "query", lambda sql, params=(): [{"id": i} for i in ids] if "customers" in sql else [])
+    return have
+
+
+def test_a_next_day_file_that_keeps_the_records_goes_straight_through(client, admin, landing, platform_has):
+    platform_has([f"C{i}" for i in range(10)])
+    ids = [f"C{i}" for i in range(1, 10)] + ["C10", "C11"]           # 1 of 10 gone (10%), 2 new
+    assert upload(client, admin, "customers.csv", customers_file(ids)).status_code == 200
+
+
+def test_a_file_that_drops_many_records_waits_for_the_uploader_to_confirm(client, admin, landing, platform_has, db):
+    platform_has([f"C{i}" for i in range(10)])
+    other = customers_file([f"C{i}" for i in range(7, 20)])           # 7 of 10 gone, 10 new
+    r = upload(client, admin, "customers.csv", other)
+    assert r.status_code == 409
+    assert r.json()["detail"].startswith("customers.csv would remove 7 of the 10 customers the platform has now and add 10 new ones.")
+    assert landing == {}                                               # nothing sent yet
+    r = client.post(f"{API}/ingestion/upload", content=other, headers={
+        **admin, "Content-Type": "text/csv", "X-File-Name": "customers.csv", "X-Replace-Confirmed": "yes"})
+    assert r.status_code == 200 and len(landing) == 1
+    db.execute("SELECT new_value FROM audit_log WHERE action = 'FILE_UPLOADED' ORDER BY log_id DESC LIMIT 1")
+    details = db.fetchone()[0]
+    assert (details if isinstance(details, dict) else json.loads(details))["replace_confirmed"] is True
+
+
+def test_nothing_to_compare_with_and_daily_series_are_never_held(client, admin, landing, platform_has):
+    platform_has([])                                                   # an empty platform: first load
+    assert upload(client, admin, "customers.csv", customers_file(["C1"])).status_code == 200
+    platform_has([f"C{i}" for i in range(10)])                          # transactions are a day's series, not records kept
+    assert upload(client, admin, "transactions.csv", TRANSACTIONS).status_code == 200
+
+
 def test_the_overview_lists_the_files_the_pipeline_reads(client, admin):
     body = client.get(f"{API}/ingestion/overview", headers=admin).json()
     assert body["upload_formats"] == ["CSV"]

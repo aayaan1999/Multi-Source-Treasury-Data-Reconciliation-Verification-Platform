@@ -1,6 +1,8 @@
 """Grouping core-system reconciliation breaks by cause (specs/reconciliation-groups.md, client point 1):
 open breaks become groups - one task each, one decision for the whole group - except important
-breaks (missing records, key fields, large amounts), which are always their own group. Each group
+breaks (missing records, key fields, large amounts), which are always their own group - unless one
+comparison finds mass_missing_min or more records missing the same way at once: that is a wrong or partial
+file, not that many separate problems, so they become one "check the file" group for the CFO. Each group
 runs on reconciliation-task (specs/reconciliation-approvals.md): the team decides, and the CFO must
 approve an important group, or one whose differences add up to a large amount. Deciding, approving
 and sending back live in recon_tasks_db, shared with pipeline gaps. Plain psycopg2, no Zeebe, so
@@ -22,6 +24,9 @@ ENTITY_LABEL = {"account": "Account", "customer": "Customer"}
 MISMATCH_TEXT = {"MISSING_IN_CANONICAL": "missing in our data", "MISSING_IN_SOURCE": "missing in the source system"}
 # The systems we compare with, as a sentence names them.
 SYSTEM_NAME = {"neon": "core banking", "salesforce": "the CRM"}
+# This many records missing the same way in one pass is a file problem (recon.rules can override it).
+MASS_MISSING_MIN = 20
+MASS = "mass"
 
 
 def settings(conn) -> dict:
@@ -52,6 +57,8 @@ def cfo_rule(chunk: list, important: bool, rules: dict):
     important_amount or more."""
     if important:
         b = chunk[0]
+        if b["mismatch_type"] != "VALUE_MISMATCH" and len(chunk) > 1:
+            return True, f"{len(chunk)} missing records at once (check the file that was loaded)"
         if b["mismatch_type"] != "VALUE_MISMATCH":
             return True, "a missing record"
         if b["field_name"] in rules["important_fields"]:
@@ -89,7 +96,8 @@ def pattern(b: dict, same_diff_counts: Counter, rules: dict) -> str:
 def create_groups(conn, today: date = None) -> int:
     """Groups every OPEN break not yet in a group. Important and carved-out breaks get a group each;
     the rest share a group per source + record type + field + mismatch + pattern, split at
-    max_group_size. Returns how many groups were created."""
+    max_group_size. Records missing the same way mass_missing_min times or more share one group, whole.
+    Returns how many groups were created."""
     today = today or date.today()
     cfg = settings(conn)
     rules, due_days = cfg["recon.rules"], cfg["task.due_days"].get("RECON_GROUP", 3)
@@ -104,18 +112,24 @@ def create_groups(conn, today: date = None) -> int:
             (b["source_system"], b["entity_type"], b["field_name"], difference(b))
             for b in breaks if difference(b) is not None and not is_important(b, rules)
         )
+        missing_way = lambda b: (b["source_system"], b["entity_type"], b["mismatch_type"])  # noqa: E731
+        missing = Counter(missing_way(b) for b in breaks if b["mismatch_type"] != "VALUE_MISMATCH" and not b["carved_out"])
+        mass_min = rules.get("mass_missing_min", MASS_MISSING_MIN)
         groups = defaultdict(list)
         for b in breaks:
             important = is_important(b, rules)
             key = (b["source_system"], b["entity_type"], b["field_name"], b["mismatch_type"], pattern(b, same_diff, rules))
-            if important or b["carved_out"]:
+            if b["mismatch_type"] != "VALUE_MISMATCH" and not b["carved_out"] and missing[missing_way(b)] >= mass_min:
+                key = key + (MASS,)
+            elif important or b["carved_out"]:
                 key = key + (f"single:{b['exception_id']}",)
             groups[(key, important)].append(b)
 
         created = 0
         for (key, important), members in groups.items():
-            for start in range(0, len(members), rules["max_group_size"]):
-                chunk = members[start:start + rules["max_group_size"]]
+            size = len(members) if key[-1] == MASS else rules["max_group_size"]
+            for start in range(0, len(members), size):
+                chunk = members[start:start + size]
                 diffs = [d for d in (difference(b) for b in chunk) if d is not None]
                 cfo, reason = cfo_rule(chunk, important, rules)
                 cur.execute(
@@ -156,10 +170,11 @@ def title(g: dict, breaks: list) -> str:
     one = breaks[0] if n == 1 and breaks else None
     who = f"{entity} {one['entity_id']}" if one else f"{n} {entity.lower()}s"
     field = g["field_name"]
+    check = " - check the file that was loaded" if (g.get("group_key") or "").endswith(f"|{MASS}") else ""
     if g["mismatch_type"] == "MISSING_IN_CANONICAL":
-        return f"{who}: in {system} but missing from our data"
+        return f"{who}: in {system} but missing from our data{check}"
     if g["mismatch_type"] == "MISSING_IN_SOURCE":
-        return f"{who}: in our data but missing from {system}"
+        return f"{who}: in our data but missing from {system}{check}"
     d = difference(one) if one else None
     if one and d is not None:
         return f"{who}: {field} {abs(d):,.2f} {'higher' if d > 0 else 'lower'} in {system}"

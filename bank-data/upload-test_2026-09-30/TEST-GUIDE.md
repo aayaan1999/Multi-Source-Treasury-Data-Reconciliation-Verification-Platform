@@ -1,8 +1,21 @@
 # Upload test files, 30 Sep 2026
 
+> **Warning (30 Sep):** this set is a different bank snapshot from the demo's data (see
+> `bank-data/demo-baseline_2026-09-29/`, what the demo actually holds). Uploaded on 30 Sep it replaced the
+> demo's customers and raised about 500 tasks; the demo was restored afterwards. The upload box now holds such
+> a file with "would remove N of the M customers…" and **Send anyway** / **Don't send**. Use it to test that
+> check, not to add a day to the demo.
+
 A full bank snapshot as of **30 Sep 2026**, made with `scripts/generate_next_day.py --date 2026-09-30` from
 `bank-data/synthetic_2026-09-23`: 434 new transactions over 24-30 Sep (about 65 a day), a week of liquidity
 and FX rates, and two planted rows on 30 Sep.
+
+The pipeline takes every row's country from its branch's region, so the set has branches in all three
+countries: BN04 Riyadh Olaya and BN07 Jeddah Tahlia (KSA, costs in SAR), BN12 Doha West Bay and BN15 Doha
+Al Sadd (Qatar, costs in QAR), the rest in Lebanon; every customer banks at a branch in their own country.
+(Fixed 30 Sep: the first version had only Lebanese branches, so a run showed Saudi Arabia and Qatar as 10
+failed loads, "No rows delivered". To fix a run made with it, upload the new branches.csv and customers.csv
+and press Run all sources now.)
 
 ## Upload box on the Data ingestion tab
 

@@ -253,16 +253,28 @@ function Upload({ formats, expected, canUpload, notify }) {
       return { id: `${Date.now()}-${i}-${file.name}`, name: file.name, size: file.size, ext, target, status: problem ? "refused" : "sending", problem, file };
     });
     setFiles((current) => [...next.map(({ file, ...f }) => f), ...current]);
-    next.filter((f) => !f.problem).forEach(async (f) => {
-      try {
-        const r = await api.uploadFile(f.file);
-        patch(f.id, { status: "sent", message: r.message });
-        if (mounted.current) notify?.(`${f.name}: ${r.message}`, "success");
-      } catch (err) {
-        patch(f.id, { status: "failed", problem: err.message });
-        if (mounted.current) notify?.(`${f.name} wasn't sent: ${err.message}`, "error");
+    next.filter((f) => !f.problem).forEach((f) => send(f.id, f.name, f.file));
+  }
+
+  // A file that would replace many existing records comes back 409 and waits for "Send anyway".
+  const held = useRef({});
+  async function send(id, name, file, confirmed = false) {
+    patch(id, { status: "sending", problem: null, warning: null });
+    try {
+      const r = await api.uploadFile(file, { confirmed });
+      delete held.current[id];
+      patch(id, { status: "sent", message: r.message });
+      if (mounted.current) notify?.(`${name}: ${r.message}`, "success");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        held.current[id] = file;
+        patch(id, { status: "held", warning: err.message });
+        if (mounted.current) notify?.(`${name} is waiting for you: it would replace most of the data`, "info");
+        return;
       }
-    });
+      patch(id, { status: "failed", problem: err.message });
+      if (mounted.current) notify?.(`${name} wasn't sent: ${err.message}`, "error");
+    }
   }
 
   return (
@@ -329,7 +341,17 @@ function Upload({ formats, expected, canUpload, notify }) {
                     <span className="truncate font-medium text-ink">{f.name}</span>
                     <span className="shrink-0 text-xs text-muted">{f.status === "sending" ? "Sending…" : f.status === "sent" ? "Sent" : ""}</span>
                   </div>
-                  {f.problem ? (
+                  {f.warning ? (
+                    <div className="mt-1 text-xs">
+                      <p className="border-l-2 pl-2 text-ink" style={{ borderColor: "var(--warning)" }}>{f.warning}</p>
+                      <div className="mt-1.5 flex gap-2">
+                        <button type="button" className="rounded-md border border-hair px-2 py-1 font-semibold text-ink"
+                          onClick={() => send(f.id, f.name, held.current[f.id], true)}>Send anyway</button>
+                        <button type="button" className="rounded-md px-2 py-1 text-ink2"
+                          onClick={() => { delete held.current[f.id]; patch(f.id, { status: "refused", warning: null, problem: "Not sent" }); }}>Don't send</button>
+                      </div>
+                    </div>
+                  ) : f.problem ? (
                     <p className="text-xs" style={{ color: "var(--critical)" }}>{f.problem}</p>
                   ) : (
                     <>

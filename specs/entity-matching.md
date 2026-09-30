@@ -35,6 +35,11 @@ branch, country, onboarding, risk rating, loans per currency) and why they were 
 company** (Approved) or **Different companies** (Rejected), with a mandatory comment; audited.
 **Nothing is merged automatically, and the customer records are never changed.**
 
+**At most 25 reviews open at once** (`dedup.matching.max_open_reviews`, added 2026-09-30): the bridge
+starts the best-scored waiting pairs up to that limit, and more as reviews are decided. The pairs are
+all saved; only the tasks wait. Why: a customers file with many look-alike names (400 customers, 225
+names) raised 288 review tasks at once on 2026-09-30.
+
 ## 4. Exposure per group (DUP-4)
 
 After each decision, `customer_entity` is rebuilt from every confirmed pair: connected customers form
@@ -54,5 +59,6 @@ undone by reversing the decision.
 
 - [x] Cleaning, scoring, candidates once, decisions, groups (backend tests)
 - [x] Review popup, decision with comment (vitest)
+- [x] Reviews start at most 25 open at a time, best score first (`tests/test_flood_guards.py`)
 - [x]/[ ] Notebook 6 top exposures per group — implemented; not run on a cluster
 - [ ] Run live with planted duplicates in the demo data

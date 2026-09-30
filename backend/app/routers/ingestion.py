@@ -14,6 +14,8 @@ GET /ingestion/overview returns everything the screen shows in one call:
 * Demo - the scheduled pulls and, before the first pipeline run, the stat cards and recent loads. They
   come from DEMO below and carry "demo": true, which the screen labels (backlog ING-2..6).
 """
+import csv
+import io
 import json
 import os
 import urllib.error
@@ -51,6 +53,11 @@ UPLOAD_FILES = {
     "fx_rates": ["date", "currency_pair", "rate"],
 }
 UPLOAD_MAX_BYTES = 100 * 1024 * 1024
+# A day's file for these tables keeps (nearly) every record the bank already has. One that drops more
+# than REPLACE_WARN_SHARE of them is another snapshot, or a partial file: loading it would turn every
+# dropped record into a reconciliation task, so it needs the uploader to confirm.
+RECORD_KEYS = {"customers": "customer_id", "accounts": "account_id", "loans": "loan_id", "branches": "branch_id"}
+REPLACE_WARN_SHARE = 0.2
 # databricks.yml's landing_path: where the file-arrival trigger watches and Notebook 1 reads.
 DEFAULT_LANDING_PATH = "/Volumes/dbw_bankx_treasury_poc/raw/raw/resources"
 
@@ -233,6 +240,33 @@ def check_upload(filename: str, content: bytes) -> tuple:
     return table, len(lines) - 1
 
 
+def replaced_records(table: str, content: bytes):
+    """For a table with record keys: how the file changes the records the platform has now
+    ({"current", "dropped", "added"}), or None when there's nothing to compare with."""
+    key = RECORD_KEYS.get(table)
+    if not key:
+        return None
+    current = {r["id"] for r in query(f"SELECT {key} AS id FROM {table}")}
+    if not current:
+        return None
+    rows = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
+    rows.fieldnames = [h.strip().strip('"').lower() for h in rows.fieldnames or []]
+    uploaded = {(r.get(key) or "").strip() for r in rows} - {""}
+    return {"current": len(current), "dropped": len(current - uploaded), "added": len(uploaded - current)}
+
+
+def check_replacement(filename: str, table: str, content: bytes) -> None:
+    """409 when the file would drop more than REPLACE_WARN_SHARE of the table's records (see RECORD_KEYS)."""
+    change = replaced_records(table, content)
+    if change and change["dropped"] > REPLACE_WARN_SHARE * change["current"]:
+        noun = table.replace("_", " ")
+        raise HTTPException(409, (
+            f"{filename} would remove {change['dropped']:,} of the {change['current']:,} {noun} the platform has now "
+            f"and add {change['added']:,} new ones. That looks like a different or partial snapshot, not the next "
+            f"day's file, and every removed record would become a reconciliation task. Send it only if you mean to "
+            f"replace the data."))
+
+
 def _put_in_landing_folder(table: str, content: bytes) -> str:
     """Writes the file into the landing volume with the Databricks Files API, under the name Notebook 1 reads."""
     host, token = refresh._config()
@@ -259,7 +293,8 @@ def _put_in_landing_folder(table: str, content: bytes) -> str:
 @router.post("/upload")
 async def upload(request: Request, user: dict = Depends(current_user)):
     """Upload files: one file per request, its bytes as the body and its name in X-File-Name. Checked (one
-    of the eight CSVs, with its columns), then written to the pipeline's landing folder, which starts the
+    of the eight CSVs, with its columns, and - unless X-Replace-Confirmed: yes - not dropping many of the
+    records the platform has now), then written to the pipeline's landing folder, which starts the
     pipeline about 2 minutes after the last file (databricks.yml's file-arrival trigger). Audited."""
     _can_manage(user)
     filename = urllib.parse.unquote(request.headers.get("x-file-name") or "").strip()
@@ -267,10 +302,14 @@ async def upload(request: Request, user: dict = Depends(current_user)):
         raise HTTPException(400, "The file's name is missing")
     content = await request.body()
     table, rows = check_upload(filename, content)
+    confirmed = (request.headers.get("x-replace-confirmed") or "").lower() == "yes"
+    if not confirmed:
+        check_replacement(filename, table, content)
     if not connectors.databricks_configured():
         raise HTTPException(503, "The app isn't connected to the Databricks pipeline yet (DATABRICKS_HOST and DATABRICKS_TOKEN in backend/.env)")
     path = _put_in_landing_folder(table, content)
-    _audit(user, "FILE_UPLOADED", f"{table}.csv", {"file": filename, "rows": rows, "bytes": len(content), "path": path})
+    _audit(user, "FILE_UPLOADED", f"{table}.csv",
+           {"file": filename, "rows": rows, "bytes": len(content), "path": path, "replace_confirmed": confirmed})
     auto_start = _starts_on_arrival()
     then = ("The pipeline starts about 2 minutes after the last file." if auto_start
             else "The automatic start is paused: press Run all sources now once all files are in.")

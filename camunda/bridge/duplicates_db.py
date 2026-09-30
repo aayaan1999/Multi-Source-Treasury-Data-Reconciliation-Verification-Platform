@@ -15,6 +15,9 @@ from difflib import SequenceMatcher
 import psycopg2.extras
 
 RECORD_TYPE = "entity_match"
+# At most this many duplicate reviews open at once (dedup.matching can override it); the rest wait, best
+# score first, and start as reviews are decided - so a load with many look-alike names can't flood the list.
+MAX_OPEN_REVIEWS = 25
 SOURCE_TABLE = "entity_match_candidates"
 FLAG_LABEL = "POSSIBLE_DUPLICATE"
 
@@ -97,11 +100,17 @@ def find_candidates(conn) -> int:
 
 
 def fetch_unstarted(conn) -> list:
+    """Candidates to start now: the best-scored waiting ones, up to max_open_reviews open in all."""
+    limit = settings(conn)["dedup.matching"].get("max_open_reviews", MAX_OPEN_REVIEWS)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("""SELECT count(*) AS n FROM entity_match_candidates
+                       WHERE status = 'PENDING' AND process_instance_key IS NOT NULL""")
+        room = max(0, limit - cur.fetchone()["n"])
         cur.execute(
             """SELECT candidate_id, customer_a, customer_b, name_a, name_b, score, reasons, created_at
                FROM entity_match_candidates WHERE status = 'PENDING' AND process_instance_key IS NULL
-               ORDER BY score DESC, candidate_id"""
+               ORDER BY score DESC, candidate_id LIMIT %s""",
+            (room,),
         )
         return cur.fetchall()
 
