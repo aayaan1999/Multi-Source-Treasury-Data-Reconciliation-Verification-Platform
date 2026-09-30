@@ -41,7 +41,7 @@ def needs_cfo(cfo_required: bool, cfo_reason, decision: str):
     """The CFO approves an important task whatever the decision, and any data fix."""
     reasons = [cfo_reason] if cfo_required and cfo_reason else (["an important task"] if cfo_required else [])
     if decision == "CORRECT":
-        reasons.append("a data fix is proposed")
+        reasons.append("a proposed data fix")
     return bool(reasons), "; ".join(reasons)
 
 
@@ -88,9 +88,10 @@ def _finalize_group(cur, group_id: int, decision: str, decided_by: int, approved
 
 # ---- the team's decision -------------------------------------------------------------------------
 
-def record_decision(conn, record_type: str, key, decision: str, decided_by, excluded_ids=()) -> dict:
+def record_decision(conn, record_type: str, key, decision: str, decided_by, excluded_ids=(), corrected_values=None) -> dict:
     """Checks and saves the team's decision. Returns decisionOk / decisionError, and needsCfo / cfoReason
-    for the Important? gateway."""
+    for the Important? gateway. corrected_values: for a group, the value the reviewer entered per break
+    ({exception_id: value}); a break without one takes the source system's value."""
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             who = user(cur, decided_by)
@@ -98,7 +99,10 @@ def record_decision(conn, record_type: str, key, decision: str, decided_by, excl
                 return _refused(decisionOk=False, decisionError="The decision didn't say who made it. Reopen the task and decide again.")
             if decision not in DECISIONS:
                 return _refused(decisionOk=False, decisionError="Pick Accept, Correct our data or Dismiss.")
-            result = (_decide_pipeline if record_type == PIPELINE else _decide_group)(cur, int(key), decision, who["user_id"], excluded_ids or [])
+            if record_type == PIPELINE:
+                result = _decide_pipeline(cur, int(key), decision, who["user_id"])
+            else:
+                result = _decide_group(cur, int(key), decision, who["user_id"], excluded_ids or [], corrected_values or {})
         if result["decisionOk"]:
             conn.commit()
         else:
@@ -109,7 +113,7 @@ def record_decision(conn, record_type: str, key, decision: str, decided_by, excl
         raise
 
 
-def _decide_pipeline(cur, recon_id, decision, decided_by, _excluded):
+def _decide_pipeline(cur, recon_id, decision, decided_by):
     cur.execute("SELECT * FROM pipeline_reconciliation WHERE recon_id = %s FOR UPDATE", (recon_id,))
     item = cur.fetchone()
     if item is None:
@@ -135,7 +139,37 @@ def _decide_pipeline(cur, recon_id, decision, decided_by, _excluded):
     return ok
 
 
-def _decide_group(cur, group_id, decision, decided_by, excluded_ids):
+def _is_number(value) -> bool:
+    try:
+        Decimal(str(value).replace(",", ""))
+        return True
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+
+
+def fixed_values(kept: list, corrected_values: dict):
+    """The value each kept break is fixed to: what the reviewer entered, else the source system's value.
+    Returns ({exception_id: value}, None), or (None, why) when a value can't be used."""
+    entered = {str(k): v for k, v in (corrected_values or {}).items()}
+    out = {}
+    for b in kept:
+        raw = entered.get(str(b["exception_id"]), b["source_value"])
+        value = "" if raw is None else str(raw).strip()
+        if not value:
+            return None, f"Enter the fixed value for {b['entity_type']} {b['entity_id']}."
+        if _is_number(b["canonical_value"]):
+            if not _is_number(value):
+                return None, f"{b['field_name']} is a number: enter a number for {b['entity_type']} {b['entity_id']}."
+            value = plain_value(value.replace(",", ""))
+            if Decimal(value) == Decimal(str(b["canonical_value"]).replace(",", "")):
+                return None, f"The fixed value for {b['entity_type']} {b['entity_id']} is the same as ours: change it, or leave the record out."
+        elif value == b["canonical_value"]:
+            return None, f"The fixed value for {b['entity_type']} {b['entity_id']} is the same as ours: change it, or leave the record out."
+        out[b["exception_id"]] = value
+    return out, None
+
+
+def _decide_group(cur, group_id, decision, decided_by, excluded_ids, corrected_values):
     cur.execute("SELECT * FROM reconciliation_groups WHERE group_id = %s FOR UPDATE", (group_id,))
     g = cur.fetchone()
     if g is None:
@@ -162,18 +196,22 @@ def _decide_group(cur, group_id, decision, decided_by, excluded_ids):
                 "A missing record can't be corrected here. Accept or dismiss it, and raise it with the team that owns the record."))
         if any(b["entity_type"] not in ENTITY_TABLE for b in kept):
             return _refused(decisionOk=False, decisionError="These records can't be corrected from here.")
+        fixes, why = fixed_values(kept, corrected_values)
+        if why:
+            return _refused(decisionOk=False, decisionError=why)
     if excluded:
         # Left out: out of this group, grouped on their own at the next poll (same run).
         cur.execute("UPDATE reconciliation_exceptions SET group_id = NULL, carved_out = true WHERE exception_id = ANY(%s)", (list(excluded),))
     cur.execute("UPDATE reconciliation_corrections SET status = 'WITHDRAWN' WHERE group_id = %s AND status = 'PROPOSED'", (group_id,))
     if decision == "CORRECT":
-        # "Our copy is wrong": the fix is the source system's value, applied by Notebook 1 once approved.
+        # "Our copy is wrong": the fix is the value the reviewer entered (the source system's by default),
+        # applied by Notebook 1 once the CFO approves.
         for b in kept:
             cur.execute(
                 """INSERT INTO reconciliation_corrections (group_id, source_table, record_key, field_name, old_value, new_value, entered_by)
                    VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (group_id, ENTITY_TABLE[b["entity_type"]], b["entity_id"], b["field_name"], b["canonical_value"],
-                 plain_value(b["source_value"]), decided_by),
+                 fixes[b["exception_id"]], decided_by),
             )
     cur.execute(
         "UPDATE reconciliation_groups SET decision = %s, decided_by = %s, decided_at = now(), status = %s WHERE group_id = %s",

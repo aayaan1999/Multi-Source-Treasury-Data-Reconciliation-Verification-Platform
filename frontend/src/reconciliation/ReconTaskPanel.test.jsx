@@ -83,7 +83,9 @@ describe("a pipeline gap at team review", () => {
     expect(screen.getByText("currency: USD").getAttribute("style")).toBeNull();
     expect(screen.getByText(/Part of the core banking files of 29 Sep 2026: 1 of 3 tasks decided/)).toBeTruthy();
     const steps = within(screen.getByRole("list", { name: "Steps" }));
-    expect(steps.getByText("Team review").getAttribute("aria-current")).toBe("step");
+    expect(steps.getByText("Team review").closest("li").getAttribute("aria-current")).toBe("step");
+    expect(steps.getByText("Deciding now")).toBeTruthy();
+    expect(steps.getByText("Not needed, unless a data fix is proposed")).toBeTruthy();
   });
 
   it("needs a comment, then completes the task with the decision and who made it", async () => {
@@ -125,9 +127,9 @@ describe("CFO approval", () => {
 
   it("the CFO sees what was decided and why they're asked, and approves", async () => {
     api.pipelineRecords.mockResolvedValue(awaiting);
-    getVariables.mockResolvedValue({ cfoReason: "a data fix is proposed" });
+    getVariables.mockResolvedValue({ cfoReason: "a proposed data fix" });
     const onDone = show(task("reconciliation", 662, "UserTask_CfoApproval"), CFO);
-    expect(await screen.findByText(/Demo Analyst decided: corrected\. The CFO approves this because of a data fix is proposed/)).toBeTruthy();
+    expect(await screen.findByText(/Demo Analyst decided: corrected\. The CFO approves this because of a proposed data fix/)).toBeTruthy();
     expect(screen.queryByRole("form", { name: "Enter a corrected value" })).toBeNull();          // values are locked
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(completeTask).toHaveBeenCalledWith("t-662-UserTask_CfoApproval", { cfoDecision: "APPROVE", approvedByUserId: 3 });
@@ -170,10 +172,38 @@ describe("a core-system break group", () => {
     expect(completeTask).toHaveBeenCalledWith("t-21-UserTask_TeamReview", { decision: "ACCEPT", decidedByUserId: 1, excludedIds: [3] });
   });
 
+  it("the reviewer can change the fixed values before correcting; the rest take core banking's value", async () => {
+    show(task("recon_group", 21, "UserTask_TeamReview"));
+    const box = await screen.findByLabelText("Fixed value for ACN0001");
+    expect(box.value).toBe("1015");                                                  // core banking's value, tidied
+    await userEvent.clear(box);
+    await userEvent.type(box, "1012.50");
+    await userEvent.click(screen.getByLabelText("Leave out ACN0003"));
+    expect(screen.getByLabelText("Fixed value for ACN0003").disabled).toBe(true);    // left out: not fixed here
+    await userEvent.type(screen.getByLabelText("Comment"), "core banking posted a fee twice on ACN0001");
+    await userEvent.click(screen.getByRole("button", { name: "Correct our data all except 1" }));
+    expect(completeTask).toHaveBeenCalledWith("t-21-UserTask_TeamReview", {
+      decision: "CORRECT", decidedByUserId: 1, excludedIds: [3], correctedValues: { 1: "1012.50", 2: "1015" },
+    });
+  });
+
+  it("won't correct to an empty, non-numeric or unchanged value", async () => {
+    show(task("recon_group", 21, "UserTask_TeamReview"));
+    const box = await screen.findByLabelText("Fixed value for ACN0002");
+    await userEvent.type(screen.getByLabelText("Comment"), "fix");
+    for (const [value, message] of [["", /Enter the fixed value for account ACN0002/], ["lots", /balance is a number/], ["1,000.00", /same as ours/]]) {
+      await userEvent.clear(box);
+      if (value) await userEvent.type(box, value);
+      await userEvent.click(screen.getByRole("button", { name: "Correct our data all" }));
+      expect(screen.getByRole("alert").textContent).toMatch(message);
+    }
+    expect(completeTask).not.toHaveBeenCalled();
+  });
+
   it("a missing record can't be corrected from here, and the CFO approval is flagged up front", async () => {
     show(task("recon_group", 22, "UserTask_TeamReview"));
     expect((await screen.findByRole("button", { name: "Correct our data" })).disabled).toBe(true);
-    expect(screen.getByText(/CFO: a missing record/)).toBeTruthy();
+    expect(within(screen.getByRole("list", { name: "Steps" })).getByText("Required because of a missing record")).toBeTruthy();
   });
 });
 

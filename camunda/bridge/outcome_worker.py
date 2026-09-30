@@ -109,7 +109,7 @@ def _with_conn(fn, *args):
 async def recon_record_decision(job: Job) -> dict:
     v = job.variables
     return _with_conn(recon_tasks_db.record_decision, v["recordType"], v["recordKey"], v.get("decision"),
-                      v.get("decidedByUserId"), v.get("excludedIds") or [])
+                      v.get("decidedByUserId"), v.get("excludedIds") or [], v.get("correctedValues") or {})
 
 
 async def recon_approve(job: Job) -> dict:

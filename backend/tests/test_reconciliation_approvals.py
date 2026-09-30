@@ -128,7 +128,7 @@ def test_pipeline_titles_and_the_cfo_rule(conn, ids):
     assert reconciliation_db.title(unstarted["loans"]) == "Qatar loans: no rows delivered"
     assert reconciliation_db.cfo_rule(unstarted["transactions"], rules) == (False, None)
     assert reconciliation_db.cfo_rule(unstarted["accounts"], rules) == (True, "a gap of 50,000.00 XYZ")
-    assert reconciliation_db.cfo_rule(unstarted["loans"], rules) == (True, "no rows delivered")
+    assert reconciliation_db.cfo_rule(unstarted["loans"], rules) == (True, "a delivery with no rows")
     v = reconciliation_db.process_variables(unstarted["accounts"], rules, due_days, date(2026, 9, 30))
     assert (v["teamGroup"], v["severity"], v["dueDate"], v["cfoRequired"]) == ("operations", "HIGH", "2026-10-01", True)
     v = reconciliation_db.process_variables(unstarted["transactions"], rules, due_days, date(2026, 9, 30))
@@ -204,7 +204,7 @@ def test_a_small_task_is_decided_by_the_team_alone(conn, db, ids, users):
 
 def test_a_data_fix_always_needs_the_cfo_even_on_a_small_task(conn, db, ids, users):
     result = recon_tasks_db.record_decision(conn, "reconciliation", ids["pipe_transactions"], "CORRECT", users["analyst"])
-    assert result == {"decisionOk": True, "decisionError": "", "needsCfo": True, "cfoReason": "a data fix is proposed"}
+    assert result == {"decisionOk": True, "decisionError": "", "needsCfo": True, "cfoReason": "a proposed data fix"}
     assert status(db, "pipeline_reconciliation", "recon_id", ids["pipe_transactions"]) == "AWAITING_CFO"
 
 
@@ -222,7 +222,7 @@ def test_an_important_task_needs_the_cfo_whatever_is_decided(conn, db, ids, user
     # A group fixed from core banking: the fix is core banking's value, tidied ("1000.00" not "1000.0000").
     minus9k = group_id(db, "-9,000.00")
     assert recon_tasks_db.record_decision(conn, "recon_group", minus9k, "CORRECT", users["analyst"])["cfoReason"] == \
-        "a total difference of 27,000.00; a data fix is proposed"
+        "a total difference of 27,000.00; a proposed data fix"
     db.execute("SELECT source_table, record_key, field_name, old_value, new_value, status FROM reconciliation_corrections WHERE group_id = %s ORDER BY record_key", (minus9k,))
     assert db.fetchall()[0] == ("accounts", "ACN0110", "balance", "10000.00", "1000", "PROPOSED")
 
@@ -259,6 +259,18 @@ def test_the_cfo_sends_a_decision_back_and_the_team_decides_again(conn, db, user
     assert db.fetchall() == [("WITHDRAWN",)]
     db.execute("SELECT new_value FROM audit_log WHERE action = 'SENT_BACK' AND object_id = %s", (str(minus9k),))
     assert db.fetchone()[0] == "These are fee reversals, not errors"
+    # The reviewer can type the fixed values themselves instead of taking core banking's.
+    db.execute("SELECT exception_id FROM reconciliation_exceptions WHERE group_id = %s ORDER BY entity_id", (minus9k,))
+    first, second, _third = [e for (e,) in db.fetchall()]
+    for values, why in (({first: ""}, "Enter the fixed value for account ACN0110."),
+                        ({first: "about 9k"}, "balance is a number: enter a number for account ACN0110."),
+                        ({second: "10,000.00"}, "The fixed value for account ACN0111 is the same as ours: change it, or leave the record out.")):
+        assert recon_tasks_db.record_decision(conn, "recon_group", minus9k, "CORRECT", users["analyst"], [], values) == \
+            {"decisionOk": False, "decisionError": why}
+    assert recon_tasks_db.record_decision(conn, "recon_group", minus9k, "CORRECT", users["analyst"], [], {str(first): "9,500.50"})["decisionOk"]
+    db.execute("SELECT record_key, new_value FROM reconciliation_corrections WHERE group_id = %s AND status = 'PROPOSED' ORDER BY record_key", (minus9k,))
+    assert db.fetchall() == [("ACN0110", "9500.5"), ("ACN0111", "1000"), ("ACN0112", "1000")]    # edited, then core banking's
+    recon_tasks_db.send_back(conn, "recon_group", minus9k, users["approver"], "Keep our balances")
     assert recon_tasks_db.record_decision(conn, "recon_group", minus9k, "ACCEPT", users["analyst"])["needsCfo"] is True
     assert recon_tasks_db.approve(conn, "recon_group", minus9k, users["admin"])["approvalOk"]
     db.execute("SELECT DISTINCT status, resolved_by FROM reconciliation_exceptions WHERE group_id = %s", (minus9k,))

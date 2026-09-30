@@ -53,7 +53,7 @@ def cfo_rule(item: dict, rules: dict):
     """Whether the CFO must approve this item whatever the team decides, and why: a delivery that
     sent nothing, or a gap of important_amount or more in one currency."""
     if item.get("note"):
-        return True, item["note"].lower().rstrip(".")
+        return True, "a delivery with no rows"
     gaps = [(abs(v.get("gap") or 0), cur) for cur, v in (item.get("amounts_by_currency") or {}).items()]
     size, currency = max(gaps, default=(0, None))
     if size >= rules["important_amount"]:

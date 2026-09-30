@@ -31,8 +31,9 @@ submitted with work still open. Demo audiences found this hard to follow.
 - any task where the team chooses **Correct our data**
 
 The three decisions are the same on both task types: **Accept** (the difference is explained),
-**Correct our data** (fix our copy: the team enters values on a pipeline gap; a group takes the source
-system's value for every record kept in it) and **Dismiss** (not a real problem). A group can leave records
+**Correct our data** (fix our copy: the team enters values on a pipeline gap; on a group each kept record
+gets a Fixed value, filled in with the source system's value and editable, sent as `correctedValues`;
+the worker refuses an empty, non-numeric or unchanged value) and **Dismiss** (not a real problem). A group can leave records
 out; each becomes a task of its own in the same run. A missing record can't be corrected from here.
 
 ## 3. Camunda

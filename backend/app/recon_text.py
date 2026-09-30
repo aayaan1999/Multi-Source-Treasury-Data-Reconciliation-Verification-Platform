@@ -100,7 +100,7 @@ def group_summary(group: dict, breaks: list) -> dict:
         else:
             headline = f"{_plural(n, entity)} have a different {field} in {system}."
     job = ("Decide for the whole group. Accept: the difference is explained. "
-           + ("" if missing else f"Correct our data: take {system}'s value. ")
+           + ("" if missing else f"Correct our data: fix our values ({system}'s value is filled in, and you can change it). ")
            + "Dismiss: not a real difference.")
     if n > 1:
         job += " Leave out any record that needs its own look; it becomes a task of its own."

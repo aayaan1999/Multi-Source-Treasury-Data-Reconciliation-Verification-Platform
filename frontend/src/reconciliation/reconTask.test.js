@@ -25,11 +25,15 @@ describe("reconciliation task helpers", () => {
     expect(blockedReason("SIGNOFF", { user_id: 4, role: "admin" }, { deciders: [1, 3] })).toBeNull();
   });
 
-  it("the progress line shows the CFO step as skipped only when it isn't needed", () => {
-    expect(stages("reconciliation", "TEAM", { cfoRequired: false }).map((s) => s.state)).toEqual(["current", "skipped", "pending"]);
-    const important = stages("recon_group", "TEAM", { cfoRequired: true, cfoReason: "a missing record" });
-    expect(important[1]).toMatchObject({ state: "pending", who: "CFO", note: "a missing record" });
-    expect(stages("recon_group", "CFO", { cfoReason: "a data fix is proposed" }).map((s) => s.state)).toEqual(["done", "current", "pending"]);
-    expect(stages("recon_run", "SIGNOFF").map((s) => s.label)).toEqual(["Every task decided", "Run sign-off", "Run closed"]);
+  it("the step tracker says who acts, what's happening, and why the CFO is needed", () => {
+    const small = stages("reconciliation", "TEAM", { cfoRequired: false });
+    expect(small.map((s) => s.state)).toEqual(["current", "skipped", "pending"]);
+    expect(small.map((s) => s.detail)).toEqual(["Deciding now", "Not needed, unless a data fix is proposed", "Once every task in the run is decided"]);
+    const important = stages("recon_group", "TEAM", { cfoRequired: true, cfoReason: "a total difference of 108,000.00" });
+    expect(important[1]).toMatchObject({ state: "pending", who: "CFO", detail: "Required because of a total difference of 108,000.00" });
+    const atCfo = stages("recon_group", "CFO", { cfoReason: "a proposed data fix" });
+    expect(atCfo.map((s) => s.state)).toEqual(["done", "current", "pending"]);
+    expect(atCfo[1].detail).toBe("Approving now. Required because of a proposed data fix");
+    expect(stages("recon_run", "SIGNOFF").map((s) => s.label)).toEqual(["Tasks decided", "Run sign-off", "Run closed"]);
   });
 });

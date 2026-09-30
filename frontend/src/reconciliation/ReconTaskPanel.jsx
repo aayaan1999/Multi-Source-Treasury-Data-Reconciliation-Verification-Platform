@@ -18,6 +18,10 @@ const COMMENT_KEY = {
   recon_run: (key) => ({ source_table: "reconciliation_runs", record_key: key, flag_label: "RECON_RUN" }),
 };
 
+const isNumber = (v) => v !== null && v !== undefined && String(v).trim() !== "" && Number.isFinite(Number(String(v).replace(/,/g, "")));
+/** "619196.0900" -> "619196.09": the source value as a fixed value is filled in. */
+export const plainValue = (v) => (isNumber(v) ? String(Number(String(v).replace(/,/g, ""))) : v ?? "");
+
 async function load(task, kind, key) {
   const [vars, comments, detail] = await Promise.all([
     getVariables(task.id),
@@ -29,24 +33,39 @@ async function load(task, kind, key) {
   return { vars, comments, detail };
 }
 
-/** The progress line: each stage, who acts at it, and where this task is now. */
+// How each state of a step looks: its numbered marker, and the colour of its status line.
+const MARKER = {
+  done: { background: "color-mix(in srgb, var(--good) 14%, transparent)", color: "var(--good)", borderColor: "var(--good)" },
+  current: { background: "var(--series-1)", color: "var(--on-accent)", borderColor: "var(--series-1)", boxShadow: "0 0 0 4px var(--series-1-soft)" },
+  pending: {},
+  skipped: { borderStyle: "dashed", opacity: 0.6 },
+};
+const STATUS_COLOR = { done: "var(--good)", current: "var(--ink)", pending: undefined, skipped: undefined };
+
+/** The step tracker: each stage numbered and joined by a line, with who acts at it and where it stands -
+ * done, happening now, still to come (and why the CFO is needed) or not needed. */
 function Progress({ items }) {
-  const style = {
-    done: { color: "var(--good)" },
-    current: { background: "var(--series-1)", color: "var(--on-accent, #fff)" },
-    skipped: { opacity: 0.55, textDecoration: "line-through" },
-  };
   return (
-    <ol className="flex flex-wrap items-start gap-2" aria-label="Steps">
+    <ol className="grid gap-4 sm:grid-cols-3 sm:gap-0" aria-label="Steps">
       {items.map((s, i) => (
-        <li key={s.label} className="flex items-start gap-2">
-          {i > 0 && <span aria-hidden className="mt-3 h-px w-6 bg-hair" />}
-          <div>
-            <span aria-current={s.state === "current" ? "step" : undefined}
-              className="inline-block rounded-full border border-hair px-2.5 py-1 text-xs font-medium text-ink2" style={style[s.state]}>
-              {s.label}
+        <li key={s.label} aria-current={s.state === "current" ? "step" : undefined} className="flex gap-3 sm:flex-col sm:gap-2 sm:pr-4">
+          <div className="flex items-center">
+            <span
+              aria-hidden
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-hair text-xs font-semibold text-ink2"
+              style={MARKER[s.state]}
+            >
+              {s.state === "done" ? "✓" : i + 1}
             </span>
-            <p className="mt-1 max-w-[14rem] text-xs text-ink2">{s.who}{s.note ? `: ${s.note}` : ""}</p>
+            {i < items.length - 1 && (
+              <span aria-hidden className="ml-2 hidden h-0.5 flex-1 rounded-full sm:block"
+                style={{ background: s.state === "done" ? "var(--good)" : "var(--axis)", opacity: s.state === "done" ? 0.6 : 1 }} />
+            )}
+          </div>
+          <div className={s.state === "skipped" ? "opacity-60" : undefined}>
+            <p className={`text-sm font-semibold ${s.state === "current" ? "text-ink" : "text-ink2"}`}>{s.label}</p>
+            <p className="text-xs text-ink2">{s.who}</p>
+            <p className={`mt-1 text-xs ${s.state === "current" ? "font-medium" : ""}`} style={{ color: STATUS_COLOR[s.state] }}>{s.detail}</p>
           </div>
         </li>
       ))}
@@ -151,6 +170,7 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
   const [comment, setComment] = useState("");
   const [postedComment, setPostedComment] = useState("");
   const [picked, setPicked] = useState(() => new Set());
+  const [edits, setEdits] = useState({});
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -206,14 +226,32 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
     }
   }
 
+  // A group's fixed values: what the reviewer typed, else the source system's value.
+  const fixedValue = (b) => edits[b.exception_id] ?? plainValue(b.source_value);
+  const kept = openBreaks.filter((b) => !picked.has(b.exception_id));
+  const fixProblem = () => {
+    for (const b of kept) {
+      const v = String(fixedValue(b)).trim();
+      if (!v) return `Enter the fixed value for ${b.entity_type} ${b.entity_id}.`;
+      if (isNumber(b.canonical_value) && !isNumber(v)) return `${b.field_name} is a number: enter a number for ${b.entity_type} ${b.entity_id}.`;
+      const same = isNumber(b.canonical_value) ? Number(v.replace(/,/g, "")) === Number(b.canonical_value) : v === b.canonical_value;
+      if (same) return `The fixed value for ${b.entity_type} ${b.entity_id} is the same as ours: change it, or leave the record out.`;
+    }
+    return null;
+  };
+
   const decide = (decision) => act(
-    { decision, decidedByUserId: user.user_id, excludedIds: isGroup ? [...picked] : [] },
+    {
+      decision, decidedByUserId: user.user_id, excludedIds: isGroup ? [...picked] : [],
+      ...(isGroup && decision === "CORRECT" ? { correctedValues: Object.fromEntries(kept.map((b) => [b.exception_id, String(fixedValue(b)).trim()])) } : {}),
+    },
     {
       needsComment: "Say why in a comment (for example, what caused the difference).",
       check: () => {
         if (decision === "CORRECT" && !isGroup && !proposed.length) return "Enter the right value for at least one row first (below), then choose Correct our data.";
         if (decision === "CORRECT" && missingRecord) return "A missing record can't be corrected from here: accept or dismiss it.";
         if (isGroup && openBreaks.length && picked.size >= openBreaks.length) return "Leave at least one record in the group, or there's nothing to decide.";
+        if (isGroup && decision === "CORRECT") return fixProblem();
         return null;
       },
     },
@@ -296,12 +334,28 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
                 },
               },
               { key: "times_seen", header: "Seen", align: "right", render: (b) => `${b.times_seen}×${b.recurring ? " (recurring)" : ""}` },
+              ...(step === "TEAM" && !missingRecord ? [{
+                key: "fixed", header: "Fixed value",
+                render: (b) => (
+                  <input
+                    value={fixedValue(b)}
+                    onChange={(e) => setEdits((all) => ({ ...all, [b.exception_id]: e.target.value }))}
+                    disabled={b.status !== "OPEN" || picked.has(b.exception_id)}
+                    aria-label={`Fixed value for ${b.entity_id}`}
+                    className={`${INPUT} w-32`}
+                    style={edits[b.exception_id] !== undefined && edits[b.exception_id] !== plainValue(b.source_value) ? { borderColor: "var(--series-1)" } : undefined}
+                  />
+                ),
+              }] : []),
             ]}
             rows={detail.breaks}
             rowKey={(b) => b.exception_id}
           />
           {step === "TEAM" && !missingRecord && (
-            <p className="mt-2 text-sm text-ink2">Correct our data proposes {system.toLowerCase()}'s value for every record kept in the group; the CFO approves it before it's applied.</p>
+            <p className="mt-2 text-sm text-ink2">
+              Correct our data fixes each record kept in the group to its <strong className="text-ink">Fixed value</strong>. {system}'s value is
+              filled in; change any that should be something else. The CFO approves the fixes before they're applied.
+            </p>
           )}
           {corrections.length > 0 && (
             <>

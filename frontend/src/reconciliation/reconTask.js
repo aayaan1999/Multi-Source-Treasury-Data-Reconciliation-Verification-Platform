@@ -42,24 +42,26 @@ export function blockedReason(step, user, { decidedBy, deciders = [] } = {}) {
   return null;
 }
 
-/** The three stages as the progress line shows them, with who acts and where this task is. */
-export function stages(kind, step, { cfoRequired, cfoReason, teamName = "Operations" } = {}) {
+/** The three stages as the step tracker shows them: who acts at each, whether it's done, happening now,
+ * still to come or not needed, and one line saying so (why the CFO is needed, when sign-off starts). */
+export function stages(kind, step, { cfoRequired, cfoReason, teamName = "Operations team" } = {}) {
   if (kind === "recon_run") {
     return [
-      { label: "Every task decided", who: "Team and CFO", state: "done" },
-      { label: "Run sign-off", who: "CFO", state: "current" },
-      { label: "Run closed", who: "", state: "pending" },
+      { label: "Tasks decided", who: "Team, and the CFO for important ones", state: "done", detail: "Every task in the run is decided" },
+      { label: "Run sign-off", who: "CFO", state: "current", detail: "Signing off now" },
+      { label: "Run closed", who: "Decisions final", state: "pending", detail: "After sign-off" },
     ];
   }
   const cfoNeeded = step === "CFO" || cfoRequired;
+  const why = cfoReason ? `Required because of ${cfoReason}` : "Required";
   return [
-    { label: "Team review", who: teamName, state: step === "TEAM" ? "current" : "done" },
+    { label: "Team review", who: teamName, state: step === "TEAM" ? "current" : "done", detail: step === "TEAM" ? "Deciding now" : "Decided" },
     {
       label: "CFO approval",
-      who: cfoNeeded ? "CFO" : "Not needed unless a fix is proposed",
-      note: step === "CFO" ? cfoReason : cfoRequired ? cfoReason : null,
+      who: "CFO",
       state: step === "CFO" ? "current" : cfoNeeded ? "pending" : "skipped",
+      detail: step === "CFO" ? `Approving now. ${why}` : cfoNeeded ? why : "Not needed, unless a data fix is proposed",
     },
-    { label: "Run sign-off", who: "CFO", state: "pending" },
+    { label: "Run sign-off", who: "CFO", state: "pending", detail: "Once every task in the run is decided" },
   ];
 }
