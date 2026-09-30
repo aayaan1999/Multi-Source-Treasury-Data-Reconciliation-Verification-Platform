@@ -156,7 +156,7 @@ describe("CFO approval", () => {
   it("an analyst can't approve", async () => {
     api.pipelineRecords.mockResolvedValue(awaiting);
     show(task("reconciliation", 662, "UserTask_CfoApproval"), { user_id: 2, role: "reviewer" });
-    expect(await screen.findByText("Only the CFO (the approver login) or an admin can do this step.")).toBeTruthy();
+    expect(await screen.findByText("Only the CFO or the Platform Administrator can do this step.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Approve" }).disabled).toBe(true);
   });
 });

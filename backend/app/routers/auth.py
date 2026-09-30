@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ..db import query_one
+from ..roles import access
 from ..security import DUMMY_HASH, create_token, current_user, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -28,10 +29,12 @@ def login(body: LoginRequest):
     return {
         "access_token": create_token(user),
         "token_type": "bearer",
-        "user": {"user_id": user["user_id"], "name": user["name"], "email": user["email"], "role": user["role"]},
+        "user": {"user_id": user["user_id"], "name": user["name"], "email": user["email"], "role": user["role"],
+                 "access": access(user["role"])},
     }
 
 
 @router.get("/me")
 def me(user: dict = Depends(current_user)):
-    return user
+    """The signed-in user with what their role sees (specs/user-roles.md), for a page reload."""
+    return {**user, "access": access(user["role"])}

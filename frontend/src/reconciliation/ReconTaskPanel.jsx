@@ -5,6 +5,7 @@ import { Loading, LoadError } from "../components/PageShell";
 import useAsync from "../hooks/useAsync";
 import { formatDateTime } from "../kpi/format";
 import { completeTask, getVariables } from "../workflow/tasklistApi";
+import { roleTitle } from "../access";
 import { correctableFields, fmtAmount } from "./pipeline";
 import { blockedReason, DECISION_PAST, DECISIONS, decisionLabel, stages, stepOf } from "./reconTask";
 
@@ -407,7 +408,7 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
       <div className="card rounded-xl border border-hair bg-surface p-4">
         {blocked && <p className="mb-3 text-sm font-medium" style={{ color: "var(--critical)" }}>{blocked}</p>}
         {step === "TEAM" && ["approver", "admin"].includes(user.role) && (
-          <p className="mb-3 text-sm text-ink2">You're signed in as {user.role}. If you decide this task, someone else has to approve it and sign off the run.</p>
+          <p className="mb-3 text-sm text-ink2">You're signed in as {roleTitle(user)}. If you decide this task, someone else has to approve it and sign off the run.</p>
         )}
         <input
           type="text"

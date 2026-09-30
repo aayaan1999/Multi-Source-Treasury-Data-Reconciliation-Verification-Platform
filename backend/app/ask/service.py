@@ -12,6 +12,7 @@ from typing import Optional
 from fastapi import HTTPException
 
 from ..db import query, write
+from ..roles import ROLES
 from . import explain, llm, vocab
 from .catalogue import ENTRIES, EXAMPLES, METRIC_FALLBACKS, NoData
 from .extract import Extracted, Period, extract
@@ -469,8 +470,8 @@ def export_rows(user: dict, entry_id: str, filters: dict, question: str) -> tupl
 
 
 # ---- the AI assistant's side panel: what it reads from, how fresh that is, and the user's scope ------
-ROLE_ACCESS = {"admin": "Admin: all data", "approver": "Approver: all data", "reviewer": "Reviewer: all data",  # every role may run every approved query today
-               "analyst": "Analyst: all data"}
+# Every role may run every approved query today (specs/user-roles.md).
+ROLE_ACCESS = {role: f"{r['title']}: all data" for role, r in ROLES.items()}
 
 
 def _safe_one(sql: str, params: tuple = ()) -> Optional[dict]:

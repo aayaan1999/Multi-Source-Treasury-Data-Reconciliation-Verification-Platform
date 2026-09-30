@@ -193,9 +193,10 @@ orientation summary.
 
 **Stack:** FastAPI (backend/API), PostgreSQL (database, row-level security for who-sees-what),
 React + Tailwind + Recharts (frontend). Background jobs: APScheduler for a POC (Celery + Redis
-only if scaling past POC). PDF export: ReportLab. Excel export: openpyxl. Auth: four seeded
-demo users (analyst, reviewer, approver, admin) for the POC — Keycloak only if real SSO is
-later required.
+only if scaling past POC). PDF export: ReportLab. Excel export: openpyxl. Auth: seven seeded
+demo users, one per job (CFO, CRO, Reconciliation Analyst, Reporting Officer, Compliance Officer,
+Internal Auditor, Platform Admin), each with their own home screen, menu and tasks from one role table
+(`backend/app/roles.py`, `specs/user-roles.md`) — Keycloak only if real SSO is later required.
 
 **Workflow Engine Decision (overrides the source doc's original guidance):** the source doc
 originally said not to reach for a workflow engine like Camunda for a plain POC — a status column

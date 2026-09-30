@@ -18,10 +18,8 @@ Two assumptions, undocumented anywhere upstream, made explicit here rather than 
 - limits.metric_name -> kpi_daily_summary column: the schema never pinned this mapping down (the
   source doc only named the 8 KPI tiles, and limits.metric_name is free text). KPI_COLUMN (now in breaches_db.py) is
   that mapping; a limit whose metric_name isn't in it is skipped, not guessed at.
-- flagCategory is always "COMPLIANCE": every one of the 8 KPIs (CAR, LCR, NPL, NIM,
-  cost-to-income, ROE, total assets, dollarization) is a regulatory/board-level ratio, matching
-  the same rationale specs/camunda-bpmn-process-design.md section 3 already uses for
-  capital_positions/liquidity_daily/fx_rates data-quality flags.
+- flagCategory is always "RISK" (specs/user-roles.md): a limit breach on any of the 8 KPIs goes to the
+  Chief Risk Officer, who owns the limits (it went to Compliance before).
 """
 import argparse
 import asyncio

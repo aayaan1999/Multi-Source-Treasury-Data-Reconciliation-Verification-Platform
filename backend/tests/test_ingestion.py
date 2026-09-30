@@ -2,9 +2,19 @@
 there is one, demo content (labelled) for what doesn't exist yet."""
 from datetime import datetime, timezone
 
+import pytest
+
 from app.routers import ingestion
+from conftest import PASSWORD
 
 API = "/api/v1"
+
+
+@pytest.fixture
+def auth(client):
+    """The Data ingestion screen is the Platform Administrator's (specs/user-roles.md)."""
+    token = client.post(f"{API}/auth/login", json={"email": "admin@bankx.demo", "password": PASSWORD}).json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_without_a_pipeline_run_everything_is_labelled_demo(client, auth, monkeypatch):
@@ -45,7 +55,7 @@ def test_the_assistant_side_panel_lists_what_it_reads_and_the_users_scope(client
     areas = {a["key"]: a for a in body["areas"]}
     assert areas["kpi"]["answerable"] and areas["load"]["answerable"]
     assert not areas["reconciliation"]["answerable"] and not areas["reports"]["answerable"]
-    assert body["scope"]["access"] == "Analyst: all data"
+    assert body["scope"]["access"] == "Platform Administrator: all data"
 
 
 def test_needs_a_login(client):

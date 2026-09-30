@@ -76,7 +76,7 @@ async function call(path, { method = "GET", body, retried = false } = {}) {
 
 // specs/camunda-bpmn-process-design.md section 3's three candidate groups, plus the CFO
 // reconciliation workflow's two (specs/cfo-reconciliation-workflow.md).
-export const CANDIDATE_GROUPS = ["fraud-investigation", "compliance", "operations", "cfo", "reconciliation-team"];
+export const CANDIDATE_GROUPS = ["fraud-investigation", "compliance", "risk", "operations", "cfo", "reconciliation-team"];
 
 /**
  * The stack has no Identity/Keycloak, so Tasklist tasks carry candidate GROUPS, not individual

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
+import { canSee, roleTitle } from "../access";
 import { useAuth } from "../auth";
 import { formatDay } from "../kpi/format";
 import { THEME_ORDER, getTheme, setTheme } from "../theme";
@@ -26,6 +27,17 @@ const NAV = [
 ];
 
 const BANK_NAME = import.meta.env.VITE_BANK_NAME || "Bank X";
+
+/** The menu for this person: only the screens they use (specs/user-roles.md). A group left with one
+ * screen becomes a plain tab; an empty group disappears. */
+export function navFor(user) {
+  return NAV.flatMap((entry) => {
+    if (!entry.group) return canSee(user, entry[0]) ? [entry] : [];
+    const items = entry.items.filter(([path]) => canSee(user, path));
+    if (!items.length) return [];
+    return items.length === 1 ? [items[0]] : [{ ...entry, items }];
+  });
+}
 
 function ThemeToggle() {
   const [theme, setLocal] = useState(getTheme);
@@ -190,7 +202,7 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
                 {initials(user.name) || "?"}
               </span>
               <span className="hidden sm:inline">
-                {user.name} <span className="text-muted">({user.role})</span>
+                <span title={user.name}>{roleTitle(user)}</span>
               </span>
               <button type="button" onClick={logout} className="rounded-md border border-hair px-2.5 py-1.5 transition-colors hover:border-accent/40 hover:bg-page">
                 Sign out
@@ -202,7 +214,7 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
       {/* Wraps onto a second line on narrow screens rather than scrolling sideways (the dropdown can't
           sit inside a scrolling box - it would be clipped). */}
       <nav aria-label="Screens" className="mx-auto flex max-w-7xl flex-wrap gap-1 px-4 pb-2.5">
-        {NAV.map((entry) =>
+        {navFor(user).map((entry) =>
           entry.group ? (
             <NavGroup key={entry.group} label={entry.group} items={entry.items} />
           ) : (

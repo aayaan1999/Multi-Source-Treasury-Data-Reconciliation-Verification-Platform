@@ -5,6 +5,7 @@ const GROUP_LABEL = {
   compliance: "Compliance Review",
   operations: "Operations Review",
   cfo: "CFO",
+  risk: "Risk Review (CRO)",
   "reconciliation-team": "Assignee",
 };
 

@@ -15,7 +15,7 @@ from . import vocab
 from .extract import Period
 
 MAX_ROWS = 500
-ALL_ROLES = frozenset({"analyst", "reviewer", "approver", "admin"})
+ALL_ROLES = frozenset({"approver", "risk", "analyst", "preparer", "compliance", "auditor", "admin"})   # specs/user-roles.md
 
 
 class NoData(Exception):

@@ -147,7 +147,7 @@ def process_variables(b: dict) -> dict:
         "recordKey": str(b["breach_id"]),
         "flagLabel": b["metric_name"],
         "flagType": "FAULT",
-        "flagCategory": "COMPLIANCE",
+        "flagCategory": "RISK",                 # the Chief Risk Officer (specs/user-roles.md)
         "severity": "HIGH" if b["level"] == "REGULATORY" else "MEDIUM",
         "dueDate": b["due_date"].isoformat() if b["due_date"] else None,
         "description": f"{b['metric_name']} at {b['actual_value']:.2f} crossed the {word} of {line:.2f} ({b['direction']})",

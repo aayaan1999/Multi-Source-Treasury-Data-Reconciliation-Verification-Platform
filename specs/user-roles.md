@@ -1,8 +1,17 @@
 # User roles: who uses the platform, what each person sees, and the demo logins
 
-**Status:** Draft for discussion (2026-09-30). Nothing built yet. Replaces the four generic demo logins
+**Status:** Built 2026-09-30 (section 6, items 1-5). The role table is `backend/app/roles.py` (sent to the
+browser with the signed-in user; `frontend/src/access.js` reads it); the server refuses a screen's data to a
+role without that screen and every write to the auditor; `backend/seed_demo_users.py` sets the logins below
+and renames the four old ones in place; limit breaches route to a new `risk` group. Backend
+(`test_roles.py`) and frontend (`access.test.js`) tests pass. Replaces the four generic demo logins
 (analyst, reviewer, approver, admin) with the people a Middle Eastern bank would actually put on this
 platform, each with their own home screen and a shorter menu.
+
+Built differently from the draft: no migration file (the seed script creates the roles and renames the
+users, and is safe to re-run); the old `reviewer` role stays in the roles table, unused, because report
+tables reference roles; the Reporting Officer's task list stays empty until the report workflow is built; the
+login page shows no list of demo logins (section 6, item 5).
 
 > **Security warning.** The GitHub repository is **public**. The passwords in section 5 are published the
 > moment this file is pushed. They are demo passwords for demo data only: never reuse them anywhere, never
@@ -100,7 +109,8 @@ trail's "who did what" keeps pointing at the right person.
    home screen, the Tasks filter and the server's checks all read it.
 4. A `risk` Camunda group for limit breaches; the approval checks (`recon_tasks_db`, `recon_runs_db`) keep
    "the CFO or an admin" and add "never the auditor".
-5. Login page: a "Demo users" list with each person's job, so a demo audience sees who is who.
+5. Login page: the people and their jobs on the brand panel (a clickable list of demo logins was tried and
+   dropped at the manager's request, 2026-09-30, along with the "Demo environment" line).
 
 ## 7. Open questions
 

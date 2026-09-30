@@ -332,18 +332,18 @@ def history(client, headers, **params):
 
 
 def test_answers_are_kept_per_user_across_logins_and_can_be_cleared(client, db, model):
-    reviewer = login(client, "reviewer@bankx.demo")
+    reviewer = login(client, "cro@bankx.demo")
     client.delete(f"{API}/ask/history", headers=reviewer)
     model["answer"] = {"query": "branch_ranking", "metric": "profit"}
     first = ask(client, reviewer, question="top 1 branch by profit").json()
     assert first["history_id"]
 
-    again = login(client, "reviewer@bankx.demo")                 # a fresh login gets the same list back
+    again = login(client, "cro@bankx.demo")                 # a fresh login gets the same list back
     saved = history(client, again)
     assert [(a["question"], a["history_id"]) for a in saved] == [("top 1 branch by profit", first["history_id"])]
     assert saved[0]["rows"] == first["rows"] and saved[0]["understood"]["query"] == "branch_ranking" and saved[0]["asked_at"]
 
-    other = login(client, "approver@bankx.demo")                  # never another user's answers
+    other = login(client, "cfo@bankx.demo")                  # never another user's answers
     assert all(a["history_id"] != first["history_id"] for a in history(client, other))
 
     # A chip edit replaces the saved answer instead of adding one; another user can't overwrite it.
@@ -392,7 +392,7 @@ def test_opening_the_tab_warms_the_model_at_most_every_two_minutes(client, monke
     monkeypatch.setattr(llm, "configured", lambda: True)
     monkeypatch.setattr(llm, "_last_warm_up", 0.0)
     monkeypatch.setattr(llm.threading, "Thread", lambda target, **kw: type("T", (), {"start": lambda self: started.append(target)})())
-    user = login(client, "reviewer@bankx.demo")
+    user = login(client, "cro@bankx.demo")
     client.get(f"{API}/ask/history", headers=user, params={"limit": 5})
     client.get(f"{API}/ask/history", headers=user, params={"limit": 5})          # again straight away: not repeated
     client.get(f"{API}/ask/history", headers=user, params={"limit": 10, "before": 1})  # "Show more" never warms

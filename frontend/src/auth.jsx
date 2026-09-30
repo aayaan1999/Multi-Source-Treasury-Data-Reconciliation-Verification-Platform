@@ -14,6 +14,18 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  // A session saved before roles came with the user (specs/user-roles.md) is topped up from /auth/me.
+  useEffect(() => {
+    if (!user || user.access) return;
+    api.me()
+      .then((me) => {
+        const next = { ...user, ...me };
+        session.save(session.token(), next);
+        setUser(next);
+      })
+      .catch(() => {});
+  }, [user]);
+
   // Any 401 from the API (expired or invalid token) signs the user out.
   useEffect(() => {
     setUnauthorizedHandler(logout);
@@ -25,6 +37,7 @@ export function AuthProvider({ children }) {
     resetAskHistory();
     session.save(result.access_token, result.user);
     setUser(result.user);
+    return result.user;
   }, []);
 
   const value = useMemo(() => ({ user, login, logout }), [user, login, logout]);

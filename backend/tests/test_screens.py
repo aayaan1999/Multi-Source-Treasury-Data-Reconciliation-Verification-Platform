@@ -365,7 +365,7 @@ def test_a_scenario_can_be_saved_and_listed_with_who_saved_it(client, auth):
     saved = client.get(f"{API}/scenario/saved", headers=auth).json()
     row = next(s for s in saved if s["scenario_id"] == r.json()["scenario_id"])
     assert row["inputs"]["devaluation_pct"] == 20 and row["outputs"] == {"carAfter": 9.1}
-    assert row["assumptions"] == {"coveragePct": 53.5} and row["created_by_name"] == "Demo Analyst"
+    assert row["assumptions"] == {"coveragePct": 53.5} and row["created_by_name"] == "CFO"
 
 
 @pytest.mark.parametrize("patch", [

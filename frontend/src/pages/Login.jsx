@@ -1,13 +1,17 @@
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { homeOf } from "../access";
 import { useAuth } from "../auth";
 import appbayLogo from "../assets/appbay-logo.jpg";
 
+// The people who use the platform (specs/user-roles.md).
 const ROLES = [
-  { label: "Analyst", desc: "Prepares data & flags exceptions" },
-  { label: "Reviewer", desc: "Checks and comments" },
-  { label: "Approver", desc: "Signs off for submission" },
-  { label: "Admin", desc: "Manages users & config" },
+  { label: "CFO", desc: "Headline ratios, approvals, run sign-off" },
+  { label: "Chief Risk Officer", desc: "Credit risk, limits, stress tests" },
+  { label: "Reconciliation Analyst", desc: "Decides reconciliation tasks" },
+  { label: "Reporting Officer", desc: "Prepares the regulator's returns" },
+  { label: "Compliance Officer", desc: "Investigates transaction cases" },
+  { label: "Internal Auditor", desc: "Reads everything, changes nothing" },
 ];
 
 export default function Login() {
@@ -20,15 +24,16 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  if (user) return <Navigate to={location.state?.from?.pathname || "/"} replace />;
+  // Back to the page they asked for, else their own home screen (specs/user-roles.md).
+  if (user) return <Navigate to={location.state?.from?.pathname || homeOf(user)} replace />;
 
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
-      await login(email.trim(), password);
-      navigate(location.state?.from?.pathname || "/", { replace: true });
+      const signedIn = await login(email.trim(), password);
+      navigate(location.state?.from?.pathname || homeOf(signedIn), { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -82,9 +87,6 @@ export default function Login() {
           </div>
         </div>
 
-        <p className="relative text-xs text-white/50">
-          Demo environment · sample data only
-        </p>
       </section>
 
       {/* Form panel */}
@@ -97,7 +99,7 @@ export default function Login() {
 
           <h2 className="text-2xl font-semibold tracking-tight text-ink">Sign in</h2>
           <p className="mt-1.5 text-sm text-ink2">
-            Sign in with a demo account — analyst, reviewer, approver or admin.
+            Sign in as one of the bank's people. Each sees their own screens and tasks.
           </p>
 
           <form onSubmit={submit} className="mt-7">
@@ -107,7 +109,7 @@ export default function Login() {
                 className={field}
                 type="email"
                 autoComplete="username"
-                placeholder="analyst@bankx.demo"
+                placeholder="cfo@bankx.demo"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -168,9 +170,6 @@ export default function Login() {
             </button>
           </form>
 
-          <p className="mt-8 text-center text-xs text-muted">
-            Demo environment · sample banking data only
-          </p>
         </div>
       </section>
     </main>

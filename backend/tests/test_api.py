@@ -21,20 +21,23 @@ def test_liveness_never_touches_the_database(client, monkeypatch):
 
 
 def test_login_returns_token_and_role(client):
-    r = client.post(f"{API}/auth/login", json={"email": "Approver@BankX.demo", "password": PASSWORD})
+    r = client.post(f"{API}/auth/login", json={"email": "Cfo@BankX.demo", "password": PASSWORD})
     assert r.status_code == 200
     body = r.json()
     assert body["token_type"] == "bearer" and body["user"]["role"] == "approver"
     assert "password_hash" not in body["user"]
 
 
-def test_all_four_demo_users_can_log_in(client):
-    for email, role in (("analyst", "analyst"), ("reviewer", "reviewer"), ("approver", "approver"), ("admin", "admin")):
+def test_all_seven_demo_users_can_log_in(client):
+    """specs/user-roles.md: the seven people, each with their role and what their role sees."""
+    for email, role, home in (("cfo", "approver", "/"), ("cro", "risk", "/portfolio"), ("recon.analyst", "analyst", "/tasks"),
+                              ("reporting", "preparer", "/reports"), ("compliance", "compliance", "/tasks"),
+                              ("auditor", "auditor", "/audit-oversight"), ("admin", "admin", "/ingestion")):
         r = client.post(f"{API}/auth/login", json={"email": f"{email}@bankx.demo", "password": PASSWORD})
-        assert r.status_code == 200 and r.json()["user"]["role"] == role
+        assert r.status_code == 200 and r.json()["user"]["role"] == role and r.json()["user"]["access"]["home"] == home
 
 
-@pytest.mark.parametrize("email,password", [("analyst@bankx.demo", "wrong"), ("nobody@bankx.demo", PASSWORD)])
+@pytest.mark.parametrize("email,password", [("recon.analyst@bankx.demo", "wrong"), ("nobody@bankx.demo", PASSWORD)])
 def test_bad_credentials_rejected_with_same_message(client, email, password):
     r = client.post(f"{API}/auth/login", json={"email": email, "password": password})
     assert r.status_code == 401 and r.json()["detail"] == "Incorrect email or password"
@@ -52,7 +55,7 @@ def test_user_without_password_cannot_log_in(client, db):
 
 def test_me_returns_token_claims(client, auth):
     body = client.get(f"{API}/auth/me", headers=auth).json()
-    assert body["role"] == "analyst" and body["name"] == "Demo Analyst"
+    assert body["role"] == "approver" and body["name"] == "CFO" and body["access"]["title"] == "Chief Financial Officer (CFO)"
 
 
 @pytest.mark.parametrize("path", [

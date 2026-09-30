@@ -4,12 +4,13 @@ from contextlib import asynccontextmanager
 
 import psycopg2
 import psycopg2.errors
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import db
 from .config import get_settings
+from .roles import no_writes_for_read_only, screen
 from .routers import ask, auth, health, ingestion, kpi, performance, portfolio, reconciliation, refresh, reports, scenario, workflow
 
 logger = logging.getLogger("uvicorn.error")
@@ -52,5 +53,12 @@ async def database_unavailable(request: Request, exc: psycopg2.OperationalError)
     return JSONResponse(status_code=503, content={"detail": "Database unavailable - try again shortly"})
 
 
-for module in (health, auth, ingestion, kpi, portfolio, scenario, performance, reports, workflow, reconciliation, refresh, ask):
+# Who may reach each screen's data (specs/user-roles.md): a role without the screen gets 403, and the
+# read-only auditor can't write anywhere. health and auth stay open (login happens before a role is known).
+SCREEN_OF = {ingestion: ("ingestion",), portfolio: ("portfolio",), scenario: ("scenario",), performance: ("performance",),
+             reports: ("reports",), reconciliation: ("reconciliation",)}
+for module in (health, auth):
     app.include_router(module.router, prefix="/api/v1")
+for module in (ingestion, kpi, portfolio, scenario, performance, reports, workflow, reconciliation, refresh, ask):
+    guards = [Depends(no_writes_for_read_only)] + ([Depends(screen(*SCREEN_OF[module]))] if module in SCREEN_OF else [])
+    app.include_router(module.router, prefix="/api/v1", dependencies=guards)

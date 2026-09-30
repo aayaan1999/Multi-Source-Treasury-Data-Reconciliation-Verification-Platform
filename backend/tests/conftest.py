@@ -102,5 +102,5 @@ def client(db):
 
 @pytest.fixture(scope="session")
 def auth(client):
-    response = client.post("/api/v1/auth/login", json={"email": "analyst@bankx.demo", "password": PASSWORD})
+    response = client.post("/api/v1/auth/login", json={"email": "cfo@bankx.demo", "password": PASSWORD})
     return {"Authorization": f"Bearer {response.json()['access_token']}"}

@@ -70,15 +70,15 @@ cd frontend
 npm install
 ```
 
-## 6. Seed demo users (once per database — skip if this Neon database already has them)
-Re-running resets the password, so only do this if the user wants that. The user runs this
-themselves since it needs a secret:
+## 6. Seed demo users (once per database — safe to re-run)
+Creates the seven people of `specs/user-roles.md` with the passwords listed there, the same on every
+machine (it reads `DATABASE_URL` from `backend\.env`):
 ```powershell
-$env:DATABASE_URL = "<neon string>"; $env:DEMO_USER_PASSWORD = "<password the user picks>"
 & "<root>\backend\.venv\Scripts\python.exe" "<root>\backend\seed_demo_users.py"
 ```
-Expect `Demo users ready: ...`. Demo emails: `analyst@`, `reviewer@`, `approver@`,
-`admin@bankx.demo`, all sharing that one password.
+Expect `Demo users ready: cfo@bankx.demo, cro@bankx.demo, ...`. Those passwords are public (the repo is
+public): for a copy others can reach, set `$env:DEMO_USER_PASSWORD` first to give every user that password
+instead.
 
 ## 7. Start and verify the app
 Use the `run-local` skill from here — it covers the pre-flight check, starting both servers

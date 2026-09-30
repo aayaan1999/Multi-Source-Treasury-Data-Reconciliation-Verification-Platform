@@ -4,8 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./auth";
+import { userFor } from "./test/users";
 
-const USER = { user_id: 1, name: "Demo Analyst", email: "analyst@bankx.demo", role: "analyst" };
+const USER = userFor("approver");   // the CFO: home is the Executive summary (specs/user-roles.md)
 
 const YESTERDAY = {
   calculation_date: "2026-09-20", car_pct: 12.0, lcr_pct: 140, npl_ratio_pct: 4.0, nim_pct: 2.6,
@@ -90,14 +91,24 @@ describe("sign in", () => {
     const { calls } = stubApi();
     const user = userEvent.setup();
     renderApp("/");
-    await user.type(await screen.findByLabelText(/email/i), "analyst@bankx.demo");
+    await user.type(await screen.findByLabelText(/email/i), "cfo@bankx.demo");
     await user.type(screen.getByLabelText("Password"), "secret");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(await screen.findByRole("list", { name: "Key indicators" })).toBeInTheDocument();
-    expect(JSON.parse(calls.find((c) => c.url.endsWith("/auth/login")).body)).toEqual({ email: "analyst@bankx.demo", password: "secret" });
+    expect(JSON.parse(calls.find((c) => c.url.endsWith("/auth/login")).body)).toEqual({ email: "cfo@bankx.demo", password: "secret" });
     expect(localStorage.getItem("bdp_token")).toBe("tok");
-    expect(screen.getByText(/Demo Analyst/)).toBeInTheDocument();
+    expect(screen.getByText("Chief Financial Officer (CFO)")).toBeInTheDocument();       // their job, not a role code
+  });
+
+  it("a screen someone doesn't use sends them to their own home, and the menu only lists their screens", async () => {
+    stubApi();
+    signIn();
+    renderApp("/ingestion");                                   // the CFO doesn't use Data ingestion
+    expect(await screen.findByRole("list", { name: "Key indicators" })).toBeInTheDocument();
+    const nav = screen.getByRole("navigation", { name: "Screens" });
+    expect(within(nav).queryByRole("link", { name: "Data ingestion" })).toBeNull();
+    expect(within(nav).getByRole("link", { name: "Tasks" })).toBeInTheDocument();
   });
 
   it("shows the server's message for a wrong password and stays on the form", async () => {

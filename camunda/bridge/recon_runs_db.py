@@ -162,7 +162,7 @@ def close_run(conn, run_id, signed_by, note=None) -> dict:
         elif who is None:
             result = dict(signoffOk=False, signoffError="The sign-off didn't say who signed. Sign off again.")
         elif who["role"] not in recon_tasks_db.CFO_ROLES:
-            result = dict(signoffOk=False, signoffError=f"Only the CFO or an admin can sign off a run. {who['name']} is signed in as {who['role']}.")
+            result = dict(signoffOk=False, signoffError=f"Only the CFO or the Platform Administrator can sign off a run; {who['name']} can't.")
         elif (n := undecided(cur, run["run_id"])) > 0:
             result = dict(signoffOk=False, signoffError=f"{n} task(s) in this run aren't decided yet.")
         elif (mine := _deciders(cur, run["run_id"]).count(who["user_id"])) > 0:
@@ -199,7 +199,7 @@ def send_back_run(conn, run_id, sent_back_by, tasks, note) -> dict:
         elif run["status"] != "IN_SIGNOFF":
             refuse = "This run isn't waiting for sign-off."
         elif who is None or who["role"] not in recon_tasks_db.CFO_ROLES:
-            refuse = "Only the CFO or an admin can send tasks back."
+            refuse = "Only the CFO or the Platform Administrator can send tasks back."
         elif not (note or "").strip():
             refuse = "Say why the tasks are being sent back."
         elif not tasks:

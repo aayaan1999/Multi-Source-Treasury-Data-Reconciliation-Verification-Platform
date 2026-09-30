@@ -25,6 +25,7 @@
       <bpmn:incoming>Flow_ToCategoryGateway</bpmn:incoming>
       <bpmn:outgoing>Flow_ToFraud</bpmn:outgoing>
       <bpmn:outgoing>Flow_ToCompliance</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ToRisk</bpmn:outgoing>
       <bpmn:outgoing>Flow_ToOperations</bpmn:outgoing>
     </bpmn:exclusiveGateway>
 
@@ -36,6 +37,11 @@
 
     <bpmn:sequenceFlow id="Flow_ToCompliance" sourceRef="Gateway_FlagCategory" targetRef="UserTask_ComplianceReview">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=flagCategory = "COMPLIANCE"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <!-- specs/user-roles.md: KPI limit breaches go to the Chief Risk Officer. -->
+    <bpmn:sequenceFlow id="Flow_ToRisk" sourceRef="Gateway_FlagCategory" targetRef="UserTask_RiskReview">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=flagCategory = "RISK"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
 
     <!-- default flow: also covers flagCategory = "OPERATIONS" and any value the bridge worker's
@@ -61,6 +67,15 @@
       <bpmn:outgoing>Flow_ComplianceToWriteback</bpmn:outgoing>
     </bpmn:userTask>
 
+    <bpmn:userTask id="UserTask_RiskReview" name="Risk Review">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="risk" />
+        <zeebe:formDefinition formId="review-outcome-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToRisk</bpmn:incoming>
+      <bpmn:outgoing>Flow_RiskToWriteback</bpmn:outgoing>
+    </bpmn:userTask>
+
     <bpmn:userTask id="UserTask_OperationsReview" name="Operations Review">
       <bpmn:extensionElements>
         <zeebe:assignmentDefinition candidateGroups="operations" />
@@ -79,6 +94,7 @@
     <bpmn:sequenceFlow id="Flow_FraudToWriteback" sourceRef="UserTask_FraudInvestigation" targetRef="ServiceTask_WriteOutcome" />
     <bpmn:sequenceFlow id="Flow_ComplianceToWriteback" sourceRef="UserTask_ComplianceReview" targetRef="ServiceTask_WriteOutcome" />
     <bpmn:sequenceFlow id="Flow_OperationsToWriteback" sourceRef="UserTask_OperationsReview" targetRef="ServiceTask_WriteOutcome" />
+    <bpmn:sequenceFlow id="Flow_RiskToWriteback" sourceRef="UserTask_RiskReview" targetRef="ServiceTask_WriteOutcome" />
 
     <bpmn:serviceTask id="ServiceTask_WriteOutcome" name="Write outcome back to Postgres">
       <bpmn:extensionElements>
@@ -87,6 +103,7 @@
       <bpmn:incoming>Flow_FraudToWriteback</bpmn:incoming>
       <bpmn:incoming>Flow_ComplianceToWriteback</bpmn:incoming>
       <bpmn:incoming>Flow_OperationsToWriteback</bpmn:incoming>
+      <bpmn:incoming>Flow_RiskToWriteback</bpmn:incoming>
       <bpmn:outgoing>Flow_ToEnd</bpmn:outgoing>
     </bpmn:serviceTask>
 
@@ -114,6 +131,9 @@
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="UserTask_OperationsReview_di" bpmnElement="UserTask_OperationsReview">
         <omgdc:Bounds x="380" y="300" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="UserTask_RiskReview_di" bpmnElement="UserTask_RiskReview">
+        <omgdc:Bounds x="380" y="410" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="ServiceTask_WriteOutcome_di" bpmnElement="ServiceTask_WriteOutcome">
         <omgdc:Bounds x="560" y="190" width="100" height="80" />
@@ -152,6 +172,16 @@
         <omgdi:waypoint x="480" y="340" />
         <omgdi:waypoint x="610" y="340" />
         <omgdi:waypoint x="610" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToRisk_di" bpmnElement="Flow_ToRisk">
+        <omgdi:waypoint x="260" y="250" />
+        <omgdi:waypoint x="260" y="450" />
+        <omgdi:waypoint x="380" y="450" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_RiskToWriteback_di" bpmnElement="Flow_RiskToWriteback">
+        <omgdi:waypoint x="480" y="450" />
+        <omgdi:waypoint x="630" y="450" />
+        <omgdi:waypoint x="630" y="270" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_ToEnd_di" bpmnElement="Flow_ToEnd">
         <omgdi:waypoint x="660" y="230" />

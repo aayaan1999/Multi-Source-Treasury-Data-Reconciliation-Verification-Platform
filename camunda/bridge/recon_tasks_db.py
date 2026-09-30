@@ -97,6 +97,8 @@ def record_decision(conn, record_type: str, key, decision: str, decided_by, excl
             who = user(cur, decided_by)
             if who is None:
                 return _refused(decisionOk=False, decisionError="The decision didn't say who made it. Reopen the task and decide again.")
+            if who["role"] == "auditor":
+                return _refused(decisionOk=False, decisionError="The Internal Auditor can look but not decide (specs/user-roles.md).")
             if decision not in DECISIONS:
                 return _refused(decisionOk=False, decisionError="Pick Accept, Correct our data or Dismiss.")
             if record_type == PIPELINE:
@@ -245,7 +247,7 @@ def approve(conn, record_type: str, key, approved_by) -> dict:
             elif who is None:
                 result = _refused(approvalOk=False, approvalError="The approval didn't say who approved it. Approve again.")
             elif who["role"] not in CFO_ROLES:
-                result = _refused(approvalOk=False, approvalError=f"Only the CFO or an admin can approve. {who['name']} is signed in as {who['role']}.")
+                result = _refused(approvalOk=False, approvalError=f"Only the CFO or the Platform Administrator can approve; {who['name']} can't.")
             elif row["decided_by"] == who["user_id"]:
                 result = _refused(approvalOk=False, approvalError=f"{who['name']} made this decision, so a different person has to approve it.")
             else:

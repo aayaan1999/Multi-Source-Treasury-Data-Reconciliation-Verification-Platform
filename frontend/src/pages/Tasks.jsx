@@ -13,6 +13,7 @@ import ApprovalChain from "../workflow/ApprovalChain";
 import { TRANSACTION_FLAGS, alertType } from "../workflow/flagTypes";
 import ReconTaskPanel from "../reconciliation/ReconTaskPanel";
 import { RECON_KINDS } from "../reconciliation/reconTask";
+import { isMyTask, roleTitle } from "../access";
 import CaseReviewPanel from "../workflow/CaseReviewPanel";
 import EntityMatchPanel from "../workflow/EntityMatchPanel";
 import { Digest, TaskPolicy } from "../workflow/DigestAndPolicy";
@@ -24,8 +25,8 @@ import { claimTask, completeTask, getVariables, searchTasks } from "../workflow/
 const SOURCE_TAG_FIELDS = new Set(["source_system", "source_country", "ingest_batch_id", "source_file"]);
 
 const GROUP_ASSUMPTION = [
-  "This is a demo limitation: tasks are routed to a team (Fraud, Compliance, or Operations), not to a specific person's login yet.",
-  "Right now, every signed-in user can see and act on tasks for all three teams, rather than only their own.",
+  "Each person sees only their own tasks: the Reconciliation Analyst the team reviews, the CFO the approvals and run sign-offs, the Chief Risk Officer the limit breaches, the Compliance Officer the transaction cases (specs/user-roles.md).",
+  "Demo limitation: Camunda's Tasklist has no per-person logins yet, so this list is filtered by the app; the approval rules themselves are checked on the server.",
 ];
 
 function KeyValueTable({ row }) {
@@ -323,7 +324,7 @@ async function loadTasks() {
     .sort(byUrgency());
 }
 
-function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
+function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }) {
   // refreshKey: bumped by the parent after a task is completed, so the list refetches in the
   // background. completedIds hides a just-completed task at once rather than waiting on that
   // refetch: a Tasklist search can take several seconds, and right after /complete it can still
@@ -332,15 +333,17 @@ function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
   const [typeFilter, setTypeFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
 
+  // Only this person's tasks (specs/user-roles.md): by record type, and for reconciliation by step.
+  const mine = useMemo(() => (data || []).filter((t) => isMyTask(user, t)), [data, user]);
+  const myTypes = useMemo(() => new Set(mine.map((t) => t.vars.recordType)), [mine]);
   const filtered = useMemo(() => {
-    if (!data) return [];
-    return data.filter((t) => {
+    return mine.filter((t) => {
       if (completedIds.has(t.id)) return false;
       if (typeFilter === RECON_FILTER ? !RECON_KINDS.includes(t.vars.recordType) : typeFilter && t.vars.recordType !== typeFilter) return false;
       if (nameFilter && !t.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
       return true;
     });
-  }, [data, typeFilter, nameFilter, completedIds]);
+  }, [mine, typeFilter, nameFilter, completedIds]);
 
   if (status === "loading") return <Loading what="your tasks" />;
   if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
@@ -360,8 +363,8 @@ function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
           className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40"
         >
           <option value="">All types</option>
-          <option value={RECON_FILTER}>Reconciliation (all)</option>
-          {Object.entries(RECORD_TYPE_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          {RECON_KINDS.filter((k) => myTypes.has(k)).length > 1 && <option value={RECON_FILTER}>Reconciliation (all)</option>}
+          {Object.entries(RECORD_TYPE_LABEL).filter(([value]) => myTypes.has(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </div>
       <DataTable
@@ -380,7 +383,9 @@ function TasksTable({ onSelect, selectedTaskId, refreshKey, completedIds }) {
         rowFlag={(t) => (isOverdue(t.due) ? { kind: "loss", label: "Overdue" } : null)}
         selectedKey={selectedTaskId}
         onRowClick={(t) => onSelect(t)}
-        emptyText="Nothing waiting for review right now. New items appear here automatically as they're flagged."
+        emptyText={user?.access?.tasks?.types?.includes("report")
+          ? "Nothing for you yet. Report reviews and approvals will come here once the report workflow is built."
+          : "Nothing waiting for you right now. New items appear here automatically as they're flagged."}
       />
     </>
   );
@@ -406,10 +411,10 @@ export default function Tasks() {
       title="Tasks"
       eyebrow="Review queue"
       subtitle="Review and act on everything the bank's checks have flagged — transaction alerts, data-quality issues, and risk-limit breaches all land here."
-      actions={<AssumptionBadge items={GROUP_ASSUMPTION} label="How access works today" heading="Demo limitation: team-level access only" />}
+      actions={<AssumptionBadge items={GROUP_ASSUMPTION} label="How access works today" heading="Who sees which tasks" />}
     >
-      <Section id="tasks" title="My tasks" description="Everything currently waiting for review, across every team.">
-        <TasksTable onSelect={selectTask} selectedTaskId={selectedTask?.id} refreshKey={refreshKey} completedIds={completedIds} />
+      <Section id="tasks" title="My tasks" description={`What's waiting for you as ${roleTitle(user)}.`}>
+        <TasksTable user={user} onSelect={selectTask} selectedTaskId={selectedTask?.id} refreshKey={refreshKey} completedIds={completedIds} />
         <TaskPolicy />
       </Section>
 

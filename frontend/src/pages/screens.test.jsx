@@ -5,8 +5,9 @@ import { MemoryRouter } from "react-router-dom";
 import App from "../App";
 import { AuthProvider } from "../auth";
 import { calendarCounts, daysLeft, daysLeftText, formatChange, formatLine, urgency } from "../reports/calendar";
+import { userFor } from "../test/users";
 
-const USER = { user_id: 1, name: "Demo Analyst", email: "analyst@bankx.demo", role: "analyst" };
+const USER = userFor("approver");   // the CFO uses Scenario modelling and Regulatory reporting
 const TODAY = new Date(2026, 8, 21); // 21 Sep 2026 (local)
 
 describe("report calendar rules", () => {

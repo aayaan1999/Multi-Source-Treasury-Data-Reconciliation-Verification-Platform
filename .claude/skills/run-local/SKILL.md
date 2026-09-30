@@ -35,7 +35,7 @@ if ($l -match '=\s*(\S+)') { $v = $matches[1]; "DATABASE_URL set ($($v.Length) c
   not `.env.example`) and save it. Use the direct host (no `-pooler`), no quotes, ending `?sslmode=require`.
 * Missing venv or packages -> see "First-time setup".
 * Optional real connection test before launching: parse `.env` with `dotenv_values` in the venv python, `psycopg2.connect`,
-  print only counts (e.g. demo users with a password should be 4; `kpi_daily_summary` rows show whether the pipeline loaded).
+  print only counts (e.g. demo users with a password should be 7; `kpi_daily_summary` rows show whether the pipeline loaded).
 
 ## 2. Start
 ```powershell
@@ -54,10 +54,11 @@ It waits up to ~40 s for both servers. If Windows blocks the script: `powershell
 (Invoke-WebRequest http://localhost:5173/ -UseBasicParsing).StatusCode        # 200 (use localhost, not 127.0.0.1)
 (Invoke-RestMethod http://localhost:5173/api/v1/live).status                  # alive = the /api proxy works
 # login wiring: a WRONG password must return 401
-try { Invoke-RestMethod -Method Post http://localhost:5173/api/v1/auth/login -ContentType 'application/json' -Body '{"email":"analyst@bankx.demo","password":"definitely-wrong"}' } catch { $_.Exception.Response.StatusCode.value__ }
+try { Invoke-RestMethod -Method Post http://localhost:5173/api/v1/auth/login -ContentType 'application/json' -Body '{"email":"cfo@bankx.demo","password":"definitely-wrong"}' } catch { $_.Exception.Response.StatusCode.value__ }
 ```
-Report: site `http://localhost:5173`, API docs `http://127.0.0.1:8000/docs`, demo emails `analyst@`, `reviewer@`, `approver@`,
-`admin@bankx.demo` (all share the one password the user chose when seeding), and that `.\scripts\run-local.ps1 -Stop` stops it.
+Report: site `http://localhost:5173`, API docs `http://127.0.0.1:8000/docs`, the seven demo users (`cfo@`, `cro@`,
+`recon.analyst@`, `reporting@`, `compliance@`, `auditor@`, `admin@bankx.demo`; passwords in `specs/user-roles.md`, the
+same on every machine; the login page lists them), and that `.\scripts\run-local.ps1 -Stop` stops it.
 "No numbers yet" on the dashboard just means the Databricks pipeline hasn't loaded Neon.
 
 ## Stop (only when asked)
@@ -75,8 +76,7 @@ cd "<root>\frontend"; npm install                     # always `npm run ...`, ne
 * Demo users (once per database; re-running resets the password). **Run by full path** — the script lives in `backend\`,
   and running `seed_demo_users.py` from the project root fails with "can't open file":
   ```powershell
-  $env:DATABASE_URL = "<neon string>"; $env:DEMO_USER_PASSWORD = "<password the user picks>"
-  & "<root>\backend\.venv\Scripts\python.exe" "<root>\backend\seed_demo_users.py"
+  & "<root>\backend\.venv\Scripts\python.exe" "<root>\backend\seed_demo_users.py"   # reads DATABASE_URL from backend\.env
   ```
   The user runs this themselves (it needs their secret); it expects `Demo users ready: ...`.
 

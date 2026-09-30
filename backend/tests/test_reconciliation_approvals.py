@@ -84,7 +84,7 @@ def conn(db):
 
 @pytest.fixture(scope="module")
 def users(db):
-    db.execute("SELECT split_part(email, '@', 1), user_id FROM users")
+    db.execute("SELECT r.name, u.user_id FROM users u JOIN roles r ON r.role_id = u.role_id")
     return dict(db.fetchall())
 
 
@@ -216,9 +216,9 @@ def test_values_are_locked_once_the_team_has_decided(client, auth, ids):
 
 def test_an_important_task_needs_the_cfo_whatever_is_decided(conn, db, ids, users):
     for key in (ids["pipe_accounts"], ids["pipe_loans"]):
-        result = recon_tasks_db.record_decision(conn, "reconciliation", key, "ACCEPT", users["reviewer"])
+        result = recon_tasks_db.record_decision(conn, "reconciliation", key, "ACCEPT", users["risk"])
         assert result["needsCfo"] is True
-    assert recon_tasks_db.record_decision(conn, "reconciliation", ids["pipe_accounts"], "ACCEPT", users["reviewer"])["decisionOk"]  # retry
+    assert recon_tasks_db.record_decision(conn, "reconciliation", ids["pipe_accounts"], "ACCEPT", users["risk"])["decisionOk"]  # retry
     # A group fixed from core banking: the fix is core banking's value, tidied ("1000.00" not "1000.0000").
     minus9k = group_id(db, "-9,000.00")
     assert recon_tasks_db.record_decision(conn, "recon_group", minus9k, "CORRECT", users["analyst"])["cfoReason"] == \
@@ -232,10 +232,10 @@ def test_an_important_task_needs_the_cfo_whatever_is_decided(conn, db, ids, user
 def test_the_person_who_decided_cant_approve_and_only_the_cfo_or_an_admin_can(conn, db, ids, users):
     key = ids["pipe_transactions"]
     assert recon_tasks_db.approve(conn, "reconciliation", key, users["analyst"])["approvalError"] == \
-        "Only the CFO or an admin can approve. Demo Analyst is signed in as analyst."
+        "Only the CFO or the Platform Administrator can approve; Reconciliation Analyst can't."
     db.execute("UPDATE pipeline_reconciliation SET decided_by = %s WHERE recon_id = %s", (users["approver"], key))
     assert recon_tasks_db.approve(conn, "reconciliation", key, users["approver"])["approvalError"] == \
-        "Demo Approver made this decision, so a different person has to approve it."
+        "CFO made this decision, so a different person has to approve it."
     db.execute("UPDATE pipeline_reconciliation SET decided_by = %s WHERE recon_id = %s", (users["analyst"], key))
     assert status(db, "pipeline_reconciliation", "recon_id", key) == "AWAITING_CFO"          # still waiting
 
@@ -302,7 +302,7 @@ def test_the_sign_off_popup_lists_every_decision(client, auth, db):
     assert [t["cfo_required"] for t in detail["tasks"]] == [True, True, False]     # important ones first
     group = client.get(f"{API}/reconciliation/groups/{detail['tasks'][-1]['id']}", headers=auth).json()
     assert group["summary"]["headline"] == "4 accounts have a balance 15.00 higher in core banking than in our data (60.00 in total)."
-    assert group["decided_by_name"] == "Demo Analyst" and group["run"]["status"] == "IN_SIGNOFF"
+    assert group["decided_by_name"] == "Reconciliation Analyst" and group["run"]["status"] == "IN_SIGNOFF"
 
 
 # ---- run sign-off: never by anyone who decided a task in the run ------------------------------------
@@ -310,9 +310,9 @@ def test_the_sign_off_popup_lists_every_decision(client, auth, db):
 def test_sign_off_is_refused_for_anyone_who_decided_a_task_or_isnt_the_cfo(conn, db, users):
     db.execute("SELECT run_id FROM reconciliation_runs WHERE source_system = 'neon'")
     neon = db.fetchone()[0]
-    assert "Only the CFO or an admin" in recon_runs_db.close_run(conn, neon, users["reviewer"])["signoffError"]
+    assert "Only the CFO or the Platform Administrator" in recon_runs_db.close_run(conn, neon, users["risk"])["signoffError"]
     assert recon_runs_db.close_run(conn, neon, users["approver"])["signoffError"] == \
-        "Demo Approver decided 1 task(s) in this run, so a different person has to sign it off."
+        "CFO decided 1 task(s) in this run, so a different person has to sign it off."
     assert recon_runs_db.close_run(conn, neon, users["admin"], "All explained") == {"signoffOk": True, "signoffError": ""}
     assert recon_runs_db.close_run(conn, neon, users["admin"])["signoffOk"]            # a retried job
     db.execute("SELECT status, sign_note FROM reconciliation_runs WHERE run_id = %s", (neon,))

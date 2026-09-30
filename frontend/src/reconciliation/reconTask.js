@@ -33,7 +33,7 @@ export function decisionLabel(label, leftOut, total) {
 /** Why this person can't approve or sign off, or null when they can. */
 export function blockedReason(step, user, { decidedBy, deciders = [] } = {}) {
   if (step === "TEAM") return null;
-  if (!CFO_ROLES.includes(user?.role)) return "Only the CFO (the approver login) or an admin can do this step.";
+  if (!CFO_ROLES.includes(user?.role)) return "Only the CFO or the Platform Administrator can do this step.";
   if (step === "CFO" && decidedBy === user.user_id) return "You made this decision, so a different person has to approve it.";
   if (step === "SIGNOFF") {
     const mine = deciders.filter((id) => id === user.user_id).length;

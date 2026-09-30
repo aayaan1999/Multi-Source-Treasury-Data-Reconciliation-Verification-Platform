@@ -115,6 +115,7 @@ export async function download(path, { method = "GET", body, fallbackName = "dow
 
 export const api = {
   login: (email, password) => request("/auth/login", { method: "POST", body: { email, password } }),
+  me: () => request("/auth/me"),
 
   // Screen 1
   kpiLatest: () => request("/kpi-summary/latest"),

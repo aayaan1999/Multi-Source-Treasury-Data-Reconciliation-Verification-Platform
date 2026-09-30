@@ -3,7 +3,10 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import TopBar from "./TopBar";
 
-vi.mock("../auth", () => ({ useAuth: () => ({ user: { name: "Demo Admin", role: "admin" }, logout: vi.fn() }) }));
+vi.mock("../auth", async () => {
+  const { userFor } = await import("../test/users");
+  return { useAuth: () => ({ user: userFor("approver"), logout: vi.fn() }) };   // the CFO has the Analysis & reporting group
+});
 
 function Where() {
   return <p data-testid="where">{useLocation().pathname}</p>;

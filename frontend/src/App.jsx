@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { api } from "./api";
+import { canSee, homeOf } from "./access";
 import { useAuth } from "./auth";
 import { applyLimits } from "./kpi/kpiConfig";
 import Ask from "./pages/Ask";
@@ -38,7 +39,10 @@ function RequireAuth({ children }) {
     if (user) loadLimitsOnce().then(() => setReady(true));
   }, [user]);
   if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
-  return ready ? children : null;
+  if (!user.access || !ready) return null;               // an older session is being topped up (auth.jsx)
+  // A screen this person doesn't use sends them to their own home (specs/user-roles.md).
+  if (!canSee(user, location.pathname)) return <Navigate to={homeOf(user)} replace />;
+  return children;
 }
 
 export default function App() {

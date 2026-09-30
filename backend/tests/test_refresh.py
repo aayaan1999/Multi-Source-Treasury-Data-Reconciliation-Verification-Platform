@@ -40,7 +40,7 @@ def jobs_api(monkeypatch, configured):
 
 @pytest.fixture(scope="module")
 def cfo(client):
-    token = client.post(f"{API}/auth/login", json={"email": "approver@bankx.demo", "password": PASSWORD}).json()["access_token"]
+    token = client.post(f"{API}/auth/login", json={"email": "cfo@bankx.demo", "password": PASSWORD}).json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -57,8 +57,9 @@ def test_status_reports_the_latest_run(client, auth, jobs_api):
     assert body["last_run"]["result"] == "SUCCESS" and body["last_run"]["ended_at"].startswith("2026-09-")
 
 
-def test_only_the_cfo_or_an_admin_can_refresh(client, auth, jobs_api):
-    r = client.post(f"{API}/refresh", headers=auth)                                      # auth = the analyst
+def test_only_the_cfo_or_an_admin_can_refresh(client, jobs_api):
+    token = client.post(f"{API}/auth/login", json={"email": "recon.analyst@bankx.demo", "password": PASSWORD}).json()["access_token"]
+    r = client.post(f"{API}/refresh", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403
     assert not [c for c in jobs_api["calls"] if c[1] == "/api/2.1/jobs/run-now"]
 
