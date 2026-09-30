@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { canSee, roleTitle } from "../access";
 import { useAuth } from "../auth";
+import { usePageRefresh } from "../pageRefresh";
 import { formatDay } from "../kpi/format";
 import { THEME_ORDER, getTheme, setTheme } from "../theme";
 import appbayLogo from "../assets/appbay-logo.jpg";
@@ -63,6 +64,7 @@ const TAB_IDLE = "text-ink2 hover:bg-page hover:text-ink";
 
 /** A menu button whose screens open from a dropdown; highlighted while one of them is open. */
 function NavGroup({ label, items }) {
+  const refresh = usePageRefresh();
   const [open, setOpen] = useState(false);
   const box = useRef(null);
   const menu = useRef(null);
@@ -126,6 +128,7 @@ function NavGroup({ label, items }) {
               key={to}
               to={to}
               role="menuitem"
+              onClick={refresh}
               className={({ isActive }) =>
                 `block rounded-lg px-3 py-2 text-sm transition-colors ${isActive ? "bg-accent font-medium text-on-accent" : "text-ink2 hover:bg-page hover:text-ink"}`
               }
@@ -154,6 +157,7 @@ function initials(name) {
  */
 export default function TopBar({ asOf, dates, selected, onSelect }) {
   const { user, logout } = useAuth();
+  const refresh = usePageRefresh();
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   return (
@@ -164,7 +168,7 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
           <img src={appbayLogo} alt="AppBay" className="h-10 w-auto shrink-0" />
           <span aria-hidden className="h-9 w-px bg-hair" />
           <div>
-            <Link to="/" className="text-lg font-semibold leading-tight tracking-tight text-ink">
+            <Link to="/" onClick={refresh} className="text-lg font-semibold leading-tight tracking-tight text-ink">
               {BANK_NAME}
             </Link>
             <div className="text-sm text-ink2">
@@ -218,7 +222,7 @@ export default function TopBar({ asOf, dates, selected, onSelect }) {
           entry.group ? (
             <NavGroup key={entry.group} label={entry.group} items={entry.items} />
           ) : (
-            <NavLink key={entry[0]} to={entry[0]} end={entry[2]} className={({ isActive }) => `${TAB} ${isActive ? TAB_ACTIVE : TAB_IDLE}`}>
+            <NavLink key={entry[0]} to={entry[0]} end={entry[2]} onClick={refresh} className={({ isActive }) => `${TAB} ${isActive ? TAB_ACTIVE : TAB_IDLE}`}>
               {entry[1]}
             </NavLink>
           ),

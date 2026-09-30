@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { api } from "./api";
 import { canSee, homeOf } from "./access";
 import { useAuth } from "./auth";
+import { PageRefreshContext } from "./pageRefresh";
 import { applyLimits } from "./kpi/kpiConfig";
 import Ask from "./pages/Ask";
 import AuditOversight from "./pages/AuditOversight";
@@ -46,8 +47,12 @@ function RequireAuth({ children }) {
 }
 
 export default function App() {
+  // Bumped by every menu click (pageRefresh.js): the new key gives the page a fresh start and fresh data.
+  const [refreshCount, setRefreshCount] = useState(0);
+  const refresh = useCallback(() => setRefreshCount((n) => n + 1), []);
   return (
-    <Routes>
+    <PageRefreshContext.Provider value={refresh}>
+    <Routes key={refreshCount}>
       <Route path="/login" element={<Login />} />
       <Route path="/ingestion" element={<RequireAuth><Ingestion /></RequireAuth>} />
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
@@ -63,5 +68,6 @@ export default function App() {
       <Route path="/reconciliation" element={<RequireAuth><Reconciliation /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </PageRefreshContext.Provider>
   );
 }

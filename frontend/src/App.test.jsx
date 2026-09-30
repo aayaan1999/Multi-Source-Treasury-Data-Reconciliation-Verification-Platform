@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
@@ -143,6 +143,18 @@ describe("sign in", () => {
     expect(await screen.findByText(/signed out because this tab's sign-in changed to someone else/)).toBeInTheDocument();
     expect(calls.slice(sent).some((c) => c.url.includes("/portfolio"))).toBe(false);   // nothing went out as them
     expect(sessionStorage.getItem("bdp_token")).toBeNull();
+  });
+
+  it("clicking the menu tab of the page you're on reloads it with fresh data", async () => {
+    const { calls } = stubApi();
+    signIn();
+    renderApp("/");
+    expect(await screen.findByRole("list", { name: "Key indicators" })).toBeInTheDocument();
+    const loads = () => calls.filter((c) => c.url.endsWith("/kpi-summary/latest")).length;
+    const before = loads();
+    await userEvent.setup().click(within(screen.getByRole("navigation", { name: "Screens" })).getByRole("link", { name: "Executive summary" }));
+    expect(await screen.findByRole("list", { name: "Key indicators" })).toBeInTheDocument();
+    await waitFor(() => expect(loads()).toBe(before + 1));
   });
 
   it("clears a sign-in an older version left in the shared localStorage", async () => {
