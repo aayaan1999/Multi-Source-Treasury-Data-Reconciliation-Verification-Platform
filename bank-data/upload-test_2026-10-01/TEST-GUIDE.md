@@ -33,7 +33,7 @@ positions are unchanged, byte for byte. What's new:
 | Data ingestion | A new run: 8 files, 18 loads, no failed loads; about 440 more rows received than the 29 Sep run (2,635), 6 held back instead of 5 |
 | Reconciliation / Tasks | A new delivery with **3 gaps**: Lebanon accounts (1 held back), Lebanon transactions (3), Saudi Arabia transactions (**2**: the old one plus TNDEMO1001B). The previous delivery's undecided gap tasks are retired, not duplicated |
 | Compliance Officer's tasks | A fraud case for TNDEMO1001A (LARGE_AMOUNT). The resampled transactions may raise a few other rule hits (velocity, round amounts); older cases and their decisions are kept |
-| CRM comparison | No new breaks: the customers still match Salesforce |
+| CRM comparison | **3 new breaks** from the day-2 Salesforce changes (`scripts/plant_salesforce_changes_day2.py`, applied 30 Sep): CNCRM02 "Cedar Bay Shipping SAL" in the CRM but missing from our data (Important, goes to the CFO); CN0013 name "Ghosn Traders Group" in the CRM vs "Ghosn Traders SAL" here (key field, Important); CN0015 country United Arab Emirates vs Saudi Arabia (a team decision). CN0022 "SARKIS FOODS L.L.C." is formatting only and cleared automatically. The 4 day-1 breaks are found again, no new tasks for them. These come from Salesforce, not from the files, so any run shows them, with or without this upload |
 | Duplicate customers | No new reviews: the customers haven't changed |
 | Executive summary | KPIs recalculated for the run date; liquidity and FX move to 1 Oct |
 
