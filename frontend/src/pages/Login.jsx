@@ -142,9 +142,6 @@ export default function Login() {
           </div>
 
           <h2 className="text-2xl font-semibold tracking-tight text-ink">Sign in</h2>
-          <p className="mt-1.5 text-sm text-ink2">
-            Sign in as one of the bank's people. Each sees their own screens and tasks.
-          </p>
 
           {notice && (
             <p role="status" className="mt-5 rounded-lg border border-hair bg-surface p-3 text-sm text-ink">{notice}</p>
