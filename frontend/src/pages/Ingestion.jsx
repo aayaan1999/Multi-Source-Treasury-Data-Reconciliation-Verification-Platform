@@ -10,7 +10,7 @@ import { Spinner, Toasts, useToasts } from "../ingestion/Toasts";
 import { formatDateTime, formatNumber } from "../kpi/format";
 
 const CAN_RUN = new Set(["approver", "admin"]);          // same as Refresh now (specs/refresh-now.md)
-const MAX_BYTES = 2 * 1024 ** 3;
+const MAX_BYTES = 100 * 1024 ** 2;           // the server's limit (UPLOAD_MAX_BYTES)
 const DEMO_NOTE = ["Demo content until the bank's schedules and loads are recorded (backlog ING-2..6)."];
 
 /** A failed pipeline start, in words: not connected to Databricks is expected in the demo, not an error. */
@@ -119,7 +119,7 @@ export default function Ingestion() {
             <Stats data={data} />
             <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
               <div className="space-y-8">
-                <Upload formats={data.upload_formats} notify={push} />
+                <Upload formats={data.upload_formats} expected={data.upload_files || []} canUpload={canManage} notify={push} />
                 <Schedules schedules={data.schedules} />
               </div>
               <div className="space-y-8">
@@ -203,45 +203,65 @@ export function fileType(name) {
   return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toUpperCase() : "";
 }
 
+/** Which of the pipeline's files a name is ("Transactions_2026-09-30.csv" -> "transactions.csv"), or null.
+ * The same rule as the server's (backend/app/routers/ingestion.py upload_table). */
+export function pipelineFile(name, expected) {
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0 || name.slice(dot + 1).toLowerCase() !== "csv") return null;
+  const stem = name.slice(0, dot).trim().toLowerCase();
+  const tables = expected.map((f) => f.replace(/\.csv$/i, "")).sort((x, y) => y.length - x.length);
+  const table = tables.find((t) => stem === t || (stem.startsWith(t) && "_- .".includes(stem[t.length])));
+  return table ? `${table}.csv` : null;
+}
+
 /**
- * Drop or pick files. Demo only (backlog ING-3): each file's type and size are checked here and a progress
- * bar shown, but nothing is sent - the file never leaves the browser.
+ * Drop or pick the day's core banking files (specs/screen-data-ingestion.md section 3b). Each is checked here first (a CSV,
+ * one of the pipeline's eight files, not empty, not too big, not already added), then sent to the
+ * server, which checks its columns and writes it into the pipeline's landing folder; the pipeline starts
+ * by itself about 2 minutes after the last file. The CFO and the Platform Administrator can upload.
  */
-function Upload({ formats, notify }) {
+function Upload({ formats, expected, canUpload, notify }) {
   const [files, setFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const input = useRef(null);
-  const timers = useRef([]);
+  const mounted = useRef(true);
 
-  // Both kinds of timer (the progress steps and the finish) stop when the page goes, so nothing updates
-  // a page that's gone. clearTimeout and clearInterval share one id space in browsers.
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  // A reply that comes after the page has gone updates nothing.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const patch = (id, change) => mounted.current && setFiles((current) => current.map((c) => (c.id === id ? { ...c, ...change } : c)));
 
   function add(list) {
+    if (!canUpload) return;
     const seen = new Set(files.filter((f) => !f.problem).map((f) => `${f.name}|${f.size}`));
     const next = Array.from(list || []).map((file, i) => {
       const ext = fileType(file.name);
       const key = `${file.name}|${file.size}`;
-      const problem = !ext ? "No file type (add .csv, .json, …)"
-        : !formats.includes(ext) ? `${ext} isn't accepted`
+      const target = pipelineFile(file.name, expected);
+      const problem = !ext ? "No file type (add .csv)"
+        : !formats.includes(ext) ? `${ext} isn't accepted: the pipeline reads CSV files`
+        : !target ? `Not one of the pipeline's files (${expected.join(", ")})`
         : file.size === 0 ? "The file is empty"
-        : file.size > MAX_BYTES ? "Larger than 2 GB"
+        : file.size > MAX_BYTES ? "Larger than 100 MB"
         : seen.has(key) ? "Already added"
         : null;
       if (!problem) seen.add(key);
-      return { id: `${Date.now()}-${i}-${file.name}`, name: file.name, size: file.size, ext, progress: problem ? 0 : 5, problem };
+      return { id: `${Date.now()}-${i}-${file.name}`, name: file.name, size: file.size, ext, target, status: problem ? "refused" : "sending", problem, file };
     });
-    setFiles((current) => [...next, ...current]);
-    next.filter((f) => !f.problem).forEach((f) => {
-      const timer = setInterval(() => {
-        setFiles((current) => current.map((c) => (c.id === f.id ? { ...c, progress: Math.min(100, c.progress + 19) } : c)));
-      }, 250);
-      const done = setTimeout(() => {
-        clearInterval(timer);
-        setFiles((current) => current.map((c) => (c.id === f.id ? { ...c, progress: 100 } : c)));
-        notify?.(`${f.name} uploaded (demo): checked in the browser, not sent to the pipeline yet`, "success");
-      }, 1500);
-      timers.current.push(timer, done);
+    setFiles((current) => [...next.map(({ file, ...f }) => f), ...current]);
+    next.filter((f) => !f.problem).forEach(async (f) => {
+      try {
+        const r = await api.uploadFile(f.file);
+        patch(f.id, { status: "sent", message: r.message });
+        if (mounted.current) notify?.(`${f.name}: ${r.message}`, "success");
+      } catch (err) {
+        patch(f.id, { status: "failed", problem: err.message });
+        if (mounted.current) notify?.(`${f.name} wasn't sent: ${err.message}`, "error");
+      }
     });
   }
 
@@ -250,15 +270,17 @@ function Upload({ formats, notify }) {
       <div className="mb-3">
         <div className="flex items-center justify-between gap-2">
           <h2 id="upload-title" className="bar-heading text-lg font-semibold text-ink">Upload files</h2>
-          <Demo />
         </div>
-        <p className="mt-1 text-sm text-ink2">Drop a file for a one-off load, or when a source can only export files.</p>
+        <p className="mt-1 text-sm text-ink2">
+          Drop the day's core banking files. They go straight into the pipeline's landing folder, and each file's reply says when the pipeline runs.
+        </p>
       </div>
       <div className="card rounded-xl border border-hair bg-surface p-4">
         <div
+          aria-disabled={!canUpload}
           onDragOver={(e) => {
             e.preventDefault();
-            setDragging(true);
+            if (canUpload) setDragging(true);
           }}
           onDragLeave={(e) => {
             // Moving over the text or button inside the zone isn't leaving it.
@@ -275,8 +297,12 @@ function Upload({ formats, notify }) {
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" /></svg>
           </span>
           <p className="mt-3 text-base font-semibold text-ink">Drag &amp; drop files here</p>
-          <p className="mt-1 text-sm text-ink2">or pick them from your computer. Up to 2 GB per file.</p>
-          <button type="button" onClick={() => input.current?.click()} className="btn-brand mt-3 rounded-md px-4 py-2 text-sm">Browse files</button>
+          <p className="mt-1 text-sm text-ink2">or pick them from your computer. CSV, up to 100 MB each.</p>
+          {canUpload ? (
+            <button type="button" onClick={() => input.current?.click()} className="btn-brand mt-3 rounded-md px-4 py-2 text-sm">Browse files</button>
+          ) : (
+            <p className="mt-3 text-sm font-medium text-ink2">Only the CFO or the Platform Administrator can upload files.</p>
+          )}
           <input
             ref={input}
             type="file"
@@ -289,8 +315,8 @@ function Upload({ formats, notify }) {
               e.target.value = "";
             }}
           />
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
-            {formats.map((f) => <span key={f} className="rounded-md bg-page px-2 py-0.5 text-xs font-semibold text-ink2">{f}</span>)}
+          <div className="mt-3 flex flex-wrap justify-center gap-1.5" aria-label="Files the pipeline reads">
+            {expected.map((f) => <span key={f} className="rounded-md bg-page px-2 py-0.5 text-xs font-semibold text-ink2">{f}</span>)}
           </div>
         </div>
         {files.length > 0 && (
@@ -301,16 +327,17 @@ function Upload({ formats, notify }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex justify-between gap-2 text-sm">
                     <span className="truncate font-medium text-ink">{f.name}</span>
-                    <span className="shrink-0 text-xs text-muted">{f.problem ? "" : `${f.progress}%`}</span>
+                    <span className="shrink-0 text-xs text-muted">{f.status === "sending" ? "Sending…" : f.status === "sent" ? "Sent" : ""}</span>
                   </div>
                   {f.problem ? (
                     <p className="text-xs" style={{ color: "var(--critical)" }}>{f.problem}</p>
                   ) : (
                     <>
-                      <span className="mt-1 block h-1.5 rounded-full bg-page">
-                        <span className="block h-full rounded-full" style={{ width: `${f.progress}%`, background: "var(--brand-yellow)" }} />
+                      <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-page">
+                        <span className={`block h-full rounded-full ${f.status === "sending" ? "animate-pulse" : ""}`}
+                          style={{ width: f.status === "sent" ? "100%" : "60%", background: "var(--brand-yellow)" }} />
                       </span>
-                      {f.progress >= 100 && <p className="mt-1 text-xs text-muted">Checked - not sent: file upload isn't connected to the pipeline yet.</p>}
+                      {f.message && <p className="mt-1 text-xs text-muted">{f.message}</p>}
                     </>
                   )}
                 </div>

@@ -50,7 +50,7 @@ explains itself on hover or focus, the same pattern as the existing "Assumption"
 | Run all sources now | Refresh now, Databricks Jobs API | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
 | Sources connected, Connect a source | Catalogue in `app/connectors.py` (core banking files, Salesforce, PostgreSQL, REST API, AWS S3, Snowflake) + `source_connectors` (migration 018): non-secret settings only | **Real state** (ING-1 part 1); "Test connection" checks the form, not a live sign-in |
 | Scheduled pulls | `DEMO["schedules"]` | Demo (ING-2) |
-| Upload files (CSV, JSON, Parquet, XLSX, XML, PDF) | Browser only: type and 2 GB size checked, progress and a completion toast shown, **nothing sent** | Demo (ING-3) |
+| Upload files (the pipeline's eight CSVs) | `POST /ingestion/upload` → Databricks Files API into the landing volume (section 3b) | **Real** (ING-3; needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
 | Run all sources now, each source's Sync | `POST /ingestion/run`, `POST /ingestion/sources/{key}/sync` → Databricks `POST /api/2.1/jobs/run-now` (via refresh.py); spinner and toasts | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
 
 The live data today has one source system, `CORE_CSV`: CSV files per data type from the landing volume,
@@ -96,12 +96,40 @@ tagged by country (Lebanon, Saudi Arabia, Qatar, plus "Group" for bank-wide tabl
 - `databricks.yml` has a `trigger_pause_status` variable (default UNPAUSED). The 2026-09-29 deploy used
   `--var trigger_pause_status=PAUSED` to keep file-arrival runs off, as they were in the workspace.
 
+## 3b. Upload files (added 2026-09-30, ING-3)
+
+The upload box sends the day's core banking files straight into the pipeline's landing volume
+(`/Volumes/dbw_bankx_treasury_poc/raw/raw/resources`, `databricks.yml`'s `landing_path`; override with
+`DATABRICKS_LANDING_PATH` in `backend/.env`), where Notebook 1 reads them.
+
+- **What is accepted:** only the eight CSVs Notebook 1 reads: `customers`, `accounts`, `loans`,
+  `transactions`, `branches`, `capital_positions`, `liquidity_daily`, `fx_rates`. A name may carry a
+  suffix after `_`, `-`, `.` or a space (`Transactions_2026-09-30.csv` is stored as `transactions.csv`,
+  replacing the file there). Other formats need a reader in Notebook 1 first (PDF needs table
+  extraction, `PREREQUISITES.md` question 8), so they are refused.
+- **Checks in the browser** (`Ingestion.jsx`, `pipelineFile`): has a type, is CSV, is one of the eight
+  names, not empty, at most 100 MB, not added twice. A refused file is never sent.
+- **Checks on the server** (`backend/app/routers/ingestion.py`, `POST /api/v1/ingestion/upload`, raw
+  body + `X-File-Name`): the same name rule, not empty, at most 100 MB, UTF-8, and the header row has
+  every column Notebook 1 needs for that table (`UPLOAD_FILES`). 400 with the reason otherwise.
+- **Writing:** Databricks Files API `PUT /api/2.0/fs/files{path}?overwrite=true` with the app's token
+  (the token needs WRITE VOLUME on the volume). Databricks errors come back as 502 with Databricks'
+  message; no Databricks settings → 503.
+- **Who:** the CFO and the Platform Administrator (same rule as Run all sources now); everyone else sees
+  "Only the CFO or the Platform Administrator can upload files." and a drop does nothing. The auditor is
+  refused by the read-only guard. One `FILE_UPLOADED` audit row per file (name, rows, bytes, path).
+- **Starting the pipeline:** the file-arrival trigger starts the job about 2 minutes after the last file
+  (`wait_after_last_change_seconds: 120`). The reply reads the job's trigger: when it is **paused** (as
+  after the 2026-09-29 deploy with `trigger_pause_status=PAUSED`) the file still lands and the message
+  says to press **Run all sources now** once all files are in.
+- **Not done:** virus scanning, multi-file "batch" upload as one unit, files other than the eight CSVs.
+
 ## 4. Acceptance criteria
 
 - [x] Screen matches the deck's slide 3 layout and lists all four points - built, not yet checked in a browser
 - [x] Stat cards and Recent ingestions use the real latest run when there is one - `tests/test_ingestion.py`; checked against live Neon on 2026-09-29 (2,635 received, 2,630 kept, 5 held back, 8 files, 18 loads)
 - [x] Every demo block is labelled "Demo data" - `Ingestion.test.jsx`
-- [x] Uploaded files are checked but never sent - `Ingestion.test.jsx`
+- [x] Upload files: the eight CSVs are checked in the browser and on the server, written to the landing folder, audited; CFO/admin only; a paused trigger is explained - `Ingestion.test.jsx`, `tests/test_file_upload.py` (Files API faked); live landing folder and trigger state read on 2026-09-30, no file written by the tests
 - [x] Run all sources now: CFO/admin only; a missing Databricks connection is explained, not an error page - `Ingestion.test.jsx`
 - [x] Connect form validation, Test, Connect & Save, Configure, Disconnect, Sync, Run all with spinner and toasts - `Ingestion.test.jsx`, `tests/test_source_connectors.py`; connect / disconnect run against live Neon on 2026-09-29, no secret stored
 - [ ] Checked in a browser, light and dark theme

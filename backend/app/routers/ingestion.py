@@ -9,13 +9,19 @@ GET /ingestion/overview returns everything the screen shows in one call:
   source_connectors. Connecting one saves its non-secret settings and hands its credentials to the
   Databricks secret scope (never to Postgres); POST /ingestion/run and each source's Sync start the
   pipeline job through the Jobs API (refresh.py). CFO/admin only.
+* Upload - POST /ingestion/upload writes one of the eight core banking CSVs into the pipeline's landing
+  folder (Databricks Files API), which starts the pipeline by its file-arrival trigger. CFO/admin only.
 * Demo - the scheduled pulls and, before the first pipeline run, the stat cards and recent loads. They
   come from DEMO below and carry "demo": true, which the screen labels (backlog ING-2..6).
 """
 import json
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import connectors
@@ -30,7 +36,23 @@ router = APIRouter(prefix="/ingestion", tags=["data ingestion"], dependencies=[D
 PIPELINE_TRIGGER = "On file arrival"
 
 SYSTEM_LABELS = {"CORE_CSV": "Core Banking"}
-UPLOAD_FORMATS = ["CSV", "JSON", "PARQUET", "XLSX", "XML", "PDF"]
+# Upload files (specs/screen-data-ingestion.md section 3b): the day's core banking files go straight to the pipeline's landing
+# folder. Notebook 1 reads these eight CSVs by name, so only they are accepted; each must carry its columns.
+UPLOAD_FORMATS = ["CSV"]
+UPLOAD_FILES = {
+    "customers": ["customer_id", "name", "segment", "branch_id", "onboard_date", "risk_rating", "country"],
+    "accounts": ["account_id", "customer_id", "type", "currency", "balance", "open_date"],
+    "loans": ["loan_id", "customer_id", "product", "principal", "outstanding", "currency", "interest_rate",
+              "origination_date", "maturity_date", "days_past_due", "stage", "provision_amount", "collateral_value"],
+    "transactions": ["transaction_id", "account_id", "date", "amount", "currency", "type", "channel"],
+    "branches": ["branch_id", "name", "region", "staff_count", "monthly_opex"],
+    "capital_positions": ["month", "tier1_capital", "tier2_capital", "risk_weighted_assets"],
+    "liquidity_daily": ["date", "hqla", "net_outflows_30d", "stable_funding", "required_funding"],
+    "fx_rates": ["date", "currency_pair", "rate"],
+}
+UPLOAD_MAX_BYTES = 100 * 1024 * 1024
+# databricks.yml's landing_path: where the file-arrival trigger watches and Notebook 1 reads.
+DEFAULT_LANDING_PATH = "/Volumes/dbw_bankx_treasury_poc/raw/raw/resources"
 
 # Placeholder content until schedules and connector runs are recorded (ING-2, ING-4).
 DEMO = {
@@ -129,6 +151,7 @@ def overview():
                                                for s in DEMO["schedules"]]},
         "recent": {"demo": not real and not source_runs, "items": listed},
         "upload_formats": UPLOAD_FORMATS,
+        "upload_files": [f"{name}.csv" for name in UPLOAD_FILES],
     }
 
 
@@ -171,6 +194,98 @@ def _audit(user: dict, action: str, key: str, details: dict) -> None:
     write("""INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value)
              VALUES (%s, %s, 'source_connector', %s, NULL, %s)""",
           (user["user_id"], action, key, json.dumps(details)), returning=False)
+
+
+def upload_table(filename: str):
+    """Which of the eight files a name is: "transactions.csv", "Transactions_2026-09-30.csv" -> transactions;
+    None for anything else."""
+    stem, dot, ext = filename.strip().rpartition(".")
+    if not dot or ext.lower() != "csv":
+        return None
+    stem = stem.lower()
+    for table in sorted(UPLOAD_FILES, key=len, reverse=True):
+        if stem == table or (stem.startswith(table) and stem[len(table)] in "_- ."):
+            return table
+    return None
+
+
+def check_upload(filename: str, content: bytes) -> tuple:
+    """(table, data rows) for a file the pipeline can read, else a 400 saying what's wrong."""
+    names = ", ".join(f"{t}.csv" for t in UPLOAD_FILES)
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(400, f"Only CSV files go to the pipeline: {names}")
+    table = upload_table(filename)
+    if table is None:
+        raise HTTPException(400, f"{filename} isn't one of the pipeline's files: {names}")
+    if not content.strip():
+        raise HTTPException(400, f"{filename} is empty")
+    if len(content) > UPLOAD_MAX_BYTES:
+        raise HTTPException(400, f"{filename} is larger than {UPLOAD_MAX_BYTES // (1024 * 1024)} MB")
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(400, f"{filename} isn't UTF-8 text")
+    lines = [line for line in text.splitlines() if line.strip()]
+    header = [h.strip().strip('"').lower() for h in lines[0].split(",")]
+    missing = [c for c in UPLOAD_FILES[table] if c not in header]
+    if missing:
+        raise HTTPException(400, f"{filename} is missing column(s) {', '.join(missing)} (first row must be the header)")
+    return table, len(lines) - 1
+
+
+def _put_in_landing_folder(table: str, content: bytes) -> str:
+    """Writes the file into the landing volume with the Databricks Files API, under the name Notebook 1 reads."""
+    host, token = refresh._config()
+    folder = (os.environ.get("DATABRICKS_LANDING_PATH") or DEFAULT_LANDING_PATH).rstrip("/")
+    path = f"{folder}/{table}.csv"
+    request = urllib.request.Request(
+        f"{host}/api/2.0/fs/files{urllib.parse.quote(path)}?overwrite=true", data=content, method="PUT",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120):
+            pass
+    except urllib.error.HTTPError as e:
+        try:
+            message = json.loads(e.read()).get("message", "")
+        except ValueError:
+            message = ""
+        raise HTTPException(502, f"Databricks refused the file ({e.code}){': ' + message if message else ''}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise HTTPException(502, f"Couldn't reach Databricks: {getattr(e, 'reason', e)}")
+    return path
+
+
+@router.post("/upload")
+async def upload(request: Request, user: dict = Depends(current_user)):
+    """Upload files: one file per request, its bytes as the body and its name in X-File-Name. Checked (one
+    of the eight CSVs, with its columns), then written to the pipeline's landing folder, which starts the
+    pipeline about 2 minutes after the last file (databricks.yml's file-arrival trigger). Audited."""
+    _can_manage(user)
+    filename = urllib.parse.unquote(request.headers.get("x-file-name") or "").strip()
+    if not filename:
+        raise HTTPException(400, "The file's name is missing")
+    content = await request.body()
+    table, rows = check_upload(filename, content)
+    if not connectors.databricks_configured():
+        raise HTTPException(503, "The app isn't connected to the Databricks pipeline yet (DATABRICKS_HOST and DATABRICKS_TOKEN in backend/.env)")
+    path = _put_in_landing_folder(table, content)
+    _audit(user, "FILE_UPLOADED", f"{table}.csv", {"file": filename, "rows": rows, "bytes": len(content), "path": path})
+    auto_start = _starts_on_arrival()
+    then = ("The pipeline starts about 2 minutes after the last file." if auto_start
+            else "The automatic start is paused: press Run all sources now once all files are in.")
+    return {"file": filename, "stored_as": f"{table}.csv", "rows": rows, "bytes": len(content), "auto_start": auto_start,
+            "message": f"Sent to the pipeline as {table}.csv ({rows:,} rows). {then}"}
+
+
+def _starts_on_arrival() -> bool:
+    """Whether the job's file-arrival trigger is on (databricks.yml's trigger_pause_status); a deploy can pause
+    it. If the job can't be read, assume the default (on)."""
+    try:
+        job = refresh._api("GET", f"/api/2.1/jobs/get?job_id={refresh._job_id()}")
+    except HTTPException:
+        return True
+    return (job.get("settings", {}).get("trigger") or {}).get("pause_status") != "PAUSED"
 
 
 @router.post("/sources/{key}/test")

@@ -89,16 +89,18 @@ if (typeof window !== "undefined") {
   });
 }
 
-async function send(path, { method = "GET", body } = {}) {
+async function send(path, { method = "GET", body, file } = {}) {
   if (path !== "/auth/login") checkOwner();
   const headers = { Accept: "application/json" };
   const token = session.token();
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  // A file goes as its own bytes, with its name in a header (no multipart form needed).
+  if (file) Object.assign(headers, { "Content-Type": "text/csv", "X-File-Name": encodeURIComponent(file.name) });
 
   let response;
   try {
-    response = await fetch(`${BASE}/api/v1${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    response = await fetch(`${BASE}/api/v1${path}`, { method, headers, body: file || (body === undefined ? undefined : JSON.stringify(body)) });
   } catch {
     throw new ApiError(0, "Can't reach the server. Check that the API is running.");
   }
@@ -199,6 +201,8 @@ export const api = {
   askContext: () => request("/ask/context"),                         // the assistant's side panel
   // Data ingestion (specs/screen-data-ingestion.md): real latest-run figures + labelled demo connectors
   ingestionOverview: () => request("/ingestion/overview"),
+  // Upload files (specs/screen-data-ingestion.md section 3b): one core banking CSV into the pipeline's landing folder.
+  uploadFile: (file) => request("/ingestion/upload", { method: "POST", file }),
   testSource: (key, values) => request(`/ingestion/sources/${key}/test`, { method: "POST", body: { values } }),
   connectSource: (key, values) => request(`/ingestion/sources/${key}/connect`, { method: "POST", body: { values } }),
   disconnectSource: (key) => request(`/ingestion/sources/${key}`, { method: "DELETE" }),

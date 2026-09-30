@@ -1,0 +1,107 @@
+[
+ {
+  "branch_id": "BN01",
+  "name": "Beirut Central",
+  "region": "Beirut",
+  "staff_count": "48",
+  "monthly_opex": "82266.21"
+ },
+ {
+  "branch_id": "BN02",
+  "name": "Beirut Hamra",
+  "region": "Beirut",
+  "staff_count": "55",
+  "monthly_opex": "115005.86"
+ },
+ {
+  "branch_id": "BN03",
+  "name": "Beirut Ashrafieh",
+  "region": "Beirut",
+  "staff_count": "22",
+  "monthly_opex": "87907.59"
+ },
+ {
+  "branch_id": "BN04",
+  "name": "Beirut Verdun",
+  "region": "Beirut",
+  "staff_count": "14",
+  "monthly_opex": "195339.9"
+ },
+ {
+  "branch_id": "BN05",
+  "name": "Tripoli North",
+  "region": "North",
+  "staff_count": "42",
+  "monthly_opex": "77387.77"
+ },
+ {
+  "branch_id": "BN06",
+  "name": "Zgharta",
+  "region": "North",
+  "staff_count": "35",
+  "monthly_opex": "66356.54"
+ },
+ {
+  "branch_id": "BN07",
+  "name": "Koura",
+  "region": "North",
+  "staff_count": "13",
+  "monthly_opex": "103727.59"
+ },
+ {
+  "branch_id": "BN08",
+  "name": "Zahle",
+  "region": "Bekaa",
+  "staff_count": "40",
+  "monthly_opex": "180403.75"
+ },
+ {
+  "branch_id": "BN09",
+  "name": "Baalbek",
+  "region": "Bekaa",
+  "staff_count": "43",
+  "monthly_opex": "99767.53"
+ },
+ {
+  "branch_id": "BN10",
+  "name": "Saida",
+  "region": "South",
+  "staff_count": "49",
+  "monthly_opex": "200264.99"
+ },
+ {
+  "branch_id": "BN11",
+  "name": "Tyre",
+  "region": "South",
+  "staff_count": "34",
+  "monthly_opex": "104088.12"
+ },
+ {
+  "branch_id": "BN12",
+  "name": "Nabatieh",
+  "region": "South",
+  "staff_count": "45",
+  "monthly_opex": "115638.14"
+ },
+ {
+  "branch_id": "BN13",
+  "name": "Jounieh",
+  "region": "Mount Lebanon",
+  "staff_count": "8",
+  "monthly_opex": "211761.47"
+ },
+ {
+  "branch_id": "BN14",
+  "name": "Baabda",
+  "region": "Mount Lebanon",
+  "staff_count": "18",
+  "monthly_opex": "199627.88"
+ },
+ {
+  "branch_id": "BN15",
+  "name": "Aley",
+  "region": "Mount Lebanon",
+  "staff_count": "29",
+  "monthly_opex": "115574.27"
+ }
+]

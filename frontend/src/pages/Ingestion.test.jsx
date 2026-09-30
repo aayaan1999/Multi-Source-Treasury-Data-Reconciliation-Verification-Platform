@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import Ingestion from "./Ingestion";
+import Ingestion, { pipelineFile } from "./Ingestion";
 import { formProblems } from "../ingestion/forms";
 import { api } from "../api";
 
@@ -13,7 +13,7 @@ vi.mock("../api", async (importOriginal) => {
     ...actual,
     api: {
       ingestionOverview: vi.fn(), testSource: vi.fn(), connectSource: vi.fn(), disconnectSource: vi.fn(),
-      syncSource: vi.fn(), runAllSources: vi.fn(),
+      syncSource: vi.fn(), runAllSources: vi.fn(), uploadFile: vi.fn(),
     },
   };
 });
@@ -49,13 +49,16 @@ const OVERVIEW = {
     { source: "Lebanon Core Banking", type: "File (CSV)", data: "transactions.csv", received: 1419, kept: 1416, held: 3, status: "success", reason: null, at: "2026-09-28T07:22:29Z" },
     { source: "Group Core Banking", type: "File (CSV)", data: "fx_rates.csv", received: 0, kept: 0, held: 0, status: "failed", reason: "No rows delivered", at: "2026-09-28T07:22:29Z" },
   ] },
-  upload_formats: ["CSV", "JSON", "PARQUET", "XLSX", "XML", "PDF"],
+  upload_formats: ["CSV"],
+  upload_files: ["customers.csv", "accounts.csv", "loans.csv", "transactions.csv", "branches.csv",
+                 "capital_positions.csv", "liquidity_daily.csv", "fx_rates.csv"],
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   role = "admin";
   api.ingestionOverview.mockResolvedValue(OVERVIEW);
+  api.uploadFile.mockImplementation(async (file) => ({ message: `Sent to the pipeline as ${pipelineFile(file.name, OVERVIEW.upload_files)} (3 rows).` }));
 });
 
 async function show() {
@@ -159,86 +162,83 @@ describe("Data ingestion", () => {
     expect(toastText()).toMatch(/isn't connected to the Databricks pipeline yet, so no run was started/);
   });
 
-  it("checks uploaded files but never sends them", async () => {
-    await show();
-    const input = screen.getByLabelText("Choose files to upload");
-    fireEvent.change(input, { target: { files: [new File(["a"], "positions.parquet"), new File(["x"], "notes.docx")] } });
-    const files = screen.getByRole("list", { name: "Files" });
-    expect(within(files).getByText("positions.parquet")).toBeTruthy();
-    expect(within(files).getByText("DOCX isn't accepted")).toBeTruthy();
-    expect(api.runAllSources).not.toHaveBeenCalled();
-  });
-
-  describe("upload box, edge cases", () => {
+  describe("upload box", () => {
     const pick = (files) => fireEvent.change(screen.getByLabelText("Choose files to upload"), { target: { files } });
-    const problemOf = (name) => within(screen.getByRole("list", { name: "Files" })).getByText(name).closest("li").textContent;
+    const rowOf = (name) => within(screen.getByRole("list", { name: "Files" })).getByText(name).closest("li").textContent;
 
-    it("names a file with no extension plainly instead of treating its name as the type", async () => {
+    it("sends each of the pipeline's files and says so; refuses the rest without sending them", async () => {
       await show();
-      pick([new File(["a"], "README")]);
-      expect(problemOf("README")).toContain("No file type (add .csv, .json, …)");
+      await act(async () => pick([new File(["a"], "Transactions_2026-09-30.csv"), new File(["x"], "notes.docx"), new File(["a"], "loans2.csv")]));
+      expect(api.uploadFile).toHaveBeenCalledTimes(1);
+      expect(api.uploadFile.mock.calls[0][0].name).toBe("Transactions_2026-09-30.csv");
+      expect(rowOf("Transactions_2026-09-30.csv")).toContain("Sent to the pipeline as transactions.csv");
+      expect(rowOf("notes.docx")).toContain("DOCX isn't accepted");
+      expect(rowOf("loans2.csv")).toContain("Not one of the pipeline's files");
+      expect(toastText()).toContain("Transactions_2026-09-30.csv: Sent to the pipeline");
+      expect(toastText()).not.toContain("notes.docx");
     });
 
-    it("reads the type case-insensitively and from the last dot", async () => {
+    it("shows the server's refusal on the file and in a toast", async () => {
+      const { ApiError } = await import("../api");
+      api.uploadFile.mockRejectedValue(new ApiError(400, "loans.csv is missing column(s) stage"));
       await show();
-      pick([new File(["a"], "LOANS.CSV"), new File(["a"], "branches.v2.json"), new File(["a"], "backup.csv.zip")]);
-      expect(problemOf("LOANS.CSV")).not.toContain("accepted");
-      expect(problemOf("branches.v2.json")).not.toContain("accepted");
-      expect(problemOf("backup.csv.zip")).toContain("ZIP isn't accepted");
+      await act(async () => pick([new File(["a"], "loans.csv")]));
+      expect(rowOf("loans.csv")).toContain("missing column(s) stage");
+      expect(toastText()).toContain("loans.csv wasn't sent: loans.csv is missing column(s) stage");
     });
 
-    it("refuses an empty file, and a file over 2 GB", async () => {
+    it("shows Sending… until the server answers", async () => {
+      let answer;
+      api.uploadFile.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
       await show();
-      const huge = new File(["a"], "huge.csv");
-      Object.defineProperty(huge, "size", { value: 2 * 1024 ** 3 + 1 });
-      const limit = new File(["a"], "limit.csv");
-      Object.defineProperty(limit, "size", { value: 2 * 1024 ** 3 });
-      pick([new File([], "empty.csv"), huge, limit]);
-      expect(problemOf("empty.csv")).toContain("The file is empty");
-      expect(problemOf("huge.csv")).toContain("Larger than 2 GB");
-      expect(problemOf("limit.csv")).not.toContain("Larger than 2 GB");       // exactly 2 GB is allowed
+      await act(async () => pick([new File(["a"], "fx_rates.csv")]));
+      expect(rowOf("fx_rates.csv")).toContain("Sending…");
+      await act(async () => answer({ message: "Sent to the pipeline as fx_rates.csv (1 rows)." }));
+      expect(rowOf("fx_rates.csv")).toContain("Sent");
+      expect(rowOf("fx_rates.csv")).not.toContain("Sending…");
     });
 
-    it("flags the same file added twice", async () => {
+    it("names a file with no extension plainly, and reads the type from the last dot", async () => {
       await show();
-      pick([new File(["abc"], "loans.csv")]);
-      pick([new File(["abc"], "loans.csv")]);
+      await act(async () => pick([new File(["a"], "README"), new File(["a"], "LOANS.CSV"), new File(["a"], "customers.csv.zip")]));
+      expect(rowOf("README")).toContain("No file type (add .csv)");
+      expect(rowOf("customers.csv.zip")).toContain("ZIP isn't accepted");
+      expect(api.uploadFile).toHaveBeenCalledTimes(1);                                // LOANS.CSV only
+    });
+
+    it("refuses an empty file and one over 100 MB; exactly 100 MB is sent", async () => {
+      await show();
+      const huge = new File(["a"], "accounts.csv");
+      Object.defineProperty(huge, "size", { value: 100 * 1024 ** 2 + 1 });
+      const limit = new File(["a"], "branches.csv");
+      Object.defineProperty(limit, "size", { value: 100 * 1024 ** 2 });
+      await act(async () => pick([new File([], "customers.csv"), huge, limit]));
+      expect(rowOf("customers.csv")).toContain("The file is empty");
+      expect(rowOf("accounts.csv")).toContain("Larger than 100 MB");
+      expect(api.uploadFile.mock.calls.map(([f]) => f.name)).toEqual(["branches.csv"]);
+    });
+
+    it("flags the same file added twice and sends it once", async () => {
+      await show();
+      await act(async () => pick([new File(["abc"], "loans.csv")]));
+      await act(async () => pick([new File(["abc"], "loans.csv")]));
       const rows = within(screen.getByRole("list", { name: "Files" })).getAllByText("loans.csv");
       expect(rows).toHaveLength(2);
       expect(rows[0].closest("li").textContent).toContain("Already added");
+      expect(api.uploadFile).toHaveBeenCalledTimes(1);
     });
 
-    it("finishes each accepted file and says it wasn't sent; a refused one never shows progress", async () => {
-      vi.useFakeTimers();
-      try {
-        await show();
-        pick([new File(["a"], "loans.csv"), new File(["x"], "notes.docx")]);
-        await act(async () => { vi.advanceTimersByTime(2000); });
-        expect(problemOf("loans.csv")).toContain("100%");
-        expect(problemOf("loans.csv")).toContain("Checked - not sent");
-        expect(problemOf("notes.docx")).not.toContain("%");
-        expect(toastText()).toContain("loans.csv uploaded (demo)");
-        expect(toastText()).not.toContain("notes.docx uploaded");
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("leaving the page mid-upload stops its timers (no toast afterwards)", async () => {
-      vi.useFakeTimers();
-      try {
-        let view;
-        await act(async () => { view = render(<MemoryRouter><Ingestion /></MemoryRouter>); });
-        pick([new File(["a"], "loans.csv")]);
-        const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-        view.unmount();
-        await act(async () => { vi.advanceTimersByTime(3000); });
-        expect(vi.getTimerCount()).toBe(0);
-        expect(errors).not.toHaveBeenCalled();
-        errors.mockRestore();
-      } finally {
-        vi.useRealTimers();
-      }
+    it("an answer that comes after leaving the page changes nothing", async () => {
+      let answer;
+      api.uploadFile.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+      let view;
+      await act(async () => { view = render(<MemoryRouter><Ingestion /></MemoryRouter>); });
+      await act(async () => pick([new File(["a"], "loans.csv")]));
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      view.unmount();
+      await act(async () => answer({ message: "late" }));
+      expect(errors).not.toHaveBeenCalled();
+      errors.mockRestore();
     });
 
     it("dropping files works like picking them, and dragging over the text inside doesn't flicker", async () => {
@@ -249,9 +249,26 @@ describe("Data ingestion", () => {
       Object.defineProperty(leave, "relatedTarget", { value: screen.getByText("Drag & drop files here") });
       fireEvent(zone, leave);
       expect(zone.className).toContain("border-[var(--brand-yellow)]");            // still highlighted over a child
-      fireEvent.drop(zone, { dataTransfer: { files: [new File(["a"], "fx.csv")] } });
-      expect(within(screen.getByRole("list", { name: "Files" })).getByText("fx.csv")).toBeTruthy();
+      await act(async () => fireEvent.drop(zone, { dataTransfer: { files: [new File(["a"], "fx_rates.csv")] } }));
+      expect(within(screen.getByRole("list", { name: "Files" })).getByText("fx_rates.csv")).toBeTruthy();
       expect(zone.className).not.toContain("border-[var(--brand-yellow)]");
+    });
+
+    it("lists the eight files the pipeline reads", async () => {
+      await show();
+      const names = within(screen.getByLabelText("Files the pipeline reads")).getAllByText(/\.csv$/).map((e) => e.textContent);
+      expect(names).toEqual(OVERVIEW.upload_files);
+    });
+
+    it("someone who can't upload sees why, and a drop sends nothing", async () => {
+      role = "analyst";
+      await show();
+      expect(screen.queryByRole("button", { name: "Browse files" })).toBeNull();
+      expect(screen.getByText("Only the CFO or the Platform Administrator can upload files.")).toBeTruthy();
+      const zone = screen.getByText("Drag & drop files here").parentElement;
+      await act(async () => fireEvent.drop(zone, { dataTransfer: { files: [new File(["a"], "loans.csv")] } }));
+      expect(api.uploadFile).not.toHaveBeenCalled();
+      expect(screen.queryByRole("list", { name: "Files" })).toBeNull();
     });
   });
 
@@ -281,6 +298,24 @@ describe("Data ingestion", () => {
     await show();
     expect(screen.queryByRole("button", { name: "Run all sources now" })).toBeNull();
     expect(within(sourceCard("Salesforce")).getByRole("button", { name: "Connect" }).disabled).toBe(true);
+  });
+});
+
+describe("which pipeline file a name is", () => {
+  const files = OVERVIEW.upload_files;
+  it("matches the name, any case, with a date or other suffix after _ - . or space", () => {
+    expect(pipelineFile("transactions.csv", files)).toBe("transactions.csv");
+    expect(pipelineFile("Transactions_2026-09-30.csv", files)).toBe("transactions.csv");
+    expect(pipelineFile("LOANS.CSV", files)).toBe("loans.csv");
+    expect(pipelineFile("fx_rates-sep.csv", files)).toBe("fx_rates.csv");
+    expect(pipelineFile("capital_positions 2026.csv", files)).toBe("capital_positions.csv");
+  });
+  it("refuses other names and other types", () => {
+    expect(pipelineFile("loans2.csv", files)).toBeNull();
+    expect(pipelineFile("my_loans.csv", files)).toBeNull();
+    expect(pipelineFile("loans.json", files)).toBeNull();
+    expect(pipelineFile("loans.csv.zip", files)).toBeNull();
+    expect(pipelineFile(".csv", files)).toBeNull();
   });
 });
 
