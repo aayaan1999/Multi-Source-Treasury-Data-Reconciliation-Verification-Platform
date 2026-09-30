@@ -1,18 +1,64 @@
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { homeOf } from "../access";
+import { landingOf } from "../access";
 import { useAuth } from "../auth";
 import appbayLogo from "../assets/appbay-logo.jpg";
 
-// The people who use the platform (specs/user-roles.md).
-const ROLES = [
-  { label: "CFO", desc: "Headline ratios, approvals, run sign-off" },
-  { label: "Chief Risk Officer", desc: "Credit risk, limits, stress tests" },
-  { label: "Reconciliation Analyst", desc: "Decides reconciliation tasks" },
-  { label: "Reporting Officer", desc: "Prepares the regulator's returns" },
-  { label: "Compliance Officer", desc: "Investigates transaction cases" },
-  { label: "Internal Auditor", desc: "Reads everything, changes nothing" },
-];
+// Sample figures for the sign-in page's picture of the platform - not the bank's data.
+const CAR_TREND = [16.9, 17.1, 17.0, 17.4, 17.3, 17.6, 17.8, 17.7, 18.0, 18.1, 18.2, 18.4];
+const RECONCILED = [97.9, 98.6, 99.1, 98.8, 99.4, 99.6, 99.8];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function SampleCard({ title, value, change, children }) {
+  return (
+    <div className="rounded-xl border border-white/15 bg-white/5 p-4 backdrop-blur-sm">
+      <p className="text-xs font-medium uppercase tracking-wide text-white/60">{title}</p>
+      <p className="mt-1 flex items-baseline gap-2">
+        <span className="text-2xl font-semibold text-white">{value}</span>
+        <span className="text-xs font-medium" style={{ color: "var(--brand-yellow)" }}>{change}</span>
+      </p>
+      <div className="mt-3">{children}</div>
+    </div>
+  );
+}
+
+/** A 12-month trend line with a soft fill. */
+function TrendChart({ values }) {
+  const w = 220, h = 70, lo = Math.min(...values) - 0.3, hi = Math.max(...values) + 0.3;
+  const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - ((v - lo) / (hi - lo)) * h]);
+  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-[70px] w-full" preserveAspectRatio="none" aria-hidden>
+      <defs>
+        <linearGradient id="car-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--brand-yellow)" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="var(--brand-yellow)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${line} L${w},${h} L0,${h} Z`} fill="url(#car-fill)" />
+      <path d={line} fill="none" stroke="var(--brand-yellow)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+/** Daily bars, the latest day highlighted. */
+function BarChart({ values, labels }) {
+  const lo = 97;
+  return (
+    <div className="flex h-[70px] items-end gap-1.5" aria-hidden>
+      {values.map((v, i) => (
+        <div key={labels[i]} className="flex flex-1 flex-col items-center gap-1">
+          <span
+            className="w-full rounded-sm"
+            style={{ height: `${((v - lo) / (100 - lo)) * 52 + 4}px`,
+                     background: i === values.length - 1 ? "var(--brand-yellow)" : "rgba(255,255,255,0.35)" }}
+          />
+          <span className="text-[10px] leading-none text-white/50">{labels[i]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function Login() {
   const { user, login, notice } = useAuth();
@@ -24,8 +70,8 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Back to the page they asked for, else their own home screen (specs/user-roles.md).
-  if (user) return <Navigate to={location.state?.from?.pathname || homeOf(user)} replace />;
+  // Back to the page they asked for, else Data ingestion (or their home screen if they don't use it).
+  if (user) return <Navigate to={location.state?.from?.pathname || landingOf(user)} replace />;
 
   async function submit(e) {
     e.preventDefault();
@@ -33,7 +79,7 @@ export default function Login() {
     setError("");
     try {
       const signedIn = await login(email.trim(), password);
-      navigate(location.state?.from?.pathname || homeOf(signedIn), { replace: true });
+      navigate(location.state?.from?.pathname || landingOf(signedIn), { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -74,17 +120,15 @@ export default function Login() {
             approval trail — in one place.
           </p>
 
-          <div className="mt-10 grid grid-cols-2 gap-3">
-            {ROLES.map((r) => (
-              <div
-                key={r.label}
-                className="rounded-lg border border-white/15 bg-white/5 px-3.5 py-3 backdrop-blur-sm"
-              >
-                <p className="text-sm font-medium text-white">{r.label}</p>
-                <p className="mt-0.5 text-xs text-white/60">{r.desc}</p>
-              </div>
-            ))}
+          <div className="mt-10 grid grid-cols-2 gap-3" role="img" aria-label="Sample charts: capital adequacy trend and daily reconciliation rate">
+            <SampleCard title="Capital adequacy" value="18.4%" change="+1.5 pts in 12 months">
+              <TrendChart values={CAR_TREND} />
+            </SampleCard>
+            <SampleCard title="Records reconciled" value="99.8%" change="today">
+              <BarChart values={RECONCILED} labels={DAYS} />
+            </SampleCard>
           </div>
+          <p className="mt-2 text-xs text-white/40">Sample figures</p>
         </div>
 
       </section>

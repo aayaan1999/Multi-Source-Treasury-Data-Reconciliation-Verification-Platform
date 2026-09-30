@@ -15,7 +15,7 @@ countries: BN04 Riyadh Olaya and BN07 Jeddah Tahlia (KSA, costs in SAR), BN12 Do
 Al Sadd (Qatar, costs in QAR), the rest in Lebanon; every customer banks at a branch in their own country.
 (Fixed 30 Sep: the first version had only Lebanese branches, so a run showed Saudi Arabia and Qatar as 10
 failed loads, "No rows delivered". To fix a run made with it, upload the new branches.csv and customers.csv
-and press Run all sources now.)
+and press Run All Sources.)
 
 ## Upload box on the Data ingestion tab
 
@@ -41,8 +41,8 @@ once the pipeline runs (see below).
 ## Running the pipeline on the uploaded files (changes the live data)
 
 The job's automatic start (file-arrival trigger) is **paused** on the workspace, so each file's message says
-"The automatic start is paused: press Run all sources now once all files are in." Upload all 8 files, then
-press **Run all sources now** (top right). If the trigger is switched back on, the job starts by itself about
+"The automatic start is paused: press Run All Sources once all files are in." Upload all 8 files, then
+press **Run All Sources** (top right). If the trigger is switched back on, the job starts by itself about
 2 minutes after the last file. Expected afterwards:
 - **TNDEMO0930A**: a 65,000 USD deposit on ACN0168 is flagged LARGE_AMOUNT (Threshold), a transaction case
   for the Compliance Officer.

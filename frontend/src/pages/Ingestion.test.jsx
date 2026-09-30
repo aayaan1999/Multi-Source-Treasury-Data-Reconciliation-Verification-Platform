@@ -142,16 +142,16 @@ describe("Data ingestion", () => {
     expect(within(sourceCard("Salesforce")).getByText("Disconnected")).toBeTruthy();
   });
 
-  it("Run all sources now shows a spinner and a toast while it triggers the pipeline", async () => {
+  it("Run All Sources shows a spinner and a toast while it triggers the pipeline", async () => {
     let finish;
     api.runAllSources.mockReturnValue(new Promise((r) => { finish = r; }));
     await show();
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run all sources now" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run All Sources" })));
     expect(screen.getByRole("button", { name: "Triggering…" }).disabled).toBe(true);
     expect(toastText()).toMatch(/Triggering Databricks ingestion pipeline…/);
     await act(async () => finish({ run_id: 77, message: "Databricks ingestion pipeline started" }));
     expect(toastText()).toMatch(/Databricks ingestion pipeline started \(run 77\)/);
-    expect(screen.getByRole("button", { name: "Run all sources now" }).disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Run All Sources" }).disabled).toBe(false);
   });
 
   it("says plainly when the app isn't connected to Databricks", async () => {
@@ -315,7 +315,7 @@ describe("Data ingestion", () => {
   it("only the CFO and admins can connect sources or start a run", async () => {
     role = "analyst";
     await show();
-    expect(screen.queryByRole("button", { name: "Run all sources now" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Run All Sources" })).toBeNull();
     expect(within(sourceCard("Salesforce")).getByRole("button", { name: "Connect" }).disabled).toBe(true);
   });
 });

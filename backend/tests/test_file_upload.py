@@ -75,7 +75,7 @@ def test_when_the_automatic_start_is_paused_it_says_to_run_the_pipeline(client, 
     monkeypatch.setattr(ingestion.refresh, "_api", lambda method, path, body=None: {"settings": {"trigger": {"pause_status": "PAUSED"}}})
     body = upload(client, admin, "transactions.csv", TRANSACTIONS).json()
     assert body["auto_start"] is False
-    assert "press Run all sources now once all files are in" in body["message"]
+    assert "press Run All Sources once all files are in" in body["message"]
     assert len(landing) == 1                                                     # the file still lands
 
 

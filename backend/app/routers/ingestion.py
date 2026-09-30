@@ -312,7 +312,7 @@ async def upload(request: Request, user: dict = Depends(current_user)):
            {"file": filename, "rows": rows, "bytes": len(content), "path": path, "replace_confirmed": confirmed})
     auto_start = _starts_on_arrival()
     then = ("The pipeline starts about 2 minutes after the last file." if auto_start
-            else "The automatic start is paused: press Run all sources now once all files are in.")
+            else "The automatic start is paused: press Run All Sources once all files are in.")
     return {"file": filename, "stored_as": f"{table}.csv", "rows": rows, "bytes": len(content), "auto_start": auto_start,
             "message": f"Sent to the pipeline as {table}.csv ({rows:,} rows). {then}"}
 
@@ -368,7 +368,7 @@ def _start_run(user: dict) -> dict:
 
 @router.post("/run")
 def run_all(user: dict = Depends(current_user)):
-    """Run all sources now: one pipeline run ingests every connected source."""
+    """Run All Sources: one pipeline run ingests every connected source."""
     _can_manage(user)
     run = _start_run(user)
     write("UPDATE source_connectors SET last_sync_at = now()", returning=False)

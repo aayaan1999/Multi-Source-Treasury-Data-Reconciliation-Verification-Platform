@@ -32,7 +32,7 @@ function Demo() {
  * Data ingestion (specs/screen-data-ingestion.md; layout from the client demo deck, slide 3): what came in,
  * from where, and whether it worked. The stat cards and "Recent ingestions" are the real latest pipeline
  * run when there is one. Sources are connected through their own form (ingestion/SourceModal) and saved on
- * the server; "Run all sources now" and each card's Sync start the Databricks pipeline job. Connecting,
+ * the server; "Run All Sources" and each card's Sync start the Databricks pipeline job. Connecting,
  * disconnecting and syncing update this page in place - no reload.
  */
 export default function Ingestion() {
@@ -41,7 +41,7 @@ export default function Ingestion() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null);        // the source whose form is open
-  const [running, setRunning] = useState(false);       // "Run all sources now" in flight
+  const [running, setRunning] = useState(false);       // "Run All Sources" in flight
   const [syncing, setSyncing] = useState(null);        // key of the source being synced
   const { toasts, push, update, dismiss } = useToasts();
 
@@ -100,13 +100,10 @@ export default function Ingestion() {
           </div>
           {data && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md border border-hair bg-surface px-3 py-2 text-sm font-medium text-ink" title="When the pipeline runs (databricks.yml)">
-                Schedule: {data.trigger.toLowerCase()}
-              </span>
               {canManage && (
                 <button type="button" onClick={runAll} disabled={running} className="btn-dark inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm transition disabled:cursor-not-allowed disabled:opacity-60">
                   {running && <Spinner />}
-                  {running ? "Triggering…" : "Run all sources now"}
+                  {running ? "Triggering…" : "Run All Sources"}
                 </button>
               )}
             </div>

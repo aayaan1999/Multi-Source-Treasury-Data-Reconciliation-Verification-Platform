@@ -27,6 +27,11 @@ export function homeOf(user) {
   return user?.access?.home || "/";
 }
 
+/** Where sign-in takes you: Data ingestion for everyone who uses it, else your home screen. */
+export function landingOf(user) {
+  return canSee(user, "/ingestion") ? "/ingestion" : homeOf(user);
+}
+
 export function roleTitle(user) {
   return user?.access?.title || user?.role || "";
 }

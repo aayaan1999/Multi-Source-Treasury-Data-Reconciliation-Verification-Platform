@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canSee, homeOf, isMyTask, screenOf } from "./access";
+import { canSee, homeOf, isMyTask, landingOf, screenOf } from "./access";
 import { navFor } from "./components/TopBar";
 import { userFor } from "./test/users";
 
@@ -23,6 +23,11 @@ describe("who sees what (specs/user-roles.md)", () => {
     expect(["approver", "risk", "analyst", "auditor", "admin"].map((r) => homeOf(userFor(r)))).toEqual(["/", "/portfolio", "/tasks", "/audit-oversight", "/ingestion"]);
     expect(canSee(userFor("analyst"), "/scenario")).toBe(false);
     expect(canSee(userFor("auditor"), "/tasks")).toBe(false);
+  });
+
+  it("sign-in lands on Data ingestion for everyone who uses it, else on their home screen", () => {
+    expect(["approver", "analyst", "auditor", "admin"].map((r) => landingOf(userFor(r)))).toEqual(Array(4).fill("/ingestion"));
+    expect(landingOf(userFor("risk"))).toBe("/portfolio");               // the CRO doesn't use Data ingestion
   });
 
   it("tasks are split by person: the analyst decides, the CFO approves and signs off", () => {

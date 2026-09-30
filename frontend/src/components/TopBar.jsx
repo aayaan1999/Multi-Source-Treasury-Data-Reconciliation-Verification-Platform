@@ -27,7 +27,7 @@ const NAV = [
   ["/ask", "AI assistant"],
 ];
 
-const BANK_NAME = import.meta.env.VITE_BANK_NAME || "Bank X";
+const BANK_NAME = import.meta.env.VITE_BANK_NAME || "Bank Data Platform";
 
 /** The menu for this person: only the screens they use (specs/user-roles.md). A group left with one
  * screen becomes a plain tab; an empty group disappears. */

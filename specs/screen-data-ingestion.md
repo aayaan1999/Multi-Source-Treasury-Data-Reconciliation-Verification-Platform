@@ -21,10 +21,10 @@ built from it. The deck lists four points, all on this screen:
 
 ## 2. Layout (as in the deck)
 
-`/ingestion`, first tab in the menu. "Data ingestion" pill, heading "Bring data in", then:
+`/ingestion`, first tab in the menu, and where sign-in lands for everyone who uses it (`landingOf`). "Data ingestion" pill, heading "Bring data in", then:
 
-- **Top right:** "Schedule: on file arrival" (the pipeline's real trigger, `databricks.yml`) and **Run
-  all sources now** (CFO/admin only). It starts the Databricks job through Refresh now
+- **Top right:** **Run All Sources** (CFO/admin only). (The "Schedule: on file arrival" label was removed
+  on 2026-09-30 at the client's request.) It starts the Databricks job through Refresh now
   (`POST /refresh`, `specs/refresh-now.md`) and says plainly when the app isn't connected to Databricks
   (503).
 - **Four stat cards** with a yellow top edge (red when there are failed loads): Sources connected,
@@ -46,12 +46,11 @@ explains itself on hover or focus, the same pattern as the existing "Assumption"
 |---|---|---|
 | Files, records received / kept / held back, failed loads | Latest run in `pipeline_reconciliation` (Notebooks 1-2 via `load_to_postgres.py`) | **Real** when a run exists; demo rows otherwise |
 | Recent ingestions | Same rows, one per source × country × data type; "failed" = the completeness check's "No rows delivered" (FLOW-1b) | **Real** when a run exists; demo rows otherwise |
-| Schedule button | `databricks.yml` file-arrival trigger | Real (hard-coded label matching the file) |
-| Run all sources now | Refresh now, Databricks Jobs API | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
+| Run All Sources | Refresh now, Databricks Jobs API | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
 | Sources connected, Connect a source | Catalogue in `app/connectors.py` (core banking files, Salesforce, PostgreSQL, REST API, AWS S3, Snowflake) + `source_connectors` (migration 018): non-secret settings only | **Real state** (ING-1 part 1); "Test connection" checks the form, not a live sign-in |
 | Scheduled pulls | `DEMO["schedules"]` | Demo (ING-2) |
 | Upload files (the pipeline's eight CSVs) | `POST /ingestion/upload` → Databricks Files API into the landing volume (section 3b) | **Real** (ING-3; needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
-| Run all sources now, each source's Sync | `POST /ingestion/run`, `POST /ingestion/sources/{key}/sync` → Databricks `POST /api/2.1/jobs/run-now` (via refresh.py); spinner and toasts | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
+| Run All Sources, each source's Sync | `POST /ingestion/run`, `POST /ingestion/sources/{key}/sync` → Databricks `POST /api/2.1/jobs/run-now` (via refresh.py); spinner and toasts | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
 
 The live data today has one source system, `CORE_CSV`: CSV files per data type from the landing volume,
 tagged by country (Lebanon, Saudi Arabia, Qatar, plus "Group" for bank-wide tables). It shows as
@@ -123,13 +122,13 @@ The upload box sends the day's core banking files straight into the pipeline's l
 - **Writing:** Databricks Files API `PUT /api/2.0/fs/files{path}?overwrite=true` with the app's token
   (the token needs WRITE VOLUME on the volume). Databricks errors come back as 502 with Databricks'
   message; no Databricks settings → 503.
-- **Who:** the CFO and the Platform Administrator (same rule as Run all sources now); everyone else sees
+- **Who:** the CFO and the Platform Administrator (same rule as Run All Sources); everyone else sees
   "Only the CFO or the Platform Administrator can upload files." and a drop does nothing. The auditor is
   refused by the read-only guard. One `FILE_UPLOADED` audit row per file (name, rows, bytes, path).
 - **Starting the pipeline:** the file-arrival trigger starts the job about 2 minutes after the last file
   (`wait_after_last_change_seconds: 120`). The reply reads the job's trigger: when it is **paused** (as
   after the 2026-09-29 deploy with `trigger_pause_status=PAUSED`) the file still lands and the message
-  says to press **Run all sources now** once all files are in.
+  says to press **Run All Sources** once all files are in.
 - **Not done:** virus scanning, multi-file "batch" upload as one unit, files other than the eight CSVs.
 
 ## 4. Acceptance criteria
@@ -138,6 +137,6 @@ The upload box sends the day's core banking files straight into the pipeline's l
 - [x] Stat cards and Recent ingestions use the real latest run when there is one - `tests/test_ingestion.py`; checked against live Neon on 2026-09-29 (2,635 received, 2,630 kept, 5 held back, 8 files, 18 loads)
 - [x] Every demo block is labelled "Demo data" - `Ingestion.test.jsx`
 - [x] Upload files: the eight CSVs are checked in the browser and on the server, written to the landing folder, audited; CFO/admin only; a paused trigger is explained - `Ingestion.test.jsx`, `tests/test_file_upload.py` (Files API faked); live landing folder and trigger state read on 2026-09-30, no file written by the tests
-- [x] Run all sources now: CFO/admin only; a missing Databricks connection is explained, not an error page - `Ingestion.test.jsx`
+- [x] Run All Sources: CFO/admin only; a missing Databricks connection is explained, not an error page - `Ingestion.test.jsx`
 - [x] Connect form validation, Test, Connect & Save, Configure, Disconnect, Sync, Run all with spinner and toasts - `Ingestion.test.jsx`, `tests/test_source_connectors.py`; connect / disconnect run against live Neon on 2026-09-29, no secret stored
 - [ ] Checked in a browser, light and dark theme

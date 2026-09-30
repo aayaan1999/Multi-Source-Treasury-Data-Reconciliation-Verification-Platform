@@ -1,5 +1,5 @@
 """Source connectors on the Data Ingestion screen (app/connectors.py, ING-1): connect, test, disconnect,
-sync and "Run all sources now" - and that a secret never reaches Postgres or the audit log."""
+sync and "Run All Sources" - and that a secret never reaches Postgres or the audit log."""
 import pytest
 
 from app import connectors
