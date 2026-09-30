@@ -6,6 +6,7 @@ import useAsync from "../hooks/useAsync";
 import { formatDateTime } from "../kpi/format";
 import { completeTask, getVariables } from "../workflow/tasklistApi";
 import { roleTitle } from "../access";
+import ImportantTag from "./ImportantTag";
 import { correctableFields, fmtAmount } from "./pipeline";
 import { blockedReason, carryBadge, carryText, DECISION_PAST, DECISIONS, decisionLabel, sentBackText, stages, stepOf } from "./reconTask";
 
@@ -271,7 +272,13 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
 
   return (
     <>
-      <h3 className="text-base font-semibold tracking-tight text-ink">{task.vars.title || task.name}</h3>
+      <h3 className="text-base font-semibold tracking-tight text-ink">
+        {task.vars.title || task.name}
+        {!isRun && subject.cfo_required && <ImportantTag reason={subject.cfo_reason} />}
+      </h3>
+      {!isRun && subject.cfo_required && step === "TEAM" && (
+        <p className="mt-1 text-sm text-ink2">Whatever you decide, this task goes to the CFO for approval next.</p>
+      )}
 
       <div className="card mt-3 rounded-xl border border-hair bg-surface p-4 text-sm">
         <p className="font-medium text-ink">{summary.headline}</p>
@@ -394,7 +401,7 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
                   : null),
               }] : []),
               { key: "title", header: "Task", render: (t) => (
-                <span>{t.title}{t.carried_count > 0 && <span className="ml-2 text-xs text-ink2">{carryBadge({ carried_count: t.carried_count, escalated: t.escalated })}</span>}</span>
+                <span>{t.title}{t.cfo_required && <ImportantTag />}{t.carried_count > 0 && <span className="ml-2 text-xs text-ink2">{carryBadge({ carried_count: t.carried_count, escalated: t.escalated })}</span>}</span>
               ) },
               { key: "decision", header: "Decision", render: (t) => (t.decision && t.decided ? DECISION_PAST[t.decision]
                 : t.awaiting_cfo ? <span style={{ color: "var(--critical)" }}>Waiting for your approval</span>

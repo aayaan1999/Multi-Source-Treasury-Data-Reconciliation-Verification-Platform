@@ -13,6 +13,7 @@ import ApprovalChain from "../workflow/ApprovalChain";
 import { TRANSACTION_FLAGS, alertType } from "../workflow/flagTypes";
 import ReconTaskPanel from "../reconciliation/ReconTaskPanel";
 import { carryBadge, isSentBack, RECON_KINDS } from "../reconciliation/reconTask";
+import ImportantTag from "../reconciliation/ImportantTag";
 import { isMyTask, roleTitle } from "../access";
 import CaseReviewPanel from "../workflow/CaseReviewPanel";
 import EntityMatchPanel from "../workflow/EntityMatchPanel";
@@ -265,6 +266,9 @@ const RECORD_TYPE_LABEL = {
 const RECON_FILTER = "__reconciliation";
 const SENT_BACK_FILTER = "__sent_back";
 const CARRIED_FILTER = "__carried";
+const IMPORTANT_FILTER = "__important";
+// A reconciliation task the CFO must approve whatever the team decides (missing record, key field, big amount).
+const isImportant = (t) => t.vars.cfoRequired === true;
 const SEVERITY_LABEL = { HIGH: "High", MEDIUM: "Medium", LOW: "Low" };
 
 const SOURCE_TABLE_LABEL = {
@@ -353,7 +357,8 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
   const filtered = useMemo(() => {
     return mine.filter((t) => {
       if (completedIds.has(t.id)) return false;
-      if (typeFilter === CARRIED_FILTER ? !t.carry
+      if (typeFilter === IMPORTANT_FILTER ? !isImportant(t)
+        : typeFilter === CARRIED_FILTER ? !t.carry
         : typeFilter === SENT_BACK_FILTER ? !isSentBack(t)
         : typeFilter === RECON_FILTER ? !RECON_KINDS.includes(t.vars.recordType)
         : typeFilter && t.vars.recordType !== typeFilter) return false;
@@ -382,6 +387,7 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
           <option value="">All types</option>
           {mine.some(isSentBack) && <option value={SENT_BACK_FILTER}>Sent back to me</option>}
           {mine.some((t) => t.carry) && <option value={CARRIED_FILTER}>Carried over</option>}
+          {mine.some(isImportant) && <option value={IMPORTANT_FILTER}>Important only</option>}
           {RECON_KINDS.filter((k) => myTypes.has(k)).length > 1 && <option value={RECON_FILTER}>Reconciliation (all)</option>}
           {Object.entries(RECORD_TYPE_LABEL).filter(([value]) => myTypes.has(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -389,7 +395,7 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
       <DataTable
         caption="My tasks"
         columns={[
-          { key: "record", header: "Record", render: recordLabel },
+          { key: "record", header: "Record", render: (t) => <>{recordLabel(t)}{isImportant(t) && <ImportantTag />}</> },
           { key: "accountId", header: "Account ID", render: (t) => t.accountId || "—" },
           { key: "name", header: "Name" },
           { key: "group", header: "Group", render: (t) => (t.candidateGroups || []).join(", ") },

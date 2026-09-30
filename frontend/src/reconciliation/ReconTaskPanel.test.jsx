@@ -185,6 +185,7 @@ describe("a core-system break group", () => {
   it("leaves one record out and decides for the rest", async () => {
     show(task("recon_group", 21, "UserTask_TeamReview", "3 accounts: balance 15.00 higher in core banking"));
     expect(await screen.findByText(GROUP.summary.headline)).toBeTruthy();
+    expect(screen.queryByText(/^Important/)).toBeNull();                                      // a small task isn't
     expect(within(screen.getByRole("table", { name: "Records that differ" })).getAllByText("+15").length).toBe(3);
     await userEvent.click(screen.getByLabelText("Leave out ACN0003"));
     await userEvent.type(screen.getByLabelText("Comment"), "fee batch");
@@ -223,6 +224,8 @@ describe("a core-system break group", () => {
   it("a missing record can't be corrected from here, and the CFO approval is flagged up front", async () => {
     show(task("recon_group", 22, "UserTask_TeamReview"));
     expect((await screen.findByRole("button", { name: "Assign to CFO" })).disabled).toBe(true);
+    expect(screen.getByText("Important: a missing record")).toBeTruthy();                      // tagged, with why
+    expect(screen.getByText("Whatever you decide, this task goes to the CFO for approval next.")).toBeTruthy();
     expect(within(screen.getByRole("list", { name: "Steps" })).getByText("Required because of a missing record")).toBeTruthy();
   });
 });
