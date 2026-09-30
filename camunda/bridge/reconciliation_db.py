@@ -10,6 +10,8 @@ from datetime import date, timedelta
 
 import psycopg2.extras
 
+from sent_back import sent_back_variables
+
 PROCESS_ID = "reconciliation-task"
 RECORD_TYPE = "reconciliation"
 SOURCE_TABLE = "pipeline_reconciliation"
@@ -67,7 +69,8 @@ def fetch_unstarted(conn) -> list[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """SELECT p.recon_id, p.source_system, p.source_country, p.source_table, p.received_rows,
-                      p.rejected_rows, p.note, p.amounts_by_currency,
+                      p.rejected_rows, p.note, p.amounts_by_currency, p.sent_back_note, p.sent_back_at, p.sent_back_from,
+                      (SELECT name FROM users WHERE user_id = p.sent_back_by) AS sent_back_by_name,
                       ARRAY(SELECT DISTINCT d.flag_label FROM data_quality_exceptions d
                             WHERE d.source_table = p.source_table AND d.source_system = p.source_system
                               AND d.source_country = p.source_country AND d.ingest_batch_id = p.ingest_batch_id
@@ -148,6 +151,7 @@ def process_variables(item: dict, rules: dict, due_days: int, today: date = None
         "severity": "HIGH" if cfo else "MEDIUM",
         "dueDate": (today + timedelta(days=1 if cfo else due_days)).isoformat(),
         "cfoRequired": cfo,
+        **sent_back_variables(item),                       # a task reopened at run sign-off says so
     }
 
 

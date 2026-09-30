@@ -88,7 +88,8 @@ export const CANDIDATE_GROUPS = ["fraud-investigation", "compliance", "risk", "o
  */
 // Requested inline via includeVariables rather than a separate getVariables call per row - one
 // Tasklist round trip for the whole list instead of N+1.
-const LIST_VARIABLES = ["recordType", "sourceTable", "recordKey", "flagLabel", "title", "severity", "dueDate", "accountId"];
+const LIST_VARIABLES = ["recordType", "sourceTable", "recordKey", "flagLabel", "title", "severity", "dueDate", "accountId",
+  "sentBackNote", "sentBackByName", "sentBackAt", "sentBackFrom"];   // a reconciliation task sent back to the team
 
 // Tasklist returns 50 tasks per search unless asked otherwise, so page through with searchAfter
 // until a short page: with more than 50 open tasks the rest were silently missing (live, 2026-09-25).

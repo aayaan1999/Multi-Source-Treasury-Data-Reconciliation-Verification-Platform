@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockedReason, decisionLabel, stages, stepOf } from "./reconTask";
+import { blockedReason, carryBadge, carryText, decisionLabel, isSentBack, sentBackText, stages, stepOf } from "./reconTask";
 
 describe("reconciliation task helpers", () => {
   it("knows each step by its BPMN id or its name", () => {
@@ -10,9 +10,10 @@ describe("reconciliation task helpers", () => {
   });
 
   it("words the bulk decision, including records left out", () => {
-    expect(decisionLabel("Accept", 0, 4)).toBe("Accept all");
-    expect(decisionLabel("Accept", 1, 4)).toBe("Accept all except 1");
-    expect(decisionLabel("Accept", 0, 1)).toBe("Accept");
+    expect(decisionLabel("Approve changes", "Approve all changes", 0, 4)).toBe("Approve all changes");
+    expect(decisionLabel("Approve changes", "Approve all changes", 1, 4)).toBe("Approve all changes except 1");
+    expect(decisionLabel("Approve changes", "Approve all changes", 0, 1)).toBe("Approve changes");
+    expect(decisionLabel("Assign to CFO", "Assign to CFO", 2, 5)).toBe("Assign to CFO except 2");
   });
 
   it("two different people: never approve your own decision or sign off a run you decided in", () => {
@@ -23,6 +24,23 @@ describe("reconciliation task helpers", () => {
     expect(blockedReason("CFO", cfo, { decidedBy: 1 })).toBeNull();
     expect(blockedReason("SIGNOFF", cfo, { deciders: [1, 3, 3] })).toBe("You decided 2 tasks in this run, so a different person has to sign it off.");
     expect(blockedReason("SIGNOFF", { user_id: 4, role: "admin" }, { deciders: [1, 3] })).toBeNull();
+  });
+
+  it("marks a task sent back to the team, and says who sent it back, from where, when and why", () => {
+    const vars = { sentBackAt: "2026-09-30T10:00:00Z", sentBackByName: "CFO", sentBackFrom: "RUN_SIGNOFF", sentBackNote: "Check again" };
+    expect(isSentBack({ taskDefinitionId: "UserTask_TeamReview", vars })).toBe(true);
+    expect(isSentBack({ taskDefinitionId: "UserTask_CfoApproval", vars })).toBe(false);     // back at the CFO: not the team's
+    expect(isSentBack({ taskDefinitionId: "UserTask_TeamReview", vars: {} })).toBe(false);
+    expect(sentBackText(vars)).toBe("Sent back by CFO at run sign-off on 30 Sep 2026: Check again");
+    expect(sentBackText({})).toBeNull();
+  });
+
+  it("marks a task carried over at a sign-off, and escalated after the limit", () => {
+    expect(carryBadge({ carried_count: 2, escalated: false })).toBe("Carried over ×2");
+    expect(carryBadge({ carried_count: 3, escalated: true })).toBe("Escalated · carried ×3");
+    expect(carryBadge(undefined)).toBeNull();
+    expect(carryText({ carried_count: 1, carried_since: "2026-09-29" })).toBe("Carried over from 29 Sep 2026: still open at 1 sign-off, so it's a high priority.");
+    expect(carryText({})).toBeNull();
   });
 
   it("the step tracker says who acts, what's happening, and why the CFO is needed", () => {

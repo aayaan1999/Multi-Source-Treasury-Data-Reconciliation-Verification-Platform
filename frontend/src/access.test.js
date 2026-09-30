@@ -12,7 +12,7 @@ describe("who sees what (specs/user-roles.md)", () => {
   });
 
   it("each person's menu lists only their screens; a group left with one screen becomes a tab", () => {
-    expect(labels(userFor("approver"))).toEqual(["Executive summary", "Portfolio & credit risk",
+    expect(labels(userFor("approver"))).toEqual(["Data ingestion", "Executive summary", "Portfolio & credit risk",
       "Analysis & reporting: Branch & segment, Scenario modelling, Regulatory reporting", "Reconciliation", "Tasks", "Audit & Oversight", "AI assistant"]);
     expect(labels(userFor("analyst"))).toEqual(["Data ingestion", "Executive summary", "Reconciliation", "Tasks", "AI assistant"]);
     expect(labels(userFor("compliance"))).toEqual(["Executive summary", "Tasks", "AI assistant"]);

@@ -127,10 +127,11 @@ def test_run_all_and_sync_start_the_pipeline_job(client, admin, monkeypatch, no_
     assert client.post(f"{API}/ingestion/sources/core_files/sync", headers=admin).json()["run_id"] == 42
 
 
-def test_only_the_cfo_or_an_admin_can_connect_or_run(client, auth):
-    assert client.post(f"{API}/ingestion/sources/salesforce/connect", headers=auth, json={"values": SALESFORCE}).status_code == 403
-    assert client.post(f"{API}/ingestion/run", headers=auth).status_code == 403
-    assert client.delete(f"{API}/ingestion/sources/salesforce", headers=auth).status_code == 403
+def test_only_the_cfo_or_an_admin_can_connect_or_run(client):
+    analyst = login(client, "recon.analyst@bankx.demo")          # sees Data ingestion, read only
+    assert client.post(f"{API}/ingestion/sources/salesforce/connect", headers=analyst, json={"values": SALESFORCE}).status_code == 403
+    assert client.post(f"{API}/ingestion/run", headers=analyst).status_code == 403
+    assert client.delete(f"{API}/ingestion/sources/salesforce", headers=analyst).status_code == 403
 
 
 def test_loads_recorded_by_source_notebooks_appear_under_recent_ingestions(client, admin, db):

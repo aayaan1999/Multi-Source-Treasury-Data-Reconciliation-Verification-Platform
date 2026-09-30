@@ -21,7 +21,7 @@ def headers(client, who):
 
 # (login, path, allowed) - one screen each role uses and one it doesn't
 @pytest.mark.parametrize("who, path, allowed", [
-    ("cfo", "/portfolio/stage-summary", True), ("cfo", "/ingestion/overview", False),
+    ("cfo", "/portfolio/stage-summary", True), ("cfo", "/ingestion/overview", True),      # the CFO sees every screen
     ("cro", "/scenario/snapshot", True), ("cro", "/reconciliation/runs", False),
     ("recon.analyst", "/reconciliation/runs", True), ("recon.analyst", "/portfolio/stage-summary", False),
     ("reporting", "/reports", True), ("reporting", "/performance/branches", False),

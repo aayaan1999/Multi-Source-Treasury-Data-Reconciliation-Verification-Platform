@@ -119,9 +119,9 @@ async def recon_approve(job: Job) -> dict:
 
 async def recon_send_back(job: Job) -> dict:
     v = job.variables
-    _with_conn(recon_tasks_db.send_back, v["recordType"], v["recordKey"], v.get("sentBackByUserId"), v.get("sendBackNote"))
-    # The team sees the CFO's reason; the old decision's outcome is cleared for the next round.
-    return {"decisionError": "", "approvalError": "", "sentBackNote": v.get("sendBackNote") or ""}
+    sent_back = _with_conn(recon_tasks_db.send_back, v["recordType"], v["recordKey"], v.get("sentBackByUserId"), v.get("sendBackNote"))
+    # The team's task says who sent it back, from which step and why; the last round's refusals are cleared.
+    return {"decisionError": "", "approvalError": "", **sent_back}
 
 
 async def recon_close_run(job: Job) -> dict:

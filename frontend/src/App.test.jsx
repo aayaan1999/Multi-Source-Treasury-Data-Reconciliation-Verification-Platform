@@ -104,7 +104,8 @@ describe("sign in", () => {
   it("a screen someone doesn't use sends them to their own home, and the menu only lists their screens", async () => {
     stubApi();
     signIn();
-    renderApp("/ingestion");                                   // the CFO doesn't use Data ingestion
+    sessionStorage.setItem("bdp_user", JSON.stringify({ ...userFor("risk"), access: { ...userFor("risk").access, home: "/" } }));
+    renderApp("/ingestion");                                   // the CRO doesn't use Data ingestion
     expect(await screen.findByRole("list", { name: "Key indicators" })).toBeInTheDocument();
     const nav = screen.getByRole("navigation", { name: "Screens" });
     expect(within(nav).queryByRole("link", { name: "Data ingestion" })).toBeNull();

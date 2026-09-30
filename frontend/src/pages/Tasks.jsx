@@ -12,7 +12,7 @@ import { formatDateTime, formatValue } from "../kpi/format";
 import ApprovalChain from "../workflow/ApprovalChain";
 import { TRANSACTION_FLAGS, alertType } from "../workflow/flagTypes";
 import ReconTaskPanel from "../reconciliation/ReconTaskPanel";
-import { RECON_KINDS } from "../reconciliation/reconTask";
+import { carryBadge, isSentBack, RECON_KINDS } from "../reconciliation/reconTask";
 import { isMyTask, roleTitle } from "../access";
 import CaseReviewPanel from "../workflow/CaseReviewPanel";
 import EntityMatchPanel from "../workflow/EntityMatchPanel";
@@ -263,6 +263,8 @@ const RECORD_TYPE_LABEL = {
   reconciliation: "Reconciliation: rows not loaded", recon_group: "Reconciliation: data differs", recon_run: "Reconciliation: run sign-off",
 };
 const RECON_FILTER = "__reconciliation";
+const SENT_BACK_FILTER = "__sent_back";
+const CARRIED_FILTER = "__carried";
 const SEVERITY_LABEL = { HIGH: "High", MEDIUM: "Medium", LOW: "Low" };
 
 const SOURCE_TABLE_LABEL = {
@@ -308,18 +310,28 @@ async function loadTasks() {
   // come from one /workflow/breaches call; if it fails the Record cell falls back to "Breach #id".
   const txnIds = [...new Set(tasks.filter((t) => t.vars.sourceTable === "transactions").map((t) => t.vars.recordKey))];
   const hasBreaches = tasks.some((t) => t.vars.sourceTable === "breaches");
+  const hasRecon = tasks.some((t) => ["reconciliation", "recon_group"].includes(t.vars.recordType));
   // Due days come from the task policy (specs/task-cases.md); without it, only cases show a due date.
-  const [accountIds, breaches, policy] = await Promise.all([
+  // Tasks carried over at a sign-off (specs/reconciliation-approvals.md section 10): the database knows,
+  // not the task's variables (a running process's variables are fixed at its start).
+  const [accountIds, breaches, policy, carried] = await Promise.all([
     txnIds.length ? api.lookupAccountIds(txnIds) : {},
     hasBreaches ? api.breaches().catch(() => []) : [],
     api.taskPolicy().catch(() => []),
+    hasRecon ? api.reconCarried().catch(() => ({})) : {},
   ]);
+  const today = new Date().toISOString().slice(0, 10);
   const breachById = Object.fromEntries(breaches.map((b) => [String(b.breach_id), b]));
   const dueDays = policy.find((p) => p.key === "task.due_days")?.value;
   return tasks
     .map((t) => {
       const breach = t.vars.sourceTable === "breaches" ? breachById[t.vars.recordKey] : undefined;
-      return { ...t, accountId: accountIds[t.vars.recordKey] || t.vars.accountId, breach, severity: t.vars.severity || null, due: taskDue(t, dueDays, breach) };
+      const carry = carried?.[t.vars.recordType]?.[String(t.vars.recordKey)];
+      return {
+        ...t, accountId: accountIds[t.vars.recordKey] || t.vars.accountId, breach, carry,
+        // Carried over: a high priority, due today.
+        severity: carry ? "HIGH" : t.vars.severity || null, due: carry ? today : taskDue(t, dueDays, breach),
+      };
     })
     .sort(byUrgency());
 }
@@ -334,12 +346,17 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
   const [nameFilter, setNameFilter] = useState("");
 
   // Only this person's tasks (specs/user-roles.md): by record type, and for reconciliation by step.
-  const mine = useMemo(() => (data || []).filter((t) => isMyTask(user, t)), [data, user]);
+  // Sent back to the team first, then escalated and carried-over tasks, then by urgency (the list's own order).
+  const rank = (t) => (isSentBack(t) ? 0 : t.carry?.escalated ? 1 : t.carry ? 2 : 3);
+  const mine = useMemo(() => (data || []).filter((t) => isMyTask(user, t)).sort((a, b) => rank(a) - rank(b)), [data, user]);
   const myTypes = useMemo(() => new Set(mine.map((t) => t.vars.recordType)), [mine]);
   const filtered = useMemo(() => {
     return mine.filter((t) => {
       if (completedIds.has(t.id)) return false;
-      if (typeFilter === RECON_FILTER ? !RECON_KINDS.includes(t.vars.recordType) : typeFilter && t.vars.recordType !== typeFilter) return false;
+      if (typeFilter === CARRIED_FILTER ? !t.carry
+        : typeFilter === SENT_BACK_FILTER ? !isSentBack(t)
+        : typeFilter === RECON_FILTER ? !RECON_KINDS.includes(t.vars.recordType)
+        : typeFilter && t.vars.recordType !== typeFilter) return false;
       if (nameFilter && !t.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
       return true;
     });
@@ -363,6 +380,8 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
           className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40"
         >
           <option value="">All types</option>
+          {mine.some(isSentBack) && <option value={SENT_BACK_FILTER}>Sent back to me</option>}
+          {mine.some((t) => t.carry) && <option value={CARRIED_FILTER}>Carried over</option>}
           {RECON_KINDS.filter((k) => myTypes.has(k)).length > 1 && <option value={RECON_FILTER}>Reconciliation (all)</option>}
           {Object.entries(RECORD_TYPE_LABEL).filter(([value]) => myTypes.has(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -380,7 +399,9 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
         ]}
         rows={filtered}
         rowKey={(t) => t.id}
-        rowFlag={(t) => (isOverdue(t.due) ? { kind: "loss", label: "Overdue" } : null)}
+        rowFlag={(t) => (isSentBack(t) ? { kind: "loss", label: isOverdue(t.due) ? "Sent back · overdue" : "Sent back" }
+          : t.carry ? { kind: t.carry.escalated ? "loss" : "watch", label: carryBadge(t.carry) }
+          : isOverdue(t.due) ? { kind: "loss", label: "Overdue" } : null)}
         selectedKey={selectedTaskId}
         onRowClick={(t) => onSelect(t)}
         emptyText={user?.access?.tasks?.types?.includes("report")

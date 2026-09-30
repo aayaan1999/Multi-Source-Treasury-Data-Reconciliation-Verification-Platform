@@ -420,6 +420,13 @@ CREATE TABLE reconciliation_groups (
     cfo_required              boolean NOT NULL DEFAULT false,
     cfo_reason                text,
     run_id                    bigint,
+    sent_back_by              integer REFERENCES users (user_id),     -- the last send-back (migration 022)
+    sent_back_at              timestamptz,
+    sent_back_from            text CHECK (sent_back_from IN ('CFO_APPROVAL', 'RUN_SIGNOFF')),
+    sent_back_note            text,
+    carried_count             integer NOT NULL DEFAULT 0,             -- carry-over at sign-off (migration 023)
+    carried_since             date,
+    escalated_at              timestamptz,
     title                     text          -- the task's one-line title, set when it starts
 );
 
@@ -451,6 +458,9 @@ CREATE TABLE reconciliation_runs (
     signed_at             timestamptz,
     sign_note             text,
     created_at            timestamptz NOT NULL DEFAULT now(),
+    signed_tasks          integer,                 -- what the sign-off covered (migration 023)
+    carried_tasks         integer,
+    carried_to_run_id     bigint REFERENCES reconciliation_runs (run_id),
     UNIQUE (source_system, run_key)
 );
 
@@ -488,6 +498,13 @@ CREATE TABLE pipeline_reconciliation (
     cfo_required            boolean NOT NULL DEFAULT false,
     cfo_reason              text,
     run_id                  bigint REFERENCES reconciliation_runs (run_id),
+    sent_back_by            integer REFERENCES users (user_id),     -- the last send-back (migration 022)
+    sent_back_at            timestamptz,
+    sent_back_from          text CHECK (sent_back_from IN ('CFO_APPROVAL', 'RUN_SIGNOFF')),
+    sent_back_note          text,
+    carried_count           integer NOT NULL DEFAULT 0,             -- carry-over at sign-off (migration 023)
+    carried_since           date,
+    escalated_at            timestamptz,
     title                   text
 );
 
@@ -837,6 +854,11 @@ INSERT INTO app_settings (key, value, description) VALUES
        "round_min_usd": 5000, "round_min_count": 3, "split_min_accounts": 2}',
      'Thresholds for Notebook 5''s transaction rules (large amount, velocity, structuring, dormant account, pass-through, unusual for segment, round amounts, split across accounts)')
 ON CONFLICT (key) DO NOTHING;
+
+INSERT INTO app_settings (key, value, description) VALUES
+    ('recon.signoff',
+     '{"cutoff_time": "08:00", "utc_offset_hours": 3, "carry_limit": 3}',
+     'Run sign-off: from the cut-off (bank time, UTC + offset) on the day after a run, the CFO can sign off its decided tasks and carry the open ones to the next day; a task carried carry_limit times is escalated');
 
 INSERT INTO app_settings (key, value, description) VALUES
     ('recon.rules',

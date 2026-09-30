@@ -59,9 +59,10 @@ def group_detail(group_id: int):
     """A group and every break in it, for the review popup (carve-outs are picked from this list).
     Breaks decided in this group keep pointing at it; carved-out ones have left it."""
     g = query_one(
-        """SELECT g.*, ud.name AS decided_by_name, ua.name AS approved_by_name
+        """SELECT g.*, ud.name AS decided_by_name, ua.name AS approved_by_name, us.name AS sent_back_by_name
            FROM reconciliation_groups g LEFT JOIN users ud ON ud.user_id = g.decided_by
-           LEFT JOIN users ua ON ua.user_id = g.approved_by WHERE g.group_id = %s""",
+           LEFT JOIN users ua ON ua.user_id = g.approved_by LEFT JOIN users us ON us.user_id = g.sent_back_by
+           WHERE g.group_id = %s""",
         (group_id,),
     )
     if g is None:
@@ -141,9 +142,11 @@ PIPELINE_COLUMNS = """p.recon_id, p.ingest_batch_id, p.source_system, p.source_c
        p.received_rows, p.clean_rows, p.rejected_rows, p.amount_column, p.unreadable_amount_rows,
        p.amounts_by_currency, p.has_gap, p.status, p.detected_at, p.note, p.title, p.run_id,
        p.decision, p.decided_by, ud.name AS decided_by_name, p.decided_at, p.cfo_required, p.cfo_reason,
-       p.approved_by, ua.name AS approved_by_name, p.approved_at"""
+       p.approved_by, ua.name AS approved_by_name, p.approved_at,
+       p.sent_back_at, p.sent_back_from, p.sent_back_note, us.name AS sent_back_by_name,
+       p.carried_count, p.carried_since, p.escalated_at"""
 PIPELINE_FROM = """pipeline_reconciliation p LEFT JOIN users ud ON ud.user_id = p.decided_by
-       LEFT JOIN users ua ON ua.user_id = p.approved_by"""
+       LEFT JOIN users ua ON ua.user_id = p.approved_by LEFT JOIN users us ON us.user_id = p.sent_back_by"""
 
 # The newest run of each source: a run is one delivery, and older runs' items stay as history.
 LATEST_RUN_PER_SOURCE = """(p.source_system, p.ingest_batch_id) IN (
@@ -293,13 +296,19 @@ def propose_correction(recon_id: int, body: CorrectionRequest, user: dict = Depe
 # ---- Runs and their sign-off (specs/reconciliation-approvals.md) ---------------------------------
 
 RUN_COLUMNS = """r.run_id, r.source_system, r.run_key, r.run_date, r.status, r.signed_at, r.sign_note,
-       us.name AS signed_by_name, r.created_at,
+       us.name AS signed_by_name, r.created_at, r.signed_tasks, r.carried_tasks, r.carried_to_run_id,
+       (SELECT count(*) FROM pipeline_reconciliation p WHERE p.run_id = r.run_id AND p.carried_count > 0 AND p.status IN ('OPEN', 'WITH_TEAM'))
+     + (SELECT count(*) FROM reconciliation_groups g WHERE g.run_id = r.run_id AND g.carried_count > 0 AND g.status IN ('PENDING', 'OPEN')) AS carried_in,
+       (SELECT count(*) FROM pipeline_reconciliation p WHERE p.run_id = r.run_id AND p.escalated_at IS NOT NULL AND p.status IN ('OPEN', 'WITH_TEAM'))
+     + (SELECT count(*) FROM reconciliation_groups g WHERE g.run_id = r.run_id AND g.escalated_at IS NOT NULL AND g.status IN ('PENDING', 'OPEN')) AS escalated,
        (SELECT count(*) FROM pipeline_reconciliation p WHERE p.run_id = r.run_id AND p.status <> 'SUPERSEDED')
      + (SELECT count(*) FROM reconciliation_groups g WHERE g.run_id = r.run_id) AS tasks,
        (SELECT count(*) FROM pipeline_reconciliation p WHERE p.run_id = r.run_id AND p.status IN ('DECIDED', 'APPROVED'))
      + (SELECT count(*) FROM reconciliation_groups g WHERE g.run_id = r.run_id AND g.status = 'CLOSED') AS decided,
        (SELECT count(*) FROM pipeline_reconciliation p WHERE p.run_id = r.run_id AND p.status = 'AWAITING_CFO')
-     + (SELECT count(*) FROM reconciliation_groups g WHERE g.run_id = r.run_id AND g.status = 'AWAITING_CFO') AS awaiting_cfo"""
+     + (SELECT count(*) FROM reconciliation_groups g WHERE g.run_id = r.run_id AND g.status = 'AWAITING_CFO') AS awaiting_cfo,
+       (SELECT count(*) FROM pipeline_reconciliation p WHERE p.run_id = r.run_id AND p.sent_back_at IS NOT NULL AND p.status IN ('OPEN', 'WITH_TEAM'))
+     + (SELECT count(*) FROM reconciliation_groups g WHERE g.run_id = r.run_id AND g.sent_back_at IS NOT NULL AND g.status IN ('PENDING', 'OPEN')) AS sent_back"""
 RUN_FROM = "reconciliation_runs r LEFT JOIN users us ON us.user_id = r.signed_by"
 
 
@@ -313,6 +322,24 @@ def _run_brief(run_id):
         return None
     run = query_one(f"SELECT {RUN_COLUMNS} FROM {RUN_FROM} WHERE r.run_id = %s", (run_id,))
     return _with_name(run) if run else None
+
+
+@router.get("/carried")
+def carried_tasks():
+    """Open reconciliation tasks carried over at a sign-off, by kind and id: how many times, since when,
+    and whether they're escalated. The Tasks list marks and sorts them from this."""
+    rows = query(
+        """SELECT 'reconciliation' AS kind, recon_id::text AS id, carried_count, carried_since, escalated_at
+           FROM pipeline_reconciliation WHERE carried_count > 0 AND status IN ('OPEN', 'WITH_TEAM')
+           UNION ALL
+           SELECT 'recon_group', group_id::text, carried_count, carried_since, escalated_at
+           FROM reconciliation_groups WHERE carried_count > 0 AND status IN ('PENDING', 'OPEN')"""
+    )
+    out = {"reconciliation": {}, "recon_group": {}}
+    for r in rows:
+        out[r["kind"]][r["id"]] = {"carried_count": r["carried_count"], "carried_since": r["carried_since"],
+                                   "escalated": r["escalated_at"] is not None}
+    return out
 
 
 @router.get("/runs")
@@ -335,12 +362,14 @@ def run_detail(run_id: int):
     tasks = query(
         """SELECT 'reconciliation' AS kind, p.recon_id AS id, p.title, p.status, p.decision, ud.name AS decided_by_name,
                   p.decided_by, ua.name AS approved_by_name, p.cfo_required, p.cfo_reason,
-                  (SELECT count(*) FROM reconciliation_corrections c WHERE c.recon_id = p.recon_id AND c.status <> 'WITHDRAWN') AS fixes
+                  (SELECT count(*) FROM reconciliation_corrections c WHERE c.recon_id = p.recon_id AND c.status <> 'WITHDRAWN') AS fixes,
+                  p.carried_count, p.escalated_at IS NOT NULL AS escalated
            FROM pipeline_reconciliation p LEFT JOIN users ud ON ud.user_id = p.decided_by LEFT JOIN users ua ON ua.user_id = p.approved_by
            WHERE p.run_id = %s AND p.status <> 'SUPERSEDED'
            UNION ALL
            SELECT 'recon_group', g.group_id, g.title, g.status, g.decision, ud.name, g.decided_by, ua.name, g.cfo_required, g.cfo_reason,
-                  (SELECT count(*) FROM reconciliation_corrections c WHERE c.group_id = g.group_id AND c.status <> 'WITHDRAWN')
+                  (SELECT count(*) FROM reconciliation_corrections c WHERE c.group_id = g.group_id AND c.status <> 'WITHDRAWN'),
+                  g.carried_count, g.escalated_at IS NOT NULL
            FROM reconciliation_groups g LEFT JOIN users ud ON ud.user_id = g.decided_by LEFT JOIN users ua ON ua.user_id = g.approved_by
            WHERE g.run_id = %s
            ORDER BY 9 DESC, 3""",
@@ -349,6 +378,7 @@ def run_detail(run_id: int):
     for t in tasks:
         t["title"] = t["title"] or (f"Item #{t['id']}" if t["kind"] == "reconciliation" else f"Group #{t['id']}")
         t["decided"] = t["status"] in ("DECIDED", "APPROVED", "CLOSED")
+        t["awaiting_cfo"] = t["status"] == "AWAITING_CFO"
     counts = {}
     for t in tasks:
         if t["decided"] and t["decision"]:
@@ -361,11 +391,17 @@ def run_detail(run_id: int):
         parts = ", ".join(f"{n} {words[d]}" for d, n in counts.items())
         headline = f"All {len(tasks)} task{'' if len(tasks) == 1 else 's'} from the {run['name']} are decided: {parts}."
     else:
-        headline = f"{decided} of {len(tasks)} tasks from the {run['name']} are decided."
+        open_n = len(tasks) - decided
+        headline = (f"{decided} of {len(tasks)} tasks from the {run['name']} are decided; the {open_n} still open "
+                    f"will be carried over to the next day with a high priority.")
+    waiting = sum(t["awaiting_cfo"] for t in tasks)
     run["tasks"] = tasks
     run["summary"] = {
         "headline": headline,
-        "job": "Check the decisions, then sign off the run, or send back the tasks that need another look (say why).",
+        "job": ((f"First approve or send back the {waiting} task{'' if waiting == 1 else 's'} waiting for you. " if waiting else "")
+                + ("Check the decisions, then sign off the decided tasks (say why the open ones are carried over), or send back "
+                   "the ones that need another look." if decided < len(tasks) else
+                   "Check the decisions, then sign off the run, or send back the tasks that need another look (say why).")),
     }
     return run
 

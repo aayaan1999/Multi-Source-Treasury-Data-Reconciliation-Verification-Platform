@@ -31,7 +31,7 @@ Seven users, each a real job at the bank, each tied to the work the platform alr
 
 | # | User | Does in the platform | Home screen | Role (permissions) |
 |---|---|---|---|---|
-| 1 | **Chief Financial Officer (CFO)** | Watches the headline ratios; approves important reconciliation tasks and data fixes; signs off each reconciliation run; gives final approval on regulatory returns; can start a data refresh | Executive summary | approver |
+| 1 | **Chief Financial Officer (CFO)** | Watches the headline ratios; approves important reconciliation tasks and data fixes; signs off each reconciliation run; gives final approval on regulatory returns; can connect sources and run the pipeline | Executive summary | approver |
 | 2 | **Chief Risk Officer (CRO)** | Owns credit risk and limits: portfolio, IFRS 9 staging, stress scenarios; handles limit-breach tasks; reviews regulatory returns before the CFO | Portfolio & credit risk | risk (new) |
 | 3 | **Reconciliation Analyst** (Operations team) | Decides reconciliation tasks (rows not loaded, data differs), data-quality flags and possible duplicate customers; enters corrected values | Tasks, filtered to reconciliation | analyst |
 | 4 | **Regulatory Reporting Officer** | Prepares the regulator's returns, runs validation checks, exports PDF/Excel, answers review comments | Regulatory reporting | preparer (new) |
@@ -62,10 +62,10 @@ refused by the server, not just left off the menu.
 | Reconciliation | read | | ✓ | | | read | read |
 | Tasks | ✓ | ✓ | ✓ | ✓ | ✓ | | ✓ |
 | Audit & Oversight | ✓ | | | | | ✓ | ✓ |
-| Data ingestion | refresh only | | read | | | read | ✓ |
+| Data ingestion | ✓ | | read | | | read | ✓ |
 | AI assistant | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-Seven screens for the CFO instead of eleven; four for the analyst; three for compliance.
+The CFO sees every screen (Data ingestion added 2026-09-30 at the manager's request); four for the analyst; three for compliance.
 
 ## 4. Which tasks each person gets
 

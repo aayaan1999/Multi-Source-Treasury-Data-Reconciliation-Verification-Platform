@@ -10,24 +10,59 @@ const STEPS = {
   UserTask_RunSignoff: "SIGNOFF", "Run sign-off": "SIGNOFF",
 };
 
+const SENT_BACK_FROM = { CFO_APPROVAL: "CFO approval", RUN_SIGNOFF: "run sign-off" };
+
+/** Whether this task is back with the team because the CFO sent it back (at CFO approval or run sign-off). */
+export function isSentBack(task) {
+  return Boolean(task.vars?.sentBackAt) && stepOf(task) === "TEAM";
+}
+
+/** "Sent back by CFO at run sign-off on 30 Sep 2026: <why>", or null when it wasn't sent back. */
+export function sentBackText({ sentBackByName, sentBackAt, sentBackFrom, sentBackNote } = {}) {
+  if (!sentBackAt) return null;
+  const d = new Date(sentBackAt);   // "30 Sep 2026", the app's date style (a locale might write "Sept")
+  const when = `${d.getDate()} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()]} ${d.getFullYear()}`;
+  const step = SENT_BACK_FROM[sentBackFrom];
+  return `Sent back by ${sentBackByName || "the CFO"}${step ? ` at ${step}` : ""} on ${when}${sentBackNote ? `: ${sentBackNote}` : "."}`;
+}
+
+const DAY = (iso) => {
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+  return `${d.getDate()} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()]} ${d.getFullYear()}`;
+};
+
+/** A task carried past a sign-off still open: "Carried over ×2", "Escalated · carried ×3" (the list's badge). */
+export function carryBadge(carry) {
+  if (!carry?.carried_count) return null;
+  return carry.escalated ? `Escalated · carried ×${carry.carried_count}` : `Carried over ×${carry.carried_count}`;
+}
+
+/** The popup's line: "Carried over from 29 Sep 2026: still open at 2 sign-offs. Escalated: ..." */
+export function carryText({ carried_count: n, carried_since: since, escalated_at: escalated } = {}) {
+  if (!n) return null;
+  return `Carried over from ${DAY(since)}: still open at ${n} sign-off${n === 1 ? "" : "s"}, so it's a high priority.`
+    + (escalated ? " Escalated: it has been carried the maximum number of times; decide it today." : "");
+}
+
 /** Which step a Tasklist task is: TEAM, CFO or SIGNOFF. */
 export function stepOf(task) {
   return STEPS[task.taskDefinitionId] || STEPS[task.name] || null;
 }
 
-// The team's three decisions: [key, button, what it means].
+// The team's three decisions: [key, button for one record, button for a group, what it means].
 export const DECISIONS = [
-  ["ACCEPT", "Accept", "The difference is explained and fine as it is."],
-  ["CORRECT", "Correct our data", "Our copy is wrong: fix it (the CFO approves every fix)."],
-  ["DISMISS", "Dismiss", "Not a real problem."],
+  ["ACCEPT", "Approve changes", "Approve all changes", "The difference is explained and fine as it is."],
+  ["CORRECT", "Assign to CFO", "Assign to CFO", "Our copy is wrong: propose the fixed values; the CFO approves them."],
+  ["DISMISS", "Dismiss", "Dismiss all", "Not a real problem."],
 ];
 export const DECISION_PAST = { ACCEPT: "accepted", CORRECT: "corrected", DISMISS: "dismissed" };
 export const CFO_ROLES = ["approver", "admin"];
 
-/** "Accept all", or "Accept all except 3" once records are left out of a group. */
-export function decisionLabel(label, leftOut, total) {
-  if (total <= 1) return label;
-  return leftOut ? `${label} all except ${leftOut}` : `${label} all`;
+/** "Approve all changes", or "Approve all changes except 3" once records are left out of a group; the
+ * one-record wording ("Approve changes") when there's nothing to leave out. */
+export function decisionLabel(one, group, leftOut, total) {
+  if (total <= 1) return one;
+  return leftOut ? `${group} except ${leftOut}` : group;
 }
 
 /** Why this person can't approve or sign off, or null when they can. */

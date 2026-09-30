@@ -34,8 +34,9 @@ def _money(x: float) -> str:
 
 
 def run_name(source_system: str, run_date, run_key: str = "") -> str:
-    """E.g. "core banking comparison of 25 Sep 2026"."""
-    part = f" (part {run_key.split('#')[1]})" if "#" in (run_key or "") else ""
+    """E.g. "core banking comparison of 25 Sep 2026", "... of 30 Sep 2026 (carried over)"."""
+    tail = run_key.split("#")[1] if "#" in (run_key or "") else ""
+    part = " (carried over)" if tail.startswith("c") else f" (part {tail})" if tail else ""
     return f"{RUN_NAME.get(source_system, source_system + ' run')} of {_day(run_date)}{part}"
 
 
@@ -56,8 +57,8 @@ def pipeline_summary(item: dict, records: list) -> dict:
         "headline": headline,
         "reasons": reasons,
         "money": f"Not in our books because of this: {', '.join(gaps)}." if gaps else None,
-        "job": ("Decide what happens to these rows. Correct our data: enter the right values below and the rows load in the "
-                "next run. Accept: they stay out and the gap is explained. Dismiss: not a real problem."),
+        "job": ("Decide what happens to these rows. Assign to CFO: enter the right values below; once the CFO approves them "
+                "the rows load in the next run. Approve changes: they stay out and the gap is explained. Dismiss: not a real problem."),
     }
 
 
@@ -99,8 +100,8 @@ def group_summary(group: dict, breaks: list) -> dict:
                         f"({_money(sum(abs(d) for d in diffs))} in total).")
         else:
             headline = f"{_plural(n, entity)} have a different {field} in {system}."
-    job = ("Decide for the whole group. Accept: the difference is explained. "
-           + ("" if missing else f"Correct our data: fix our values ({system}'s value is filled in, and you can change it). ")
+    job = ("Decide for the whole group. Approve all changes: the difference is explained. "
+           + ("" if missing else f"Assign to CFO: propose fixed values ({system}'s value is filled in, and you can change it) for the CFO to approve. ")
            + "Dismiss: not a real difference.")
     if n > 1:
         job += " Leave out any record that needs its own look; it becomes a task of its own."

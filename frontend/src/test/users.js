@@ -3,7 +3,7 @@
 const ACCESS = {
   approver: {
     title: "Chief Financial Officer (CFO)", home: "/",
-    screens: { summary: "full", portfolio: "full", performance: "full", scenario: "full", reports: "full", reconciliation: "read", tasks: "full", audit: "full", ask: "full" },
+    screens: { summary: "full", portfolio: "full", performance: "full", scenario: "full", reports: "full", reconciliation: "read", tasks: "full", audit: "full", ingestion: "full", ask: "full" },
     tasks: { groups: ["cfo"] },
   },
   risk: {

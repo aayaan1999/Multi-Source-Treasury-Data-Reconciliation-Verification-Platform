@@ -24,6 +24,9 @@ import reconciliation_db  # noqa: E402
 API = "/api/v1"
 OLD, NEW = "CORE_CSV-20260928T070000Z-aaaa0001", "CORE_CSV-20260929T130000Z-bbbb0002"
 SEEN = datetime(2026, 9, 25, 6, tzinfo=timezone.utc)
+# "Now" for sign-off: before any run's 08:00 cut-off (bank time, UTC+3), and after the pipeline run's (29 Sep).
+BEFORE_CUTOFF = datetime(2026, 9, 25, 12, tzinfo=timezone.utc)
+AFTER_CUTOFF = datetime(2026, 9, 30, 6, tzinfo=timezone.utc)
 T12 = {"transaction_id": "TN12", "account_id": "ACN0001", "date": "2026-09-22", "amount": 4000.0,
        "currency": "USD", "type": "Deposit", "channel": "Cheque"}
 
@@ -163,14 +166,14 @@ def test_every_task_is_filed_under_its_run_and_no_run_is_ready_yet(conn, db):
     assert db.fetchone()[0] == 3                                  # the superseded item belongs to no run
     db.execute("SELECT count(*) FROM reconciliation_groups WHERE run_id IS NULL")
     assert db.fetchone()[0] == 0
-    assert recon_runs_db.fetch_ready(conn) == []
+    assert recon_runs_db.fetch_ready(conn, BEFORE_CUTOFF) == []
 
 
 # ---- the team's decision ----------------------------------------------------------------------------
 
 def test_a_decision_is_refused_with_a_reason_the_team_can_act_on(conn, db, ids, users):
     refused = recon_tasks_db.record_decision(conn, "reconciliation", ids["pipe_transactions"], "CORRECT", users["analyst"])
-    assert refused == {"decisionOk": False, "decisionError": "Enter at least one corrected value before choosing Correct our data."}
+    assert refused == {"decisionOk": False, "decisionError": "Enter at least one corrected value before choosing Assign to CFO."}
     assert not recon_tasks_db.record_decision(conn, "reconciliation", ids["pipe_transactions"], "ACCEPT", None)["decisionOk"]
     assert not recon_tasks_db.record_decision(conn, "reconciliation", ids["pipe_transactions"], "MAYBE", users["analyst"])["decisionOk"]
     missing = group_id(db, "missing in our data")
@@ -253,7 +256,12 @@ def test_the_cfo_approves_and_the_fix_is_approved_with_it(conn, db, ids, users):
 
 def test_the_cfo_sends_a_decision_back_and_the_team_decides_again(conn, db, users):
     minus9k = group_id(db, "-9,000.00")
-    recon_tasks_db.send_back(conn, "recon_group", minus9k, users["approver"], "These are fee reversals, not errors")
+    shown = recon_tasks_db.send_back(conn, "recon_group", minus9k, users["approver"], "These are fee reversals, not errors")
+    # What the team's task shows: who, from which step, when and why; and the reason in the group's comments.
+    assert (shown["sentBackByName"], shown["sentBackFrom"], shown["sentBackNote"]) == ("CFO", "CFO_APPROVAL", "These are fee reversals, not errors")
+    assert shown["sentBackAt"]
+    db.execute("SELECT comment_text FROM comments WHERE source_table = 'reconciliation_groups' AND record_key = %s", (str(minus9k),))
+    assert db.fetchall() == [("Sent back at CFO approval: These are fee reversals, not errors",)]
     assert status(db, "reconciliation_groups", "group_id", minus9k) == "OPEN"
     db.execute("SELECT DISTINCT status FROM reconciliation_corrections WHERE group_id = %s", (minus9k,))
     assert db.fetchall() == [("WITHDRAWN",)]
@@ -278,20 +286,20 @@ def test_the_cfo_sends_a_decision_back_and_the_team_decides_again(conn, db, user
 
 
 def test_a_run_is_ready_for_sign_off_only_once_every_task_is_decided(conn, db, ids, users):
-    assert recon_runs_db.fetch_ready(conn) == []                                 # two important items and one group wait for the CFO
+    assert recon_runs_db.fetch_ready(conn, BEFORE_CUTOFF) == []                                 # two important items and one group wait for the CFO
     for key in (ids["pipe_accounts"], ids["pipe_loans"]):
         assert recon_tasks_db.approve(conn, "reconciliation", key, users["approver"])["approvalOk"]
     missing = group_id(db, "missing in our data")
     recon_tasks_db.record_decision(conn, "recon_group", missing, "DISMISS", users["approver"])      # the CFO decides this one
     assert recon_tasks_db.approve(conn, "recon_group", missing, users["admin"])["approvalOk"]
     recon_runs_db.sync_runs(conn)
-    ready = {r["source_system"]: r for r in recon_runs_db.fetch_ready(conn)}
+    ready = {r["source_system"]: r for r in recon_runs_db.fetch_ready(conn, BEFORE_CUTOFF)}
     assert set(ready) == {"CORE_CSV", "neon"}
     assert recon_runs_db.title(ready["neon"]) == "Sign off the core banking comparison of 25 Sep 2026"
     assert recon_runs_db.process_variables(ready["CORE_CSV"])["title"] == "Sign off the core banking files of 29 Sep 2026"
     for key, r in enumerate(ready.values(), start=1):
         recon_runs_db.record_started(conn, r["run_id"], 7000 + key)
-    assert recon_runs_db.fetch_ready(conn) == []
+    assert recon_runs_db.fetch_ready(conn, BEFORE_CUTOFF) == []
 
 
 def test_the_sign_off_popup_lists_every_decision(client, auth, db):
@@ -313,7 +321,7 @@ def test_sign_off_is_refused_for_anyone_who_decided_a_task_or_isnt_the_cfo(conn,
     assert "Only the CFO or the Platform Administrator" in recon_runs_db.close_run(conn, neon, users["risk"])["signoffError"]
     assert recon_runs_db.close_run(conn, neon, users["approver"])["signoffError"] == \
         "CFO decided 1 task(s) in this run, so a different person has to sign it off."
-    assert recon_runs_db.close_run(conn, neon, users["admin"], "All explained") == {"signoffOk": True, "signoffError": ""}
+    assert recon_runs_db.close_run(conn, neon, users["admin"], "All explained", BEFORE_CUTOFF) == {"signoffOk": True, "signoffError": ""}
     assert recon_runs_db.close_run(conn, neon, users["admin"])["signoffOk"]            # a retried job
     db.execute("SELECT status, sign_note FROM reconciliation_runs WHERE run_id = %s", (neon,))
     assert db.fetchone() == ("SIGNED_OFF", "All explained")
@@ -333,8 +341,19 @@ def test_the_cfo_sends_named_tasks_back_and_they_reopen_in_the_same_run(conn, db
     assert status(db, "reconciliation_runs", "run_id", run) == "OPEN"
     db.execute("SELECT status FROM reconciliation_corrections WHERE recon_id = %s", (key,))
     assert db.fetchall() == [("WITHDRAWN",)]                                 # not applied yet, so withdrawn
-    assert [i["recon_id"] for i in reconciliation_db.fetch_unstarted(conn)] == [key]   # the bridge starts it again
-    assert recon_runs_db.fetch_ready(conn) == []
+    reopened = reconciliation_db.fetch_unstarted(conn)
+    assert [i["recon_id"] for i in reopened] == [key]                         # the bridge starts it again...
+    rules, due_days = reconciliation_db.rules(conn)
+    v = reconciliation_db.process_variables(reopened[0], rules, due_days)
+    assert (v["sentBackByName"], v["sentBackFrom"], v["sentBackNote"]) == ("CFO", "RUN_SIGNOFF", "Branch is wrong, it was an ATM deposit")
+    db.execute("SELECT comment_text FROM comments WHERE source_table = 'pipeline_reconciliation' AND record_key = %s", (str(key),))
+    assert db.fetchall()[-1] == ("Sent back at run sign-off: Branch is wrong, it was an ATM deposit",)   # ...saying why
+    assert recon_runs_db.fetch_ready(conn, BEFORE_CUTOFF) == []
+
+
+def test_the_reconciliation_tab_counts_what_was_sent_back(client, auth):
+    runs = {r["source_system"]: r for r in client.get(f"{API}/reconciliation/runs", headers=auth).json()}
+    assert runs["CORE_CSV"]["sent_back"] == 1
 
 
 def test_a_new_comparison_during_sign_off_starts_a_follow_on_run(conn, db, users):
@@ -355,3 +374,68 @@ def test_comments_can_be_left_on_a_run_sign_off(client, auth, db):
     db.execute("SELECT run_id FROM reconciliation_runs WHERE source_system = 'CORE_CSV'")
     body = {"source_table": "reconciliation_runs", "record_key": str(db.fetchone()[0]), "flag_label": "RECON_RUN", "comment_text": "Checked"}
     assert client.post(f"{API}/workflow/exceptions/comments", headers=auth, json=body).status_code == 200
+
+
+# ---- early-morning sign-off: sign off what's decided, carry the rest (section 7) -----------------------
+
+def test_from_the_cut_off_a_run_with_open_tasks_goes_to_sign_off(conn, db):
+    db.execute("SELECT run_id FROM reconciliation_runs WHERE source_system = 'CORE_CSV'")
+    run = db.fetchone()[0]                        # 2 tasks approved, the transactions gap reopened (open)
+    assert run not in [r["run_id"] for r in recon_runs_db.fetch_ready(conn, BEFORE_CUTOFF)]
+    assert run in [r["run_id"] for r in recon_runs_db.fetch_ready(conn, AFTER_CUTOFF)]    # 08:00 on 30 Sep has passed
+    recon_runs_db.record_started(conn, run, 7101)
+
+
+def test_signing_off_with_open_tasks_needs_the_cut_off_and_a_reason(conn, db, users):
+    db.execute("SELECT run_id FROM reconciliation_runs WHERE source_system = 'CORE_CSV'")
+    run = db.fetchone()[0]
+    assert recon_runs_db.close_run(conn, run, users["admin"], "why", BEFORE_CUTOFF)["signoffError"] == \
+        "1 task(s) aren't decided yet. Before the 08:00 cut-off a run is signed off only once every task is decided."
+    assert recon_runs_db.close_run(conn, run, users["admin"], "", AFTER_CUTOFF)["signoffError"] == \
+        "Say why the 1 open task(s) are carried over to the next day."
+    db.execute("UPDATE pipeline_reconciliation SET status = 'AWAITING_CFO' WHERE run_id = %s AND status = 'OPEN'", (run,))
+    assert recon_runs_db.close_run(conn, run, users["admin"], "why", AFTER_CUTOFF)["signoffError"] == \
+        "Approve or send back the 1 task(s) waiting for you first."        # the CFO's own approvals can't be carried
+    db.execute("UPDATE pipeline_reconciliation SET status = 'OPEN' WHERE run_id = %s AND status = 'AWAITING_CFO'", (run,))
+
+
+def test_the_cfo_signs_off_the_decided_tasks_and_the_open_one_is_carried(client, auth, conn, db, ids, users):
+    db.execute("SELECT run_id, run_date FROM reconciliation_runs WHERE source_system = 'CORE_CSV'")
+    run, run_date = db.fetchone()
+    assert recon_runs_db.close_run(conn, run, users["admin"], "Waiting on core banking ops", AFTER_CUTOFF) == \
+        {"signoffOk": True, "signoffError": ""}
+    db.execute("SELECT status, signed_tasks, carried_tasks, carried_to_run_id FROM reconciliation_runs WHERE run_id = %s", (run,))
+    status_, signed, carried, carry_run = db.fetchone()
+    assert (status_, signed, carried) == ("SIGNED_OFF", 2, 1)
+    db.execute("SELECT run_key, run_date, status FROM reconciliation_runs WHERE run_id = %s", (carry_run,))
+    assert db.fetchone() == (f"{NEW}#c1", date(2026, 9, 30), "OPEN")          # today, bank time
+    db.execute("SELECT run_id, carried_count, carried_since, escalated_at FROM pipeline_reconciliation WHERE recon_id = %s",
+               (ids["pipe_transactions"],))
+    assert db.fetchone() == (carry_run, 1, run_date, None)
+    recon_runs_db.sync_runs(conn)
+    db.execute("SELECT status FROM reconciliation_runs WHERE run_id = %s", (carry_run,))
+    assert db.fetchone()[0] == "OPEN"                                            # the delivery's carry-over run stays
+    assert client.get(f"{API}/reconciliation/carried", headers=auth).json()["reconciliation"] == {
+        str(ids["pipe_transactions"]): {"carried_count": 1, "carried_since": run_date.isoformat(), "escalated": False}}
+    runs = {r["source_system"]: r for r in client.get(f"{API}/reconciliation/runs", headers=auth).json()}
+    assert (runs["CORE_CSV"]["run_id"], runs["CORE_CSV"]["carried_in"], runs["CORE_CSV"]["name"]) == \
+        (carry_run, 1, "core banking files of 30 Sep 2026 (carried over)")
+    signed_off = client.get(f"{API}/reconciliation/runs/{run}", headers=auth).json()
+    assert (signed_off["signed_tasks"], signed_off["carried_tasks"]) == (2, 1)
+
+
+def test_a_task_carried_three_times_is_escalated(conn, db, ids, users):
+    db.execute("SELECT run_id FROM reconciliation_runs WHERE run_key = %s", (f"{NEW}#c1",))
+    carry_run = db.fetchone()[0]
+    db.execute("UPDATE pipeline_reconciliation SET carried_count = 2 WHERE recon_id = %s", (ids["pipe_transactions"],))
+    next_morning = datetime(2026, 10, 1, 6, tzinfo=timezone.utc)
+    assert carry_run in [r["run_id"] for r in recon_runs_db.fetch_ready(conn, next_morning)]
+    recon_runs_db.record_started(conn, carry_run, 7102)
+    assert recon_runs_db.close_run(conn, carry_run, users["admin"], "Still waiting", next_morning)["signoffOk"]
+    db.execute("SELECT carried_count, escalated_at IS NOT NULL FROM pipeline_reconciliation WHERE recon_id = %s", (ids["pipe_transactions"],))
+    assert db.fetchone() == (3, True)
+    db.execute("SELECT new_value FROM audit_log WHERE action = 'ESCALATED' AND object_id = %s", (str(ids["pipe_transactions"]),))
+    assert db.fetchone()[0] == "carried 3 times without a decision"
+    db.execute("SELECT run_key FROM reconciliation_runs WHERE run_id = (SELECT run_id FROM pipeline_reconciliation WHERE recon_id = %s)",
+               (ids["pipe_transactions"],))
+    assert db.fetchone()[0] == f"{NEW}#c2"

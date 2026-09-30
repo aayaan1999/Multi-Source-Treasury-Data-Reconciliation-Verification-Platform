@@ -7,7 +7,7 @@ import { formatDateTime } from "../kpi/format";
 import { completeTask, getVariables } from "../workflow/tasklistApi";
 import { roleTitle } from "../access";
 import { correctableFields, fmtAmount } from "./pipeline";
-import { blockedReason, DECISION_PAST, DECISIONS, decisionLabel, stages, stepOf } from "./reconTask";
+import { blockedReason, carryBadge, carryText, DECISION_PAST, DECISIONS, decisionLabel, sentBackText, stages, stepOf } from "./reconTask";
 
 const BUTTON = "rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page disabled:opacity-60";
 const PRIMARY = "rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-on-accent transition hover:brightness-110 disabled:opacity-60";
@@ -189,11 +189,19 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
   const proposed = corrections.filter((c) => c.status === "PROPOSED");
   const canLeaveOut = isGroup && step === "TEAM" && openBreaks.length > 1;
   const canSendBackTasks = isRun && step === "SIGNOFF";
+  // Sign-off with tasks still open (past the cut-off): the decided ones are signed off, the open ones carried.
+  const decidedTasks = isRun ? detail.tasks.filter((t) => t.decided).length : 0;
+  const waitingForMe = isRun ? detail.tasks.filter((t) => t.awaiting_cfo).length : 0;
+  const openTasks = isRun ? detail.tasks.length - decidedTasks - waitingForMe : 0;
   const blocked = blockedReason(step, user, {
     decidedBy: subject.decided_by,
     deciders: isRun ? detail.tasks.map((t) => t.decided_by).filter(Boolean) : [],
   });
   const refusal = { TEAM: vars.decisionError, CFO: vars.approvalError, SIGNOFF: vars.signoffError }[step];
+  // Sent back to the team: the task's own variables, else what the item or group row records.
+  const sentBack = sentBackText(vars.sentBackAt ? vars : {
+    sentBackAt: subject.sent_back_at, sentBackByName: subject.sent_back_by_name, sentBackFrom: subject.sent_back_from, sentBackNote: subject.sent_back_note,
+  });
 
   function toggle(id) {
     setPicked((s) => {
@@ -249,7 +257,7 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
     {
       needsComment: "Say why in a comment (for example, what caused the difference).",
       check: () => {
-        if (decision === "CORRECT" && !isGroup && !proposed.length) return "Enter the right value for at least one row first (below), then choose Correct our data.";
+        if (decision === "CORRECT" && !isGroup && !proposed.length) return "Enter the right value for at least one row first (below), then choose Assign to CFO.";
         if (decision === "CORRECT" && missingRecord) return "A missing record can't be corrected from here: accept or dismiss it.";
         if (isGroup && openBreaks.length && picked.size >= openBreaks.length) return "Leave at least one record in the group, or there's nothing to decide.";
         if (isGroup && decision === "CORRECT") return fixProblem();
@@ -279,8 +287,14 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
         </p>
       </div>
 
-      {step === "TEAM" && vars.sentBackNote && (
-        <p className="mt-3 rounded-lg border border-hair p-3 text-sm" style={{ color: "var(--critical)" }}>The CFO sent this back: {vars.sentBackNote}</p>
+      {!isRun && carryText(subject) && (
+        <p role="note" className="mt-3 rounded-lg border p-3 text-sm font-medium"
+          style={{ color: subject.escalated_at ? "var(--critical)" : "var(--warning)", borderColor: subject.escalated_at ? "var(--critical)" : "var(--warning)" }}>
+          {carryText(subject)}
+        </p>
+      )}
+      {step === "TEAM" && sentBack && (
+        <p role="note" className="mt-3 rounded-lg border p-3 text-sm font-medium" style={{ color: "var(--critical)", borderColor: "var(--critical)" }}>{sentBack}</p>
       )}
       {refusal && <p role="alert" className="mt-3 rounded-lg border border-hair p-3 text-sm" style={{ color: "var(--critical)" }}>Not saved: {refusal}</p>}
 
@@ -309,7 +323,7 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
           )}
           {step === "TEAM" && <CorrectionForm reconId={Number(key)} sourceTable={detail.item.source_table} records={detail.records} onSaved={reload} />}
           <h4 className="mb-2 mt-5 text-sm font-medium text-ink2">Fixes</h4>
-          <Fixes corrections={corrections} emptyText={step === "TEAM" ? "No values entered. Only needed for Correct our data." : "No fixes proposed."} />
+          <Fixes corrections={corrections} emptyText={step === "TEAM" ? "No values entered. Only needed for Assign to CFO." : "No fixes proposed."} />
         </>
       )}
 
@@ -354,7 +368,7 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
           />
           {step === "TEAM" && !missingRecord && (
             <p className="mt-2 text-sm text-ink2">
-              Correct our data fixes each record kept in the group to its <strong className="text-ink">Fixed value</strong>. {system}'s value is
+              Assign to CFO proposes fixing each record kept in the group to its <strong className="text-ink">Fixed value</strong>. {system}'s value is
               filled in; change any that should be something else. The CFO approves the fixes before they're applied.
             </p>
           )}
@@ -375,10 +389,16 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
             columns={[
               ...(canSendBackTasks ? [{
                 key: "send_back", header: "Send back",
-                render: (t) => <input type="checkbox" aria-label={`Send back ${t.title}`} checked={picked.has(`${t.kind}:${t.id}`)} onChange={() => toggle(`${t.kind}:${t.id}`)} />,
+                render: (t) => (t.decided
+                  ? <input type="checkbox" aria-label={`Send back ${t.title}`} checked={picked.has(`${t.kind}:${t.id}`)} onChange={() => toggle(`${t.kind}:${t.id}`)} />
+                  : null),
               }] : []),
-              { key: "title", header: "Task" },
-              { key: "decision", header: "Decision", render: (t) => (t.decision ? DECISION_PAST[t.decision] : "—") },
+              { key: "title", header: "Task", render: (t) => (
+                <span>{t.title}{t.carried_count > 0 && <span className="ml-2 text-xs text-ink2">{carryBadge({ carried_count: t.carried_count, escalated: t.escalated })}</span>}</span>
+              ) },
+              { key: "decision", header: "Decision", render: (t) => (t.decision && t.decided ? DECISION_PAST[t.decision]
+                : t.awaiting_cfo ? <span style={{ color: "var(--critical)" }}>Waiting for your approval</span>
+                : <span style={{ color: "var(--warning)" }}>Open: carried to the next day</span>) },
               { key: "decided_by_name", header: "Decided by", render: (t) => t.decided_by_name || "—" },
               { key: "approved_by_name", header: "CFO approval", render: (t) => (t.cfo_required || t.approved_by_name ? t.approved_by_name || "Waiting" : "Not needed") },
               { key: "fixes", header: "Fixes", align: "right", render: (t) => t.fixes || "—" },
@@ -415,17 +435,18 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           placeholder={step === "TEAM" ? "Comment (required): why, e.g. fee batch confirmed with core banking operations"
-            : step === "CFO" ? "Comment (required to send back)" : "Note (required to send back)"}
+            : step === "CFO" ? "Comment (required to send back)"
+            : openTasks > 0 ? "Note (required): why the open tasks are carried over, or why tasks are sent back" : "Note (required to send back)"}
           aria-label="Comment"
           className={`${INPUT} mb-3 w-full px-3`}
         />
         {formError && <p role="alert" className="mb-3 text-sm" style={{ color: "var(--critical)" }}>{formError}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={onClose} disabled={busy} className={BUTTON}>Cancel</button>
-          {step === "TEAM" && DECISIONS.map(([decision, label, meaning]) => (
+          {step === "TEAM" && DECISIONS.map(([decision, one, group, meaning]) => (
             <button key={decision} type="button" title={meaning} disabled={busy || (decision === "CORRECT" && missingRecord)}
               onClick={() => decide(decision)} className={decision === "ACCEPT" ? PRIMARY : BUTTON}>
-              {decisionLabel(label, picked.size, isGroup ? openBreaks.length : 1)}
+              {decisionLabel(one, group, picked.size, isGroup ? openBreaks.length : 1)}
             </button>
           ))}
           {step === "CFO" && (
@@ -450,9 +471,10 @@ export default function ReconTaskPanel({ task, user, onDone, onClose }) {
                 )}>
                 Send back {picked.size ? `${picked.size} task${picked.size === 1 ? "" : "s"}` : "tasks"}
               </button>
-              <button type="button" disabled={busy || !!blocked || picked.size > 0} className={PRIMARY}
-                onClick={() => act({ signoffDecision: "SIGN_OFF", signedByUserId: user.user_id, signNote: comment.trim() })}>
-                Sign off the run
+              <button type="button" disabled={busy || !!blocked || picked.size > 0 || waitingForMe > 0} className={PRIMARY}
+                onClick={() => act({ signoffDecision: "SIGN_OFF", signedByUserId: user.user_id, signNote: comment.trim() },
+                  openTasks > 0 ? { needsComment: `Say why the ${openTasks} open task${openTasks === 1 ? " is" : "s are"} carried over to the next day.` } : {})}>
+                {openTasks > 0 ? `Sign off ${decidedTasks} decided, carry ${openTasks}` : "Sign off the run"}
               </button>
             </>
           )}

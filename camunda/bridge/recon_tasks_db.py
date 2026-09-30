@@ -16,6 +16,7 @@ import psycopg2.extras
 
 import recon_groups_db
 import reconciliation_db
+from sent_back import sent_back_variables
 
 DECISIONS = ("ACCEPT", "CORRECT", "DISMISS")
 CFO_ROLES = ("approver", "admin")
@@ -100,7 +101,7 @@ def record_decision(conn, record_type: str, key, decision: str, decided_by, excl
             if who["role"] == "auditor":
                 return _refused(decisionOk=False, decisionError="The Internal Auditor can look but not decide (specs/user-roles.md).")
             if decision not in DECISIONS:
-                return _refused(decisionOk=False, decisionError="Pick Accept, Correct our data or Dismiss.")
+                return _refused(decisionOk=False, decisionError="Pick Approve changes, Assign to CFO or Dismiss.")
             if record_type == PIPELINE:
                 result = _decide_pipeline(cur, int(key), decision, who["user_id"])
             else:
@@ -129,7 +130,7 @@ def _decide_pipeline(cur, recon_id, decision, decided_by):
     cur.execute("SELECT count(*) AS n FROM reconciliation_corrections WHERE recon_id = %s AND status = 'PROPOSED'", (recon_id,))
     proposed = cur.fetchone()["n"]
     if decision == "CORRECT" and not proposed:
-        return _refused(decisionOk=False, decisionError="Enter at least one corrected value before choosing Correct our data.")
+        return _refused(decisionOk=False, decisionError="Enter at least one corrected value before choosing Assign to CFO.")
     if decision != "CORRECT" and proposed:
         cur.execute("UPDATE reconciliation_corrections SET status = 'WITHDRAWN' WHERE recon_id = %s AND status = 'PROPOSED'", (recon_id,))
     cur.execute(
@@ -278,29 +279,51 @@ def approve(conn, record_type: str, key, approved_by) -> dict:
         raise
 
 
+SENT_BACK_FROM = {"CFO_APPROVAL": "CFO approval", "RUN_SIGNOFF": "run sign-off"}
+# The task each kind belongs to, for its comment thread (the same keys the Tasks screen uses).
+COMMENT_KEY = {PIPELINE: ("pipeline_reconciliation", "RECONCILIATION"), GROUP: ("reconciliation_groups", "RECON_GROUP")}
+
+
+def mark_sent_back(cur, record_type: str, key, by, note, step: str) -> None:
+    """Records the send-back on the task (who, when, from which step, why) and adds the reason to the
+    task's own comments, so it stays with the task after it's decided again."""
+    table, id_col = ("pipeline_reconciliation", "recon_id") if record_type == PIPELINE else ("reconciliation_groups", "group_id")
+    cur.execute(
+        f"UPDATE {table} SET sent_back_by = %s, sent_back_at = now(), sent_back_from = %s, sent_back_note = %s WHERE {id_col} = %s",
+        (by, step, (note or "").strip() or None, int(key)),
+    )
+    if by is not None and (note or "").strip():
+        source_table, flag = COMMENT_KEY[record_type]
+        cur.execute(
+            """INSERT INTO comments (source_table, record_key, flag_label, user_id, comment_text)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (source_table, str(key), flag, by, f"Sent back at {SENT_BACK_FROM[step]}: {note.strip()}"),
+        )
+
+
 def send_back(conn, record_type: str, key, sent_back_by, note) -> dict:
     """The CFO sends the decision back to the team: it's undone (a group's generated fixes withdrawn;
-    an item's proposed values kept for the team to change) and the team decides again."""
+    an item's proposed values kept for the team to change) and the team decides again. Returns the
+    sent-back variables the team's task shows."""
+    table, id_col = ("pipeline_reconciliation", "recon_id") if record_type == PIPELINE else ("reconciliation_groups", "group_id")
+    reopened = "WITH_TEAM" if record_type == PIPELINE else "OPEN"
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        if record_type == PIPELINE:
-            cur.execute(
-                """UPDATE pipeline_reconciliation SET status = 'WITH_TEAM', decision = NULL, decided_by = NULL, decided_at = NULL
-                   WHERE recon_id = %s AND status = 'AWAITING_CFO' RETURNING recon_id""",
-                (int(key),),
-            )
-            object_type = "reconciliation_item"
-        else:
-            cur.execute(
-                """UPDATE reconciliation_groups SET status = 'OPEN', decision = NULL, decided_by = NULL, decided_at = NULL
-                   WHERE group_id = %s AND status = 'AWAITING_CFO' RETURNING group_id""",
-                (int(key),),
-            )
-            if cur.fetchone() is not None:
-                cur.execute("UPDATE reconciliation_corrections SET status = 'WITHDRAWN' WHERE group_id = %s AND status = 'PROPOSED'", (int(key),))
-                _audit(cur, sent_back_by, "SENT_BACK", "reconciliation_group", key, "AWAITING_CFO", note)
-            conn.commit()
-            return {}
+        cur.execute(
+            f"""UPDATE {table} SET status = %s, decision = NULL, decided_by = NULL, decided_at = NULL
+                WHERE {id_col} = %s AND status = 'AWAITING_CFO' RETURNING {id_col}""",
+            (reopened, int(key)),
+        )
         if cur.fetchone() is not None:
+            if record_type == GROUP:
+                cur.execute("UPDATE reconciliation_corrections SET status = 'WITHDRAWN' WHERE group_id = %s AND status = 'PROPOSED'", (int(key),))
+            object_type = "reconciliation_item" if record_type == PIPELINE else "reconciliation_group"
             _audit(cur, sent_back_by, "SENT_BACK", object_type, key, "AWAITING_CFO", note)
+            mark_sent_back(cur, record_type, key, sent_back_by, note, "CFO_APPROVAL")
+        cur.execute(
+            f"""SELECT t.sent_back_note, t.sent_back_at, t.sent_back_from, u.name AS sent_back_by_name
+                FROM {table} t LEFT JOIN users u ON u.user_id = t.sent_back_by WHERE t.{id_col} = %s""",
+            (int(key),),
+        )
+        row = cur.fetchone() or {}
     conn.commit()
-    return {}
+    return sent_back_variables(row)

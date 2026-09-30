@@ -22,8 +22,8 @@ const RUNS = {
 const CURRENT = [
   { run_id: 1, source_system: "CORE_CSV", name: "core banking files of 29 Sep 2026", status: "OPEN", tasks: 3, decided: 0, awaiting_cfo: 0 },
   { run_id: 2, source_system: "neon", name: "core banking comparison of 28 Sep 2026", status: "OPEN", tasks: 11, decided: 9, awaiting_cfo: 1 },
-  { run_id: 3, source_system: "salesforce", name: "CRM comparison of 29 Sep 2026", status: "SIGNED_OFF", tasks: 4, decided: 4, awaiting_cfo: 0,
-    signed_by_name: "Demo Admin", signed_at: "2026-09-30T10:00:00Z", sign_note: "All explained" },
+  { run_id: 3, source_system: "salesforce", name: "CRM comparison of 29 Sep 2026", status: "SIGNED_OFF", tasks: 4, decided: 3, awaiting_cfo: 0,
+    signed_by_name: "Demo Admin", signed_at: "2026-09-30T10:00:00Z", sign_note: "All explained", signed_tasks: 3, carried_tasks: 1 },
 ];
 
 beforeEach(() => {
@@ -75,10 +75,10 @@ describe("reconciliation against the source systems", () => {
   it("says where each run's sign-off stands; signing off happens in Tasks", async () => {
     await show();
     const core = screen.getByRole("generic", { name: "Run: core banking comparison of 28 Sep 2026" });
-    expect(within(core).getByText(/9 of 11 tasks decided\. Sign-off starts once every task is decided \(2 to go, 1 of them waiting for CFO approval\)\./)).toBeTruthy();
+    expect(within(core).getByText(/9 of 11 tasks decided\. Sign-off starts once every task is decided, or at 08:00 the next morning with the open ones carried over \(2 to go, 1 of them waiting for CFO approval\)\./)).toBeTruthy();
     expect(within(core).getByRole("link", { name: "Tasks" })).toBeTruthy();
     const crm = screen.getByRole("generic", { name: "Run: CRM comparison of 29 Sep 2026" });
-    expect(within(crm).getByText(/Signed off by Demo Admin on .*\("All explained"\)\./)).toBeTruthy();
+    expect(within(crm).getByText(/Signed off by Demo Admin on .*: 3 tasks signed off, 1 carried to the next day \("All explained"\)\./)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /sign off|submit/i })).toBeNull();
   });
 });

@@ -1,16 +1,18 @@
 """Reconciliation runs and their sign-off (specs/reconciliation-approvals.md). A run is one delivery of a
 pipeline source (its tasks: the gaps in that ingest batch) or one day's comparison with core banking or
-the CRM (its tasks: the break groups of that source). Once every task in a run is decided, the bridge
-starts a reconciliation-run-signoff process; the CFO signs the run off or sends named tasks back.
+the CRM (its tasks: the break groups of that source). Once every task in a run is decided, or from the
+08:00 cut-off the next morning (recon.signoff), the bridge starts a reconciliation-run-signoff process; the
+CFO signs off the decided tasks - the open ones are carried into a carry-over run with a high priority, and a
+task carried 3 times is escalated - or sends named tasks back.
 
     sync_runs        creates each source's current run and files every task under one
-    fetch_ready      runs whose tasks are all decided and that have no sign-off yet
-    close_run        the CFO's sign-off: never by anyone who decided a task in the run
+    fetch_ready      runs whose tasks are all decided, or past their cut-off, with no sign-off yet
+    close_run        the CFO's sign-off: never by anyone who decided a task in it; carries the open tasks
     send_back_run    reopens the named tasks; the bridge starts a new task for each
 
 Plain psycopg2, no Zeebe, so the backend tests exercise it against a real Postgres.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import psycopg2.extras
 
@@ -26,6 +28,34 @@ FLAG_LABEL = "RECON_RUN"
 RUN_NAME = {"CORE_CSV": "core banking files", "neon": "core banking comparison", "salesforce": "CRM comparison"}
 PIPELINE_DONE = ("DECIDED", "APPROVED")
 RESOLVED = ("ACCEPTED", "CORRECTED", "DISMISSED")
+
+
+DEFAULT_SIGNOFF = {"cutoff_time": "08:00", "utc_offset_hours": 3, "carry_limit": 3}
+
+
+def signoff_settings(cur) -> dict:
+    """recon.signoff: the cut-off (bank time, as UTC + offset) and the carry limit."""
+    cur.execute("SELECT value FROM app_settings WHERE key = 'recon.signoff'")
+    row = cur.fetchone()
+    value = (row["value"] if isinstance(row, dict) else row[0]) if row else {}
+    return {**DEFAULT_SIGNOFF, **(value or {})}
+
+
+def bank_today(settings: dict, now: datetime = None) -> date:
+    now = now or datetime.now(timezone.utc)
+    return (now + timedelta(hours=settings["utc_offset_hours"])).date()
+
+
+def cutoff(run_date: date, settings: dict) -> datetime:
+    """When a run may be signed off with tasks still open: the cut-off time on the day after it, bank time."""
+    hh, mm = (int(x) for x in settings["cutoff_time"].split(":"))
+    local = datetime(run_date.year, run_date.month, run_date.day, hh, mm, tzinfo=timezone.utc) + timedelta(days=1)
+    return local - timedelta(hours=settings["utc_offset_hours"])
+
+
+def base_key(run_key: str) -> str:
+    """'2026-09-25#c2' -> '2026-09-25': the data run a follow-on or carry-over run belongs to."""
+    return run_key.split("#")[0]
 
 
 def _run(cur, source_system: str, run_key: str, run_date) -> dict:
@@ -49,14 +79,20 @@ def sync_runs(conn) -> None:
                FROM pipeline_reconciliation ORDER BY source_system, detected_at DESC"""
         )
         for src in cur.fetchall():
-            run = _run(cur, src["source_system"], src["ingest_batch_id"], src["run_date"])
+            batch = src["ingest_batch_id"]
+            run = _run(cur, src["source_system"], batch, src["run_date"])
             cur.execute(
                 """UPDATE pipeline_reconciliation SET run_id = %s
                    WHERE source_system = %s AND ingest_batch_id = %s AND has_gap AND status <> 'SUPERSEDED' AND run_id IS NULL""",
-                (run["run_id"], src["source_system"], src["ingest_batch_id"]),
+                (run["run_id"], src["source_system"], batch),
             )
-            cur.execute("UPDATE reconciliation_runs SET status = 'SUPERSEDED' WHERE source_system = %s AND run_id <> %s AND status = 'OPEN'",
-                        (src["source_system"], run["run_id"]))
+            # Runs of an older delivery still open are replaced (their undecided items are superseded by
+            # reconciliation_db); this delivery's carry-over runs stay.
+            cur.execute(
+                """UPDATE reconciliation_runs SET status = 'SUPERSEDED'
+                   WHERE source_system = %s AND status = 'OPEN' AND run_key <> %s AND run_key NOT LIKE %s""",
+                (src["source_system"], batch, batch + "#%"),
+            )
 
         # Break sources: the run is the newest comparison date. A run already in sign-off takes no new
         # tasks: new groups that turn up then (a later comparison the same day) start a follow-on run.
@@ -102,18 +138,22 @@ def undecided(cur, run_id: int) -> int:
     return cur.fetchone()["n"]
 
 
-def fetch_ready(conn) -> list:
-    """OPEN runs whose every task is decided, not yet in sign-off."""
+def fetch_ready(conn, now: datetime = None) -> list:
+    """OPEN runs not yet in sign-off whose every task is decided, or that are past their cut-off (08:00 the
+    next morning): then the CFO signs off what's decided and the rest is carried."""
+    now = now or datetime.now(timezone.utc)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(f"SELECT r.* FROM reconciliation_runs r WHERE r.status = 'OPEN' AND r.process_instance_key IS NULL AND {UNDECIDED} = 0 ORDER BY r.run_id")
-        return cur.fetchall()
+        settings = signoff_settings(cur)
+        cur.execute(f"SELECT r.*, {UNDECIDED} AS undecided FROM reconciliation_runs r WHERE r.status = 'OPEN' AND r.process_instance_key IS NULL ORDER BY r.run_id")
+        return [r for r in cur.fetchall() if r["undecided"] == 0 or now >= cutoff(r["run_date"], settings)]
 
 
 def title(run: dict) -> str:
     """E.g. "Sign off the core banking comparison of 25 Sep 2026"."""
     d = run["run_date"]
     name = RUN_NAME.get(run["source_system"], f"{run['source_system']} run")
-    suffix = f" (part {run['run_key'].split('#')[1]})" if "#" in run["run_key"] else ""
+    part = run["run_key"].split("#")[1] if "#" in run["run_key"] else ""
+    suffix = " (carried over)" if part.startswith("c") else f" (part {part})" if part else ""
     return f"Sign off the {name} of {d.day} {d:%b %Y}{suffix}"
 
 
@@ -146,13 +186,59 @@ def _deciders(cur, run_id: int) -> list:
     return [r["decided_by"] for r in cur.fetchall()]
 
 
-def close_run(conn, run_id, signed_by, note=None) -> dict:
-    """The CFO signs the run off. Refused (signoffOk false, signoffError) for anyone who decided a task in
-    the run, anyone but the CFO or an admin, or while a task is still undecided."""
+def _counts(cur, run_id: int) -> dict:
+    cur.execute(
+        """SELECT (SELECT count(*) FROM pipeline_reconciliation WHERE run_id = %s AND status IN ('DECIDED', 'APPROVED'))
+                + (SELECT count(*) FROM reconciliation_groups WHERE run_id = %s AND status = 'CLOSED') AS decided,
+                  (SELECT count(*) FROM pipeline_reconciliation WHERE run_id = %s AND status = 'AWAITING_CFO')
+                + (SELECT count(*) FROM reconciliation_groups WHERE run_id = %s AND status = 'AWAITING_CFO') AS awaiting_cfo""",
+        (run_id,) * 4,
+    )
+    return cur.fetchone()
+
+
+def _carry(cur, run: dict, settings: dict, who: dict, now: datetime) -> int:
+    """Moves the run's open tasks into a carry-over run for today: carried once more, from the day they were
+    first open; escalated (with an audit row) once carried carry_limit times. Returns the carry run's id."""
+    base = base_key(run["run_key"])
+    cur.execute("SELECT count(*) AS n FROM reconciliation_runs WHERE source_system = %s AND run_key LIKE %s",
+                (run["source_system"], base + "#c%"))
+    carry = _run(cur, run["source_system"], f"{base}#c{cur.fetchone()['n'] + 1}", bank_today(settings, now))
+    for table, id_col, open_statuses, object_type in (
+        ("pipeline_reconciliation", "recon_id", ("OPEN", "WITH_TEAM"), "reconciliation_item"),
+        ("reconciliation_groups", "group_id", ("PENDING", "OPEN"), "reconciliation_group"),
+    ):
+        cur.execute(
+            f"""UPDATE {table} SET run_id = %s, carried_count = carried_count + 1,
+                       carried_since = COALESCE(carried_since, %s),
+                       escalated_at = CASE WHEN carried_count + 1 >= %s THEN COALESCE(escalated_at, now()) END
+                WHERE run_id = %s AND status IN %s
+                RETURNING {id_col} AS id, carried_count, escalated_at IS NOT NULL AS escalated""",
+            (carry["run_id"], run["run_date"], settings["carry_limit"], run["run_id"], open_statuses),
+        )
+        for row in cur.fetchall():
+            recon_tasks_db._audit(cur, who["user_id"], "CARRIED_OVER", object_type, row["id"], None, f"carried {row['carried_count']}x")
+            if row["escalated"] and row["carried_count"] == settings["carry_limit"]:
+                recon_tasks_db._audit(cur, who["user_id"], "ESCALATED", object_type, row["id"], None,
+                                      f"carried {row['carried_count']} times without a decision")
+    return carry["run_id"]
+
+
+def close_run(conn, run_id, signed_by, note=None, now: datetime = None) -> dict:
+    """The CFO signs off the run's decided tasks. Before the cut-off every task must be decided; from the
+    cut-off the open ones are carried to the next day (a note saying why is required). Refused
+    (signoffOk false, signoffError) for anyone who decided a task in it, anyone but the CFO or an admin,
+    or while a task waits for the CFO's own approval."""
+    now = now or datetime.now(timezone.utc)
+    note = (note or "").strip() or None
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        settings = signoff_settings(cur)
         cur.execute("SELECT * FROM reconciliation_runs WHERE run_id = %s FOR UPDATE", (int(run_id),))
         run = cur.fetchone()
         who = recon_tasks_db.user(cur, signed_by)
+        counts = _counts(cur, run["run_id"]) if run else {}
+        open_n = undecided(cur, run["run_id"]) if run else 0
+        mine = _deciders(cur, run["run_id"]).count(who["user_id"]) if run and who else 0
         if run is None:
             result = dict(signoffOk=False, signoffError="This run no longer exists.")
         elif run["status"] == "SIGNED_OFF" and who and run["signed_by"] == who["user_id"]:
@@ -163,16 +249,26 @@ def close_run(conn, run_id, signed_by, note=None) -> dict:
             result = dict(signoffOk=False, signoffError="The sign-off didn't say who signed. Sign off again.")
         elif who["role"] not in recon_tasks_db.CFO_ROLES:
             result = dict(signoffOk=False, signoffError=f"Only the CFO or the Platform Administrator can sign off a run; {who['name']} can't.")
-        elif (n := undecided(cur, run["run_id"])) > 0:
-            result = dict(signoffOk=False, signoffError=f"{n} task(s) in this run aren't decided yet.")
-        elif (mine := _deciders(cur, run["run_id"]).count(who["user_id"])) > 0:
+        elif counts["awaiting_cfo"]:
+            result = dict(signoffOk=False, signoffError=f"Approve or send back the {counts['awaiting_cfo']} task(s) waiting for you first.")
+        elif open_n and now < cutoff(run["run_date"], settings):
+            result = dict(signoffOk=False, signoffError=(
+                f"{open_n} task(s) aren't decided yet. Before the {settings['cutoff_time']} cut-off a run is signed off only once every task is decided."))
+        elif open_n and not note:
+            result = dict(signoffOk=False, signoffError=f"Say why the {open_n} open task(s) are carried over to the next day.")
+        elif mine:
             result = dict(signoffOk=False, signoffError=(
                 f"{who['name']} decided {mine} task(s) in this run, so a different person has to sign it off."))
         else:
-            cur.execute("UPDATE reconciliation_runs SET status = 'SIGNED_OFF', signed_by = %s, signed_at = now(), sign_note = %s WHERE run_id = %s",
-                        (who["user_id"], (note or "").strip() or None, run["run_id"]))
+            carry_run = _carry(cur, run, settings, who, now) if open_n else None
+            cur.execute(
+                """UPDATE reconciliation_runs SET status = 'SIGNED_OFF', signed_by = %s, signed_at = now(), sign_note = %s,
+                          signed_tasks = %s, carried_tasks = %s, carried_to_run_id = %s WHERE run_id = %s""",
+                (who["user_id"], note, counts["decided"], open_n, carry_run, run["run_id"]),
+            )
             recon_tasks_db._audit(cur, who["user_id"], "RUN_SIGNED_OFF", "reconciliation_run",
-                                  f"{run['source_system']}:{run['run_key']}", "IN_SIGNOFF", (note or "").strip() or None)
+                                  f"{run['source_system']}:{run['run_key']}", "IN_SIGNOFF",
+                                  f"{counts['decided']} signed off, {open_n} carried over" + (f": {note}" if note else ""))
             result = dict(signoffOk=True, signoffError="")
     if result["signoffOk"]:
         conn.commit()
@@ -221,6 +317,7 @@ def send_back_run(conn, run_id, sent_back_by, tasks, note) -> dict:
                                 (reconciliation_db.RECORD_TYPE, reconciliation_db.SOURCE_TABLE, str(key)))
                     cur.execute("UPDATE reconciliation_corrections SET status = 'WITHDRAWN' WHERE recon_id = %s AND status IN ('PROPOSED', 'APPROVED') AND synced_at IS NULL", (key,))
                     recon_tasks_db._audit(cur, who["user_id"], "SENT_BACK_AT_SIGNOFF", "reconciliation_item", key, None, note.strip())
+                    recon_tasks_db.mark_sent_back(cur, kind, key, who["user_id"], note, "RUN_SIGNOFF")
                 elif kind == recon_groups_db.RECORD_TYPE:
                     cur.execute(
                         """UPDATE reconciliation_groups SET status = 'PENDING', process_instance_key = NULL, decision = NULL,
@@ -240,6 +337,7 @@ def send_back_run(conn, run_id, sent_back_by, tasks, note) -> dict:
                                 (recon_groups_db.RECORD_TYPE, recon_groups_db.SOURCE_TABLE, str(key)))
                     cur.execute("UPDATE reconciliation_corrections SET status = 'WITHDRAWN' WHERE group_id = %s AND status IN ('PROPOSED', 'APPROVED') AND synced_at IS NULL", (key,))
                     recon_tasks_db._audit(cur, who["user_id"], "SENT_BACK_AT_SIGNOFF", "reconciliation_group", key, None, note.strip())
+                    recon_tasks_db.mark_sent_back(cur, kind, key, who["user_id"], note, "RUN_SIGNOFF")
                 else:
                     refuse = "Unknown task type."
                     break

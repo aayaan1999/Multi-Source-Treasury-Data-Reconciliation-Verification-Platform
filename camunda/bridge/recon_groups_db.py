@@ -11,6 +11,8 @@ from datetime import date, timedelta
 
 import psycopg2.extras
 
+from sent_back import sent_back_variables
+
 PROCESS_ID = "reconciliation-task"
 RECORD_TYPE = "recon_group"
 SOURCE_TABLE = "reconciliation_groups"
@@ -174,8 +176,9 @@ def title(g: dict, breaks: list) -> str:
 def fetch_unstarted(conn) -> list:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            """SELECT * FROM reconciliation_groups WHERE status = 'PENDING' AND process_instance_key IS NULL
-               ORDER BY important DESC, break_count DESC, group_id"""
+            """SELECT g.*, u.name AS sent_back_by_name FROM reconciliation_groups g LEFT JOIN users u ON u.user_id = g.sent_back_by
+               WHERE g.status = 'PENDING' AND g.process_instance_key IS NULL
+               ORDER BY g.important DESC, g.break_count DESC, g.group_id"""
         )
         return cur.fetchall()
 
@@ -191,6 +194,7 @@ def process_variables(g: dict, breaks: list) -> dict:
         "severity": "HIGH" if g["cfo_required"] else "MEDIUM",
         "dueDate": g["due_date"].isoformat(),
         "cfoRequired": g["cfo_required"],
+        **sent_back_variables(g),                          # a task reopened at run sign-off says so
     }
 
 

@@ -224,6 +224,7 @@ export const api = {
   reconGroup: (groupId) => request(`/reconciliation/groups/${groupId}`),
   reconRun: (source) => request(`/reconciliation/run${query({ source_system: source })}`),
   reconRuns: () => request("/reconciliation/runs"),
+  reconCarried: () => request("/reconciliation/carried"),
   reconRunDetail: (runId) => request(`/reconciliation/runs/${runId}`),
   // Received vs kept per source, country and table (specs/pipeline-reconciliation.md)
   pipelineReconciliation: (params) => request(`/reconciliation/pipeline${query(params)}`),

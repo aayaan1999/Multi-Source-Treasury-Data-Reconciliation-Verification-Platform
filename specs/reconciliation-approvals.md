@@ -143,3 +143,33 @@ gaps and 15 break groups (11 core banking, 4 CRM), 12 of them needing the CFO.
 1. The important rules and the 10,000 amount are placeholders to confirm with the bank.
 2. Deadlines and escalation, a run progress bar and a sign-off evidence pack are planned, not built.
 3. Per-person access in Camunda needs an identity provider; today every demo user sees every task.
+
+## 10. Sent back and carried over (added 2026-09-30)
+
+**Sent back** (migration 022). A task the CFO sends back — at CFO approval, or at run sign-off — records who,
+when, from which step and why (`sent_back_by/at/from/note` on the item or group), and the reason is added to
+the task's own comments ("Sent back at run sign-off: …"). A task reopened at run sign-off starts as a new
+process carrying `sentBackNote`, `sentBackByName`, `sentBackAt`, `sentBackFrom`. The Tasks list shows a red
+**Sent back** badge, puts those tasks first and offers a "Sent back to me" filter; the popup says "Sent back by
+CFO at run sign-off on 30 Sep 2026: …"; each run's status counts them.
+
+**Early-morning sign-off and carry-over** (migration 023, `app_settings['recon.signoff']`: cut-off `08:00`,
+`utc_offset_hours` 3 for bank time, `carry_limit` 3). One undecided task no longer blocks a run's sign-off:
+
+- A run goes to sign-off when every task is decided, **or** at 08:00 bank time on the day after its run date.
+- The CFO then signs off the **decided** tasks. The **open** ones (still with the team) are carried to a
+  carry-over run for today (`<run key>#c<n>`, named "… (carried over)"): `carried_count` + 1, `carried_since`
+  = the run they were first open in; a `CARRIED_OVER` audit row each. The sign-off records
+  `signed_tasks`, `carried_tasks` and `carried_to_run_id`, and needs a note saying why tasks are carried.
+- Before the cut-off, a run with open tasks can't be signed off. A task **waiting for the CFO's own approval**
+  can't be carried: the CFO approves or sends it back first.
+- A task carried `carry_limit` (3) times is **escalated** (`escalated_at`, an `ESCALATED` audit row); it is
+  carried again if still open, flagged red everywhere.
+- Carried tasks are a high priority, due today: the Tasks list marks them "Carried over ×2" / "Escalated ·
+  carried ×3" (from `GET /reconciliation/carried`, since a running process's variables can't change), sorts
+  them after sent-back tasks and offers a "Carried over" filter; the popup says "Carried over from 29 Sep
+  2026: still open at 2 sign-offs…"; the run status counts carried and escalated tasks.
+- Core-banking and CRM groups: a new comparison moves still-open carried groups into the new run as before,
+  keeping their carry count. Pipeline gaps: a new delivery re-reports its gaps, so a carried item from the
+  older delivery is superseded as before.
+- Weekends are not special: a task is carried once per sign-off, so days without a sign-off don't count.
