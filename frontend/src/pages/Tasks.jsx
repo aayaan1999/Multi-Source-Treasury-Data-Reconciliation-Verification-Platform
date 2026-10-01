@@ -14,6 +14,7 @@ import { TRANSACTION_FLAGS, alertType } from "../workflow/flagTypes";
 import ReconTaskPanel from "../reconciliation/ReconTaskPanel";
 import { carryBadge, isSentBack, RECON_KINDS } from "../reconciliation/reconTask";
 import ImportantTag from "../reconciliation/ImportantTag";
+import { createdAt, createdBetween } from "../workflow/taskDates";
 import { isMyTask, roleTitle } from "../access";
 import CaseReviewPanel from "../workflow/CaseReviewPanel";
 import EntityMatchPanel from "../workflow/EntityMatchPanel";
@@ -348,6 +349,9 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
   const { status, data, error, reload } = useAsync(loadTasks, [refreshKey]);
   const [typeFilter, setTypeFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
+  // Created between two days (both included); either may be left empty.
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
 
   // Only this person's tasks (specs/user-roles.md): by record type, and for reconciliation by step.
   // Sent back to the team first, then escalated and carried-over tasks, then by urgency (the list's own order).
@@ -363,9 +367,10 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
         : typeFilter === RECON_FILTER ? !RECON_KINDS.includes(t.vars.recordType)
         : typeFilter && t.vars.recordType !== typeFilter) return false;
       if (nameFilter && !t.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
+      if (!createdBetween(t, createdFrom, createdTo)) return false;
       return true;
     });
-  }, [mine, typeFilter, nameFilter, completedIds]);
+  }, [mine, typeFilter, nameFilter, createdFrom, createdTo, completedIds]);
 
   if (status === "loading") return <Loading what="your tasks" />;
   if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
@@ -391,6 +396,32 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
           {RECON_KINDS.filter((k) => myTypes.has(k)).length > 1 && <option value={RECON_FILTER}>Reconciliation (all)</option>}
           {Object.entries(RECORD_TYPE_LABEL).filter(([value]) => myTypes.has(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
+        <span className="flex flex-wrap items-center gap-2 text-sm text-ink2">
+          Created
+          <input
+            type="date"
+            aria-label="Created from"
+            value={createdFrom}
+            max={createdTo || undefined}
+            onChange={(e) => setCreatedFrom(e.target.value)}
+            className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink"
+          />
+          to
+          <input
+            type="date"
+            aria-label="Created to"
+            value={createdTo}
+            min={createdFrom || undefined}
+            onChange={(e) => setCreatedTo(e.target.value)}
+            className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink"
+          />
+          {(createdFrom || createdTo) && (
+            <button type="button" onClick={() => { setCreatedFrom(""); setCreatedTo(""); }}
+              className="rounded-md px-2 py-1 text-sm text-ink2 underline-offset-2 hover:underline">
+              Clear dates
+            </button>
+          )}
+        </span>
       </div>
       <DataTable
         caption="My tasks"
@@ -402,6 +433,8 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
           { key: "type", header: "Type", render: (t) => alertType(t.vars) },
           { key: "severity", header: "Severity", render: (t) => SEVERITY_LABEL[t.severity] || "—" },
           { key: "due", header: "Due", render: (t) => (t.due ? `${t.due} · ${daysLeftText(t.due)}` : "—") },
+          { key: "created", header: "Created", sort: (t) => createdAt(t)?.getTime() ?? 0,
+            render: (t) => (createdAt(t) ? formatDateTime(createdAt(t).toISOString()) : "—") },
         ]}
         rows={filtered}
         rowKey={(t) => t.id}
@@ -410,7 +443,9 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
           : isOverdue(t.due) ? { kind: "loss", label: "Overdue" } : null)}
         selectedKey={selectedTaskId}
         onRowClick={(t) => onSelect(t)}
-        emptyText={user?.access?.tasks?.types?.includes("report")
+        emptyText={(createdFrom || createdTo) && mine.length
+          ? "No tasks of yours were created in that period. Change the dates or press Clear dates."
+          : user?.access?.tasks?.types?.includes("report")
           ? "Nothing for you yet. Report reviews and approvals will come here once the report workflow is built."
           : "Nothing waiting for you right now. New items appear here automatically as they're flagged."}
       />

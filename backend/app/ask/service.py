@@ -6,7 +6,7 @@ The merge rules (section 6.3) are the safety net for a wrong model answer: named
 """
 import json
 import time
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import HTTPException
@@ -485,21 +485,40 @@ def _safe_one(sql: str, params: tuple = ()) -> Optional[dict]:
     return rows[0] if rows else None
 
 
+# What the assistant's side panel says it reads (GET /ask/context), as (key, one-row query).
+CONTEXT_PARTS = [
+    ("load", "SELECT max(detected_at) AS at, sum(received_rows) AS received, sum(rejected_rows) AS held "
+             "FROM pipeline_reconciliation WHERE detected_at = (SELECT max(detected_at) FROM pipeline_reconciliation)"),
+    ("groups", "SELECT count(*) AS n FROM reconciliation_groups WHERE status <> 'CLOSED'"),
+    ("kpi", "SELECT max(calculation_date) AS day FROM kpi_daily_summary"),
+    ("breaches", "SELECT count(*) AS n FROM breaches WHERE status = 'OPEN'"),
+    ("report", "SELECT d.name, i.period, i.due_date FROM report_instances i JOIN report_definitions d USING (report_id) "
+               "WHERE i.status <> 'SUBMITTED' ORDER BY i.due_date NULLS LAST LIMIT 1"),
+    ("countries", "SELECT array_agg(DISTINCT country ORDER BY country) AS names FROM country_performance_summary "
+                  "WHERE calculation_date = (SELECT max(calculation_date) FROM country_performance_summary)"),
+]
+
+
 def context(user: dict) -> dict:
     """GET /ask/context. `answerable` says whether the assistant can answer questions about that area
     yet; the others are listed so it's clear what it doesn't cover (see the backlog, AST-*)."""
-    load = _safe_one("SELECT max(detected_at) AS at, sum(received_rows) AS received, sum(rejected_rows) AS held "
-                     "FROM pipeline_reconciliation WHERE detected_at = (SELECT max(detected_at) FROM pipeline_reconciliation)")
-    groups = _safe_one("SELECT count(*) AS n FROM reconciliation_groups WHERE status <> 'CLOSED'")
-    kpi = _safe_one("SELECT max(calculation_date) AS day FROM kpi_daily_summary")
-    breaches = _safe_one("SELECT count(*) AS n FROM breaches WHERE status = 'OPEN'")
-    report = _safe_one("SELECT d.name, i.period, i.due_date FROM report_instances i JOIN report_definitions d USING (report_id) "
-                       "WHERE i.status <> 'SUBMITTED' ORDER BY i.due_date NULLS LAST LIMIT 1")
-    countries = []
-    if kpi and kpi["day"]:
-        rows = _safe_one("SELECT array_agg(DISTINCT country ORDER BY country) AS names FROM country_performance_summary "
-                         "WHERE calculation_date = (SELECT max(calculation_date) FROM country_performance_summary)")
-        countries = (rows or {}).get("names") or []
+    # One statement, one round trip: each query to Neon is ~300 ms of network, and six in a row put the
+    # panel over the 2-second target (QA 2026-10-01). A fresh database without one of these tables yet
+    # falls back to asking for each part on its own, as before.
+    parts = {key: sql for key, sql in CONTEXT_PARTS}
+    try:
+        rows = query("SELECT " + ", ".join(f"(SELECT row_to_json(x) FROM ({sql}) x) AS {key}" for key, sql in CONTEXT_PARTS))
+        got = rows[0] if rows else {}
+    except Exception as e:
+        if "does not exist" not in str(e):
+            raise
+        got = {key: _safe_one(sql) for key, sql in parts.items()}
+    load, groups, kpi, breaches, report, country_row = (got.get(k) for k in parts)
+    if kpi and isinstance(kpi.get("day"), str):            # row_to_json gives ISO text; the panel wants dates
+        kpi = {"day": date.fromisoformat(kpi["day"])}
+    if load and isinstance(load.get("at"), str):
+        load = {**load, "at": datetime.fromisoformat(load["at"])}
+    countries = ((country_row or {}).get("names") or []) if kpi and kpi.get("day") else []
 
     def at(value):
         return value.isoformat() if value else None

@@ -58,6 +58,47 @@ def test_the_assistant_side_panel_lists_what_it_reads_and_the_users_scope(client
     assert body["scope"]["access"] == "Platform Administrator: all data"
 
 
+def test_the_assistant_side_panel_is_one_database_round_trip(client, auth, db, monkeypatch):
+    """Each query to Neon is ~300 ms of network; six in a row put the panel over the 2-second target (QA
+    2026-10-01). The figures must stay exactly what the six separate queries gave."""
+    from app.ask import service
+    calls = []
+    real = service.query
+    monkeypatch.setattr(service, "query", lambda sql, params=(): calls.append(sql) or real(sql, params))
+    body = client.get(f"{API}/ask/context", headers=auth).json()
+    assert len(calls) == 1, calls
+    areas = {a["key"]: a for a in body["areas"]}
+    db.execute("""SELECT sum(received_rows), sum(rejected_rows) FROM pipeline_reconciliation
+                  WHERE detected_at = (SELECT max(detected_at) FROM pipeline_reconciliation)""")
+    received, held = db.fetchone()
+    expected_load = f"{int(received or 0):,} records, {int(held or 0)} held back" if received is not None else "No load yet"
+    db.execute("SELECT count(*) FROM breaches WHERE status = 'OPEN'")
+    open_breaches = db.fetchone()[0]
+    db.execute("SELECT count(*) FROM reconciliation_groups WHERE status <> 'CLOSED'")
+    open_groups = db.fetchone()[0]
+    db.execute("""SELECT array_agg(DISTINCT country ORDER BY country) FROM country_performance_summary
+                  WHERE calculation_date = (SELECT max(calculation_date) FROM country_performance_summary)""")
+    countries = db.fetchone()[0] or []
+    assert areas["load"]["detail"] == expected_load
+    assert areas["breaches"]["detail"] == f"{open_breaches} open"
+    assert areas["reconciliation"]["detail"] == f"{open_groups} open groups"
+    assert body["scope"]["countries"] == countries
+
+
+def test_the_side_panel_still_loads_on_a_database_missing_a_table(client, auth, monkeypatch):
+    from app.ask import service
+    real = service.query
+
+    def missing_breaches(sql, params=()):
+        if "breaches" in sql:
+            raise Exception('relation "breaches" does not exist')
+        return real(sql, params)
+    monkeypatch.setattr(service, "query", missing_breaches)
+    body = client.get(f"{API}/ask/context", headers=auth).json()
+    areas = {a["key"]: a for a in body["areas"]}
+    assert areas["breaches"]["detail"] == "0 open" and areas["kpi"]["answerable"]       # the rest is still there
+
+
 def test_needs_a_login(client):
     assert client.get(f"{API}/ingestion/overview").status_code == 401
     assert client.get(f"{API}/ask/context").status_code == 401
