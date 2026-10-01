@@ -159,8 +159,20 @@ complicate the shared one. All types appear in the same Tasks screen, labelled b
 | REC-6 | Transaction-level matching (1:1, then 1:many): transaction feed from core banking, matching notebook (exact → near → one-to-many), matched-pairs table, side-by-side matching screen; runs in Databricks, screens read results only | L | **Transaction export + matching fields** | blocked (bank) |
 | REC-7 | Run sign-off: `reconciliation_runs` table; preparer submits (no open important breaks, or a written explanation), reviewer signs off or returns; signed-off run locked; both logged | M | Whether required; who prepares / signs | built 2026-09-24 (code + tests); half live - the 2026-09-24 run was submitted, the sign-off / return step hasn't been done |
 | REC-8 | Reconciliation tab as the overview: run summary, groups list with "Open task", all-breaks explorer with the new filters, ageing and recurring views, export; resolve popup replaced by the task link | M | Admin override wanted? | built 2026-09-24 (code + tests); its endpoints answer against live data (2026-09-28), not yet checked in a browser |
+| REC-9 | Fix-at-source status per approved correction: each run, Notebook 1 records for every `APPROVED` correction in `reconciliation_corrections` one of *still wrong at source* (old value sent, correction applied), *fixed at source* (source now sends the approved value), *changed to something else* (needs another look) or *no longer sent* - today `applied_corrections` records only the first. A "Fix at source" list per source system on the Reconciliation tab (status, days applied, date fixed) and a monthly figure ("38 approved, 31 fixed at source, average 4 days") | M | - | todo (added 2026-10-01) |
+| REC-10 | Tell the source owner: when the CFO approves a correction, a task goes to the owner of that source system ("Core banking: change C-1001 country from KSA to Saudi Arabia"); it closes by itself when a delivery arrives with the approved value (REC-9's *fixed at source*), with an audit row; *changed to something else* reopens it for review | M | **Owner of each source system, and how they want to be told (task, email, file)** | todo (added 2026-10-01) |
+| REC-11 | Corrections file: export open corrections per source system (record, field, current value, approved value, approved by / on) for the source team to work through or load | S | Format the source teams can use | todo (added 2026-10-01) |
 
 Suggested order inside this point: REC-1 → REC-2 → REC-3 → REC-4 → REC-8 → REC-5 → REC-7; REC-6 once the bank provides a transaction feed.
+
+**Fixing at source (REC-9..11):** an approved correction never changes the source system - the platform
+keeps it in `reconciliation_corrections` and Notebook 1 reapplies it each run while the source still sends
+the old value (the source wins once it sends anything else). So the platform's figures stay right, but
+the core banking system or CRM stays wrong until its own team fixes it, and today nobody is told. Order:
+REC-9 (needs no bank input) → REC-10 once the source owners are known → REC-11 if a source team asks for
+a file. Writing fixes straight back into a source system is not proposed: banks rarely let an outside
+platform write into core banking, and it would need the bank's explicit approval (a CRM could take it
+through its API if asked).
 
 **Done when:** a night of hundreds of breaks becomes a handful of tasks decided in minutes; nothing important is cleared in bulk; every automatic and bulk decision is in the audit trail per break.
 
@@ -364,6 +376,7 @@ left) and the assistant ticks every area listed under "Querying".
 - AML typologies and reporting thresholds (FRD-3); device/login/beneficiary data (FRD-4)
 - SLAs per team and task-creation sign-off (TSK-3/4)
 - Reconciliation tolerances, harmless causes, key fields, second-approval rule, owning team and deadlines, escalation age, run sign-off requirement (REC-1/3/4/5/7); core-banking transaction export (REC-6)
+- Owner of each source system and how they want to hear about fixes needed at source - task, email or file (REC-10/11)
 - Official FX source per currency; which LBP rate per report (FX-2/3)
 - Each source system's delivery method, credentials owner and pull times; who may upload files by hand (ING-1/2/3)
 - Source-system list and transaction-code lists (SRC-4)
