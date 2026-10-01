@@ -1,318 +1,312 @@
 # Demo Guide: every tab, in plain words
 
-A read-before-the-demo guide to what each tab shows, what to click, and what to say. Written 2026-09-25.
+A read-before-the-demo guide to what each tab shows, what to click, and what to say. Rewritten 2026-10-01 for
+the current app (seven people with their own screens, the reconciliation approvals, Data ingestion, the CRM
+comparison). The 25 Sep version is in Git history.
 
 **The one-line story:**
-> "The bank's numbers come from several systems. This platform collects them every night, checks that
-> nothing was lost or changed on the way, shows the ratios the board and regulators care about, and makes
-> sure every problem is reviewed by the right people, with no single person approving something big alone,
-> and a permanent record of every decision."
+> "The bank's numbers come from several systems. This platform brings them in, checks that nothing was lost or
+> changed on the way, shows the ratios the board and regulators care about, and makes sure every problem is
+> decided by the right person, with the CFO approving anything important and a permanent record of every decision."
 
 ---
 
-## Before you start (10 minutes before the demo)
+## Before you start (15 minutes before the demo)
 
-1. **Check the internet.** A weak connection shows "Database unavailable". Wait a moment and refresh; it recovers on its own.
-2. **Start everything.** Ask Claude to "start the app and Camunda", or do it by hand:
-   - Docker Desktop, then Camunda (`camunda/`: `docker compose up -d elasticsearch`, wait until healthy, then `docker compose up -d`)
-   - The three bridge workers (`camunda/bridge/`: `outcome_worker.py`, `poll_worker.py --loop 300`, `breach_check.py --loop 300`)
-   - The API and the website (site: http://localhost:5173)
-3. **Warm up.** Open every tab once so the database is awake and connections are open.
-4. **Logins:** `analyst@bankx.demo`, `reviewer@bankx.demo`, `approver@bankx.demo` (acts as the **CFO**),
-   `admin@bankx.demo`. All four use the same password you chose when setting them up.
+1. **Check the internet.** A weak connection shows "Database unavailable". Wait a moment and refresh; it recovers.
+2. **Start Camunda:** Docker Desktop, then in `camunda/`: `docker compose up -d elasticsearch`, wait until it's
+   healthy, then `docker compose up -d`.
+3. **Start the app:** `.\scripts\run-local.ps1` (or ask Claude to "start the app"). It starts the API, the website
+   (http://localhost:5173) and the three bridge workers that connect the app to Camunda:
+   - `outcome_worker.py`: writes every task decision back to the database
+   - `poll_worker.py`: turns new flags, gaps, breaks and duplicates into tasks, every 5 minutes
+   - `breach_check.py`: turns KPI limit breaches into tasks for the Chief Risk Officer, every 5 minutes
 
-| Login | Plays the part of |
-|---|---|
-| analyst@ | Prepares the work, submits a reconciliation run for sign-off |
-| reviewer@ | Reviews and decides groups, cases and alerts |
-| approver@ | **The CFO**: second approvals, run sign-off, reconciliation gaps, Refresh Now |
-| admin@ | Settings, and the one-break override on the Reconciliation tab |
+   If Camunda isn't up, the script warns and skips the workers; run it again once Camunda is running.
+   `.\scripts\run-local.ps1 -Stop` stops everything except Camunda.
+4. **Warm up.** Sign in and open each tab once, so the database is awake.
+5. **If you'll show a new day arriving** (recommended), upload the 1 Oct files and press **Run All Sources** about
+   15 minutes before you need the results (see "Showing a new day arrive" below).
+
+### The people (logins)
+
+Seven people, one per job. Each has their own home screen, a menu of only their screens and a task list of only
+their tasks. Passwords are fixed and the same on every machine: see `specs/user-roles.md` section 5.
+
+| Login | Who | Lands on after sign-in | Does in the demo |
+|---|---|---|---|
+| `cfo@bankx.demo` | Chief Financial Officer | Data ingestion | Approves important tasks and data fixes, signs off each reconciliation run, can upload and run the pipeline |
+| `cro@bankx.demo` | Chief Risk Officer | Portfolio & credit risk | Credit risk, stress tests, limit-breach tasks |
+| `recon.analyst@bankx.demo` | Reconciliation Analyst (Operations) | Data ingestion | Decides reconciliation tasks, data-quality flags and possible duplicates |
+| `reporting@bankx.demo` | Regulatory Reporting Officer | Regulatory reporting | Prepares the regulator's returns |
+| `compliance@bankx.demo` | Compliance Officer | Tasks | Investigates suspicious and threshold transactions |
+| `auditor@bankx.demo` | Internal Auditor | Data ingestion | Reads everything, changes nothing |
+| `admin@bankx.demo` | Platform Administrator | Data ingestion | Connects sources, runs the pipeline, deputises for the CFO |
+
+**Tip:** each browser tab keeps its own sign-in, so you can have the analyst in one tab and the CFO in another and
+switch between them during the demo. A menu tab click reloads that page with fresh data.
 
 ---
 
 ## How the data gets here (say this once, early)
 
-> "Every night the bank's files land in a folder. Databricks picks them up automatically, cleans them, checks them
-> and calculates every ratio. The results are loaded into the database this app reads. So the screens are fast,
-> because the hard work is done overnight, not while you wait."
+> "The bank's systems deliver their files every day. Databricks picks them up, cleans them, checks them and
+> calculates every ratio, then loads the results into the database this app reads. So the screens are fast,
+> because the heavy work is done before anyone opens them."
 
-- About 10 minutes after a file arrives, the pipeline starts by itself.
-- **Refresh Now** (on the Executive summary) starts it on demand. Only the CFO or an admin can use it.
-
----
-
-## 1. Executive summary (the home page)
-
-**What it is:** the bank on one page, for the board and the CFO.
-
-- **Eight KPI tiles:** Capital ratio (CAR), Liquidity ratio (LCR), Bad loans (NPL ratio), Net interest margin,
-  Cost-to-income, Return on equity, Total assets, Dollarization ratio. Each is coloured by its limit (green, amber, red).
-- **Trend:** how the KPIs have moved over time.
-- **What needs attention:** plain-language alerts, e.g. "Capital ratio is below its limit".
-- **By country:** the same figures split per country (Lebanon, Saudi Arabia, Qatar).
-- **Refresh Now:** re-runs the nightly pipeline on demand (CFO or admin only).
-
-**Click:** any KPI tile. It opens the **KPI detail** page:
-- a trend and the data behind it
-- "What actually moved", written from the numbers themselves, not an AI summary
-- **Suggested actions**, read from the KPI's own formula, e.g. "raise capital or reduce risk-weighted assets"
-
-**Say:** "Every number here was calculated overnight from the bank's own data. Click any tile and it explains itself."
-
-**If asked:** the red/amber limits and three of the KPIs (NIM, cost-to-income, ROE) use **placeholder assumptions**
-until the bank confirms them. These are marked on screen.
+- **Run All Sources** (Data ingestion, top right) starts the pipeline now. Only the CFO or the admin can press it.
+  A run takes about 6 minutes; new tasks appear within the next 5.
+- **Refresh Now** on the Executive summary does the same from there.
+- The pipeline can also start by itself about 2 minutes after the last file lands. **That automatic start is
+  paused at the moment**, so press Run All Sources after uploading.
+- Each run also pulls the CRM (Salesforce) and compares it with our customers.
 
 ---
 
-## 2. Portfolio & credit risk
+## 1. Data ingestion (where most people land)
+
+**What it is:** where the data comes from, and whether each load worked.
+
+- **Four cards:** sources connected, files in the latest run, records ingested (kept · held back with a reason),
+  failed loads (red if any).
+- **Upload files** (CFO and admin): drop the day's core banking CSVs (customers, accounts, loans, transactions,
+  branches, capital_positions, liquidity_daily, fx_rates). Each file is checked in the browser and again on the
+  server (the right name and columns, not empty, at most 100 MB), then sent straight to the pipeline's landing folder.
+  - **Safety check:** a customers, accounts, loans or branches file that would remove more than 20% of the records
+    the platform has is **held**: "would remove 186 of the 214 customers and add 372 new ones". It's sent only if you
+    press **Send anyway**. "That's how a wrong file can't quietly replace the bank."
+- **Connect a source:** Salesforce, PostgreSQL, REST API, AWS S3, Snowflake. Test connection, Connect & Save,
+  Configure, Disconnect, Sync. Secrets go to Databricks' secret store, never to our database.
+- **Recent ingestions:** one line per source, country and file: received, kept, held back, status, when. Sort by
+  any column.
+- **Scheduled pulls:** labelled *Demo data* (planned, not running yet).
+
+**Say:** "Every load is counted, tagged with where it came from, and checked before it reaches a single report."
+
+---
+
+## 2. Executive summary
+
+**What it is:** the bank on one page, for the board and the CFO. It's the CFO's home screen (the name in the
+header goes there) and is in every person's menu.
+
+- **Eight KPI tiles:** capital ratio (CAR), liquidity ratio (LCR), bad loans (NPL ratio), net interest margin,
+  cost-to-income, return on equity, total assets, dollarization. Each is coloured by its limit (green, amber, red).
+- **Trend**, **What needs attention** (plain-language alerts), **By country** (Lebanon, Saudi Arabia, Qatar).
+- **Refresh Now** (CFO or admin).
+
+**Click** any tile for **KPI detail**: the trend, the data behind it, suggested actions read from the KPI's formula,
+and **Why it looks like this**: code works out the facts (the move, the trend, where it stands against its limits,
+and for CAR and LCR which part moved); the local AI model only rewrites them into plain sentences, and every number
+it writes is checked against the facts. Without the model, the code's own sentences are shown.
+
+**If asked:** the limits and three KPIs (NIM, cost-to-income, ROE) use **placeholder assumptions** until the bank
+confirms them. These are marked on screen.
+
+---
+
+## 3. Portfolio & credit risk (the CRO's home)
 
 **What it is:** where the loan book is, and how much of it is going bad.
 
-- **Summary boxes:** gross loans, NPL amount, NPL ratio, coverage ratio, cost of risk.
-- **The loan book, sliced four ways:** by product, segment, branch and currency. Two bars per category: everything lent,
-  and the part that is 90+ days late. "A product can look large and healthy, or small and on fire."
-- **Bad-loan trend** over time.
-- **IFRS 9 staging:** Stage 1 (fine), Stage 2 (the early warning: got worse but not yet late), Stage 3 (in default).
-- **Top exposures:** the biggest borrowers.
-- **Ageing:** loans 31–90 days late. "Not officially bad yet, but most will be next quarter."
-- **Collateral and loan-to-value (LTV):** what is owed against what the security is worth. Above 100% means the bank
-  loses money even after selling the collateral.
-- **Filters and click-through:** click any bar or row and the loan list at the bottom narrows to those loans.
-- **Export to Excel.**
+- Summary boxes: gross loans, NPL amount and ratio, coverage, cost of risk.
+- The loan book by product, segment, branch and currency: everything lent, and the part 90+ days late.
+  "A product can look large and healthy, or small and on fire."
+- Bad-loan trend, **IFRS 9 staging** (Stage 2 is the early warning), top exposures, ageing (31–90 days late),
+  collateral and loan-to-value (above 100%: the bank loses money even after selling the collateral).
+- Click any bar or row and the loan list narrows to those loans. Export to Excel.
 
 **Say:** "From the whole book down to the individual loan in two clicks."
 
 ---
 
-## 3. Branch & segment performance
+## 4. Analysis & reporting (one menu, three screens)
 
-**What it is:** who in the bank makes money and who loses it.
+### Branch & segment
+Who makes money and who loses it: branch league table (worst first, loss-makers flagged; click a branch for its
+customers and loans), regional rollup, segments and products (net contribution after provisions), channels, the
+efficiency scatter. **If asked:** segment costs are allocated, not measured (marked on screen).
 
-- **Summary:** total revenue, total cost, profit, and the number of branches in loss.
-- **Branch league table:** worst profit first, loss-makers flagged. Click a branch to see its customers and loans.
-- **Regional rollup:** "Is the problem one bad branch or a whole region?"
-- **Customer segments** (Retail, SME, Corporate) and **product performance.** Net contribution = interest income minus
-  provisions, so "a product can earn a high rate and still lose money once bad loans are counted."
-- **Channel usage** and the **efficiency scatter** (revenue against cost-to-income).
-- **Export to Excel.**
+### Scenario modelling (CFO and CRO)
+"What happens to our capital if things go wrong?" Four sliders (devaluation, rate change, NPL increase, deposit
+outflow), Base / Adverse / Severe presets, results after stress, the **waterfall** (which factor hurts most), the
+**12-month projection** with the month it breaches, scenarios side by side, the assumptions.
+**Say:** "It recalculates instantly in the browser." Try devaluation 30%.
 
-**If asked:** segment costs are **allocated, not measured** (a documented assumption, marked on screen), and cost means
-direct branch cost only.
-
----
-
-## 4. Scenario modelling (stress testing)
-
-**What it is:** "What happens to our capital if things go wrong?"
-
-- **Four sliders:** currency devaluation (0–50%), interest-rate change (−5 to +5%), rise in bad loans (NPL increase),
-  deposit outflow (0–30%).
-- **Three presets:** Base, Adverse, Severe.
-- **Results after stress:** capital ratio, liquidity ratio, capital surplus or shortfall, profit impact.
-- **Waterfall:** "Which factor hurts most?", showing today's capital ratio, then the step each factor takes off it,
-  against the dashed minimum line.
-- **12-month projection:** the capital ratio month by month under the stress, and the month it breaches, if it does.
-- **Scenarios side by side:** the three presets plus any you save.
-- **Assumptions:** what the model assumes. "Bankers will ask."
-
-**Say:** "Move a slider and it recalculates instantly. That's done in the browser, with no waiting on the database."
-Try: set devaluation to 30% and show the waterfall and the projection react.
+### Regulatory reporting (the Reporting Officer's home)
+The report calendar (red: overdue or under 5 days), and **Capital Adequacy** in the regulator's format with
+**drill-to-source**: click any figure for its formula, source tables and record count. Validation checks (red blocks
+submission, amber needs an explanation), prior-period comparison, PDF and Excel export.
+**Say:** "Every number on a return can be traced back to the data that made it."
 
 ---
 
-## 5. Regulatory reporting
+## 5. Reconciliation
 
-**What it is:** the regulator's returns, and proof of where every number came from.
+**What it is:** proof that nothing was lost or changed between the bank's systems and our numbers. Read-only here;
+the decisions happen in **Tasks**.
 
-- **Summary:** due this month, submitted, pending approval, overdue.
-- **Report calendar:** every return and its due date. Red means overdue or under 5 days left, amber under 10 days,
-  green on time or submitted. Only returns that have been built can be opened. Today that's **Capital Adequacy**.
-- **Opening a return** shows it in the regulator's format, plus:
-  - **Drill-to-source (the differentiator):** click any figure to see its **formula, the source tables and the
-    number of records** that produced it.
-  - **Validation checks:** a red check blocks submission; an amber one needs a written explanation.
-  - **Against the prior period:** what changed since the last return.
-  - **Export PDF / Export Excel** in the regulator's format.
+### Check A: received vs kept (did we lose anything while cleaning?)
+One line per source, country and file: received, kept, rejected, and the amount gap per currency (never added
+across currencies). Click a line for every rejected row and its reason. A file or country that delivered nothing
+also shows as a gap. Each gap is a task.
 
-**Say:** "Every number on a regulatory return can be traced back to the data that made it. Auditors love this."
+Today: **Lebanon accounts** (1 row, unknown currency), **Lebanon transactions** (3 rows), **Saudi Arabia
+transactions** (1 row).
 
-**If asked:** a few lines are marked because no source table holds them yet. They show the real total split in the
-proportions of the source document's worked example.
+### Check B: our data vs the source systems
+Two systems are compared customer by customer and account by account; every difference is a **break**:
+
+- **Core banking** (the master record). Examples today: 12 accounts each 9,000 lower in core banking; ACN0020
+  48,000 higher; CN0051 "SME" there, "Retail" here; customers CB-EXTRA-001/002 and CNCORE01 missing from our data;
+  ACNDEMO2 missing from core banking.
+- **The CRM (Salesforce).** Day 1: CN0008's name differs, CN0002's country differs, CN0027 missing from the CRM,
+  CNCRM01 only in the CRM, CN0001's name in capitals (cleared automatically). Day 2 (picked up by the next run):
+  a new prospect CNCRM02, CN0013 renamed "Ghosn Traders Group", CN0015 moved to the UAE, CN0022 retyped (cleared).
+
+- **Harmless differences clear themselves** (case, spaces, punctuation; differences under $1). They stay visible
+  for auditors but are never anyone's work.
+- **Groups:** breaks with the same cause become one task with one decision ("4 accounts, each +15.00").
+  Important breaks are never bundled: a missing record, a key field (name, currency, type, segment) or a difference
+  of 10,000 or more is always its own task, marked **Important**.
+- **Bad-file guard:** if 20 or more records go missing the same way at once, that's a wrong or partial file, not
+  20 problems: they become **one** task for the CFO, "… check the file that was loaded".
+- **Each source's run** and where its sign-off stands. Breaks show how long they've been open and how often seen;
+  one that was accepted but comes back is **reopened and marked Recurring**. Export CSV.
 
 ---
 
-## 6. Reconciliation
+## 6. Tasks (where the work happens)
 
-**What it is:** proof that nothing was lost or changed between the bank's systems and our numbers. There are two checks.
+> "The other tabs show the problems. Tasks is where people decide them, and every decision is recorded."
 
-### Check A: "Received vs kept, per source" (did we lose anything while cleaning?)
-> "Every night we receive files. Before using them we throw out bad records. This check counts what came in against
-> what survived, and shows exactly which records were thrown out and why."
+Each person sees only their own tasks:
 
-- One line per source, country and table: received, kept, rejected, and the amount gap **per currency** (currencies
-  are never added together).
-- **Click a line** to see the gap per currency and every rejected record with its reason.
-- Anything expected but **not delivered** (a country or table missing) also appears as a gap.
-- Each gap becomes a **task for the CFO** (see Tasks below).
-
-### Check B: "Our data vs the core banking system"
-> "The core banking system is the master record. We compare our copy with it, customer by customer and account by
-> account. Every difference is called a **break**."
-
-| Kind of break | Example in the demo data |
-|---|---|
-| Different value | Account ACN0001: core 122,098.15, ours 122,083.15 |
-| Key field different | Customer CN0051: core "SME", ours "Retail" |
-| Missing in our data | A customer the core system has that we don't |
-| Missing in the core system | An account we have that core doesn't |
-
-- **Harmless differences clear themselves:** "NOUR SAAD" vs "Nour Saad" is marked *Cleared automatically*. It stays
-  visible for auditors, but it's never work for anyone. Differences under $1 are ignored.
-- **Latest run panel:** breaks found, cleared automatically, open groups, important breaks still open, plus the
-  **run sign-off** (see below).
-
-#### Groups (the bank's main complaint: "we can't fix 1,400 differences one by one")
-> "Breaks with the same cause are bundled into a **group**. One person makes one decision for the whole group."
-
-- **Groups table:** each group's number, cause, number of breaks, total difference, kind and status.
-  **Click a group** to see every break in it.
-- **All breaks table:** has a **Group** column, plus a group filter to list one group's breaks.
-- **Safety rule:** important breaks are **never bundled**. A missing record, a key-field difference, or a difference
-  of 10,000 or more always gets a group of its own, due in 1 day.
-
-The groups in the demo data:
-
-| Group | What | Why it's like this |
+| Task | What it is | Who decides |
 |---|---|---|
-| #1 | 4 accounts, each exactly +15.00 | Same cause, so one decision |
-| #2 | 12 accounts, each −9,000, total −108,000 | Total over 100,000, so it **needs a second approval** |
-| #3 | 2 accounts, 240 and −610 | Bundled by size band "100–1,000" |
-| #4 | 1 account, 48,000 off | Important (10,000 or more), on its own |
-| #5 | Account missing in core | Important (missing record) |
-| #6 | CN0051 segment | Important (key field) |
-| #7–#10 | Customers missing in our data | Important (missing record). #7 is already decided (Correct) |
+| Reconciliation: rows not loaded / data differs | A received-vs-kept gap, or a group of breaks | Reconciliation Analyst, then the **CFO** if Important or a data fix |
+| Reconciliation: run sign-off | Closing a run | **CFO** (admin as deputy) |
+| Transaction case | Suspicious-transaction flags, bundled per account + day + type | Compliance Officer |
+| Data quality | A record the nightly checks rejected | Reconciliation Analyst |
+| Possible duplicate | Two customer records that may be the same company | Reconciliation Analyst |
+| Limit breach | A KPI crossed a limit | **Chief Risk Officer** (Risk Review) |
 
-#### Run sign-off (once per reconciliation run)
-> "At the end, someone formally says 'this reconciliation is complete'. The preparer submits it and a **different**
-> person signs it off, like a month-end sign-off."
+**The list:** severity and due date, overdue first in red. Filters: type, **Important only**, **Sent back to me**,
+**Carried over**, Reconciliation (all). "How tasks are created" explains every rule. Low-severity transaction cases
+go to the **daily digest** instead (anyone can *Raise as task*).
 
-- The preparer submits it. **If important breaks are still open, they must add a note explaining why.**
-- Only the CFO (approver) or an admin can sign it off, and **never the person who submitted it.** The system refuses.
+### A reconciliation task, step by step
+The task shows a progress line: **Team review → CFO approval (or "not needed") → Run sign-off**, with who acts.
 
-#### What happens on the next run
-- Each break shows how long it has been open and how many times it has been seen.
-- If someone accepted a break but the difference comes back, it's **reopened and marked Recurring**: "the system never
-  quietly re-accepts a problem that keeps coming back."
-- **Export CSV** of the breaks for auditors.
+1. **Team review** (Reconciliation Analyst), with a required comment:
+   - **Approve changes** / **Approve all changes**: the difference is explained and fine.
+   - **Assign to CFO**: our copy is wrong. The analyst enters the fixed values (filled in with the source system's
+     value, editable) and the CFO approves them.
+   - **Dismiss**: not a real problem.
+   - On a group, tick records to **leave out**; each comes back as its own task.
+2. **CFO approval**, only for **Important** tasks and data fixes: **Approve**, or **Send back to the team** with a
+   reason. The CFO can't approve their own decision. An Important task says in its header "Whatever you decide,
+   this task goes to the CFO for approval next", so an analyst's approval isn't mistaken for the final one.
+3. **Run sign-off** (CFO), once per run: when every task is decided, or from **08:00 the next morning**. The CFO
+   signs off the decided tasks; any still open are **carried over** into the next run as high priority (escalated
+   after 3 carries), so one stuck task doesn't block the day. The CFO can also send chosen tasks back.
 
----
+Sent-back tasks say who sent them back, from which step and why, in the list, the task and its comments.
+Approved fixes on a received-vs-kept gap are applied on the next pipeline run.
 
-## 7. Tasks (where the work happens)
+### Other tasks
+- **Transaction case:** "Six alerts on one account on one day are one case and one decision." Approve all /
+  Reject all, each flag with its own record.
+- **Limit breach** (CRO): Acknowledge, Dismiss or Plan action (asks for a plan). Early warnings are notifications
+  only; a breach of the bank's own limit is due in the limit's resolution days, a regulatory one in half that time.
+- **Possible duplicate:** the two records side by side with their loans: **Same company** (exposure added together
+  from the next refresh; nothing merged) or **Different companies** (never asked again). At most 25 are open at once,
+  best match first; the rest wait.
 
-**What it is:** every problem that needs a person, in one queue.
-
-> "The other tabs show the problems. **Tasks** is where people decide them, and every decision is recorded."
-
-**What becomes a task:**
-
-| Task type | What it is | Decided by (team) |
-|---|---|---|
-| Transaction case | Suspicious-transaction flags, bundled per account + day + type | Fraud Investigation / Compliance / Operations |
-| Data quality | A record the nightly checks rejected | Operations or Compliance |
-| Breach | A KPI crossed a limit | Compliance |
-| Reconciliation | A received-vs-kept gap | **CFO** |
-| Core-system break | A reconciliation **group** | Operations, plus **CFO** for large groups |
-| Possible duplicate | Two customer records that may be the same company | Operations |
-
-**The list:**
-- Each task shows its **Severity** (High / Medium / Low) and **Due** date. **Overdue tasks go to the top, in red.**
-- Filter by type or name. "How tasks are created" explains every rule in plain words (all placeholders until the bank
-  confirms).
-- **Daily digest:** low-severity cases don't become tasks. They're listed here, and anyone can **Raise as task**.
-
-**Transaction cases (bundling):**
-> "Six alerts on one account on the same day are one case and one decision, not six tasks."
-
-- Severity score: by type, plus 1 for 3 or more flags, plus 1 for 2 or more different rules. High and Medium become
-  tasks; Low goes to the digest.
-- **Approve all / Reject all** applies to every flag in the case, each with its own record.
-
-**Reconciliation gap (the CFO process):**
-1. **CFO review:** the CFO either **approves** it directly or **reassigns** it to a named colleague.
-2. **Update values:** the colleague proposes corrections to the rejected records' fields and submits them to the CFO.
-3. **CFO final review:** **approve**, or **return** it to the colleague with a reason.
-4. When approved, the next pipeline run applies the corrections, so the record passes and the gap closes.
-
-**Core-system group (the two-step check):**
-1. **Review group** (Operations): pick **Accept / Correct our data / Dismiss** for the whole group, with a required
-   comment. You can **leave some breaks out** ("Accept all except 1"); those come back as separate tasks.
-2. **Second approval** (CFO), only when the group totals 100,000 or more (group #2). The decision doesn't take effect
-   until the CFO approves. **The person who decided can't approve their own decision.** Return sends it back.
-
-**Breach:**
-- **Acknowledge**, **Dismiss**, or **Plan action**, which asks for a written action plan.
-- Breaches have three levels:
-  - **Early warning:** a notification only, and it clears itself if the KPI recovers.
-  - **Appetite:** the bank's own limit was crossed. A task is created, due in the limit's resolution days.
-  - **Regulatory:** a task is created, due in **half** that time.
-
-**Possible duplicate:** the two customer records side by side, with their loans. Choose **Same company** (their exposure
-is added together from the next refresh; nothing is merged) or **Different companies** (never raised again).
-
-**Every task needs a comment, and every action is written to the audit trail.**
+**Every decision needs a comment, and every action goes into the audit trail.**
 
 ---
 
-## 8. Audit & Oversight
+## 7. Audit & Oversight (CFO, auditor, admin)
 
-**What it is:** the governance view.
+- **Management view:** on-time vs late submissions, overdue reports, average time to a decision, open breaches by age.
+- **Audit trail:** every comment and decision (who, what, when, on which record), including uploads, pipeline runs
+  and the demo restore of 30 Sep. **Nothing can be edited or deleted.**
 
-- **Management view:** on-time vs late report submissions, reports overdue, average time to a decision, and open
-  breaches by age.
-- **Audit trail:** a permanent record of every comment and decision (who, what, when, on which record). **Nothing can
-  be edited or deleted.** Filter by record.
-
-**Say:** "If a regulator asks who approved this and when, the answer is here, and it can't be changed after the fact."
-
-(Breaches are no longer listed here. They live on the Tasks tab.)
+**Say:** "If a regulator asks who approved this and when, the answer is here, and it can't be changed."
 
 ---
 
-## Suggested demo order (about 15 minutes)
+## 8. AI assistant (everyone)
 
-1. **Executive summary.** The eight tiles, click one for KPI detail, then "What needs attention" and "By country".
-2. **Portfolio.** Slice the loan book, click a bar to reach the loans, then IFRS 9 staging.
-3. **Scenario.** Choose the Severe preset, then show the waterfall and the month the capital ratio breaches.
-4. **Regulatory reporting.** Open Capital Adequacy and click a figure to show its formula, source tables and record
-   count. Mention the validation checks and the PDF export.
-5. **Reconciliation.**
-   - Check A: click a gap to show the rejected records.
-   - Check B: point out the auto-cleared name.
-   - Groups: click group #1 ("4 breaks, one decision"), then point out that important breaks stay on their own.
-6. **Tasks.**
-   - Decide group #1 as `reviewer@`, leaving one account out.
-   - Decide group #2 as `reviewer@`, then log in as `approver@` and approve its **Second approval**.
-     The reviewer can't approve their own decision.
-   - Open a transaction case: "6 alerts, 1 decision".
-7. **Back on the Reconciliation tab:** the decided breaks now show as Accepted.
-8. **Run sign-off:** submit as `analyst@`, show that `analyst@` can't sign it off, then sign it off as `approver@`.
-9. **Audit & Oversight:** every step you just did is in the audit trail.
+**Ask about your data** in plain English ("Which branch has the most loans 90 days late?"). A local model on this
+machine (no bank data leaves it) only chooses which of the platform's prepared questions fits and with which filters;
+**it never writes SQL and never produces a number**. The answer is a table straight from the database, with the
+filters shown, exportable to Excel, and every question is audited. A question it can't answer that way, it says so.
+
+---
+
+## Showing a new day arrive (the 1 Oct files)
+
+`bank-data/upload-test_2026-10-01/` is the demo bank's next days: 440 new transactions (29 Sep–1 Oct), liquidity and
+FX, the same customers, plus two planted rows. Its `TEST-GUIDE.md` has the full table of what to expect.
+
+1. As the **CFO**, drop all 8 files on **Upload files**. None is held ("same bank, so the safety check lets them through").
+2. Press **Run All Sources**. About 6 minutes for the run, up to 5 more for the tasks.
+3. Afterwards:
+   - Data ingestion: a new run, no failed loads.
+   - Reconciliation: Saudi Arabia's transactions gap is now **2** rows (planted **TNDEMO1001B**, currency "US$").
+     The previous delivery's undecided gap tasks are replaced by the new ones, not duplicated.
+   - Compliance Officer: a new case for **TNDEMO1001A**, a 65,000 USD deposit (Large amount).
+   - The CRM day-2 changes: CNCRM02 and CN0013 as Important tasks for the CFO, CN0015 for the team, CN0022 cleared.
+   - Executive summary: liquidity and FX move to 1 Oct.
+
+Upload these files **once**. Don't upload `upload-test_2026-09-30/` except to show the safety check holding a
+wrong file (press **Don't send**). `demo-baseline_2026-09-29/` is the backup copy, not for uploading.
+
+---
+
+## Suggested demo order (about 20 minutes)
+
+Before you start: upload the 1 Oct files and press Run All Sources (as the CFO) ~15 minutes ahead.
+
+1. **Sign in as the CFO.** Point out the landing page (Data ingestion), the new run and the upload safety check
+   (optionally drop the 30 Sep `customers.csv` to show it held, then **Don't send**).
+2. **Executive summary:** the eight tiles, click one for **Why it looks like this**, then "What needs attention".
+3. **Portfolio:** slice the loan book, click a bar down to the loans, IFRS 9 staging.
+4. **Scenario:** Severe preset, the waterfall and the month the capital ratio breaches.
+5. **Regulatory reporting:** open Capital Adequacy, click a figure for its formula and sources.
+6. **Reconciliation:** click a received-vs-kept gap for its rejected rows; show a core banking break, a CRM break and
+   an auto-cleared name.
+7. **Tasks, as the Reconciliation Analyst** (second browser tab): filter **Important only**; decide the
+   "5 accounts: balance 250.00 lower" group with **Approve all changes** (not Important: done, no CFO); decide an
+   Important one (e.g. CN0051's segment) and see "goes to the CFO next".
+8. **Back as the CFO:** the Important task waits for **CFO approval**: send it back with a reason, show the analyst
+   sees "Sent back" and why; then approve after the analyst decides again.
+9. **Run sign-off** (CFO): sign off the decided tasks and carry the open ones; show "Carried over" on the analyst's list.
+10. **Compliance Officer:** the TNDEMO1001A case, "one case, one decision".
+11. **Internal Auditor:** sees everything, can't change anything; Audit & Oversight shows every step just taken.
 
 ---
 
 ## Honest answers to likely questions
 
-- **"Can everyone see everything?"** Yes, in this demo every login can see and act on every task. Locking each task to
-  the right person comes with single sign-on in the next phase. Two rules are enforced today: the run sign-off
-  (a second person, CFO or admin only), and the reviewer can't give their own second approval.
-- **"Where do the thresholds come from?"** 100,000 (second approval), 10,000 (important), $1 (ignored), the severity
-  scores and the due days are all **placeholders** in the settings table until the bank confirms them. They can be
-  changed without code changes.
-- **"Does 'Correct our data' change the data?"** For core-system groups it records the decision; the fix happens at
-  source. For received-vs-kept gaps, approved corrections **are** applied automatically on the next pipeline run.
-- **"Is this real bank data?"** It's generated demo data, with planted cases so every feature has something to show.
-- **"Is the data live?"** It's loaded nightly (or on Refresh Now), not second by second, by design, so the screens
-  stay fast.
+- **"Can everyone see everything?"** No. Each person sees only their screens and tasks, and the server refuses the
+  rest, not just the menu. The auditor can read everything and change nothing. Single sign-on comes next phase;
+  today the logins are demo accounts with fixed passwords.
+- **"Where do the thresholds come from?"** 10,000 (Important), 20% (upload held), 20 missing at once (one file task),
+  25 open duplicate reviews, 08:00 sign-off, 3 carries, $1 ignored, severities and due days: all **placeholders** in
+  the settings until the bank confirms them, changeable without code.
+- **"Does 'Assign to CFO' change the data?"** For a received-vs-kept gap, the approved fixed values are applied on the
+  next pipeline run. For a core banking or CRM break it records the decision; the fix happens in the source system.
+- **"What if someone uploads the wrong file?"** The upload holds it if it would remove much of the data; if sent
+  anyway, missing records come up as one task, not hundreds, and the audit trail records who pressed Send anyway.
+- **"Is this real bank data?"** Generated demo data, with planted cases so every feature has something to show.
+- **"Is the data live?"** Loaded per run (daily, or Run All Sources / Refresh Now), not second by second, so the
+  screens stay fast.
+- **"Does the AI make the numbers up?"** No. In the AI assistant the model only picks the question; the table comes
+  from the database. On KPI detail, code works out the facts and the model only words them; its sentences are
+  checked against the figures before they're shown.
 
 ---
 
@@ -321,7 +315,11 @@ is added together from the next refresh; nothing is merged) or **Different compa
 | What you see | What to do |
 |---|---|
 | "Database unavailable" | Internet or DNS blip: wait 5–10 seconds and refresh |
-| Tasks list empty or erroring | Camunda isn't running: start Docker Desktop and Camunda |
+| Tasks list empty or erroring | Camunda isn't running: start Docker Desktop and Camunda, then `.\scripts\run-local.ps1` again to start the workers |
+| A new task doesn't appear | The poll worker runs every 5 minutes; wait, or check it's running (`run-local.ps1` starts it) |
+| "You were signed out because this tab's sign-in changed to someone else" | A sign-in in another tab replaced this one's; sign in again here |
 | An error after submitting a task | Don't submit again. Close the popup and refresh; if the task is gone, it worked |
-| A new group or case doesn't appear | The poll worker runs every 5 minutes; wait, or ask Claude to run one pass |
-| "No numbers yet" on the dashboard | The pipeline hasn't loaded data; use Refresh Now (as approver) |
+| Run All Sources says a run is already going | Wait for it to finish (about 6 minutes) |
+| An upload is held ("would remove …") | That's the safety check: it's the wrong file. Press **Don't send** |
+| Hundreds of new tasks after a run | A wrong file was loaded. Stop deciding; restore from `bank-data/demo-baseline_2026-09-29/` (see `bank-data/upload-test_2026-09-30/TEST-GUIDE.md`) |
+| "No numbers yet" on the dashboard | The pipeline hasn't loaded data: Run All Sources as the CFO |

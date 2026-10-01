@@ -40,10 +40,15 @@ if ($l -match '=\s*(\S+)') { $v = $matches[1]; "DATABASE_URL set ($($v.Length) c
 ## 2. Start
 ```powershell
 Set-Location -LiteralPath $root
-& "$root\scripts\run-local.ps1" -NoBrowser # both servers hidden in the background (no windows); output in logs\*.log
+& "$root\scripts\run-local.ps1" -NoBrowser # both servers + the 3 bridge workers, hidden (no windows); output in logs\*.log
 & "$root\scripts\run-local.ps1"            # same, and opens the browser
 & "$root\scripts\run-local.ps1" -Windows   # old behaviour: 2 PowerShell windows - only if the user asks for it
+& "$root\scripts\run-local.ps1" -NoWorkers # only the two servers
 ```
+The bridge workers (`camunda\bridge\`): `outcome_worker.py`, `poll_worker.py --loop 300` and `breach_check.py --loop 300`
+(limit breaches -> CRO tasks). They need Camunda up (Docker Desktop, then `docker compose up -d` in `camunda\`); if port
+26500 doesn't answer they are skipped with a warning. Running the script again while the servers are up starts only the
+missing workers. Check them with `Get-CimInstance Win32_Process -Filter "Name='python.exe'" | ? CommandLine -match 'worker|breach_check'`.
 The user does not want extra PowerShell windows: never use `-Windows` unless they ask.
 It waits up to ~40 s for both servers. If Windows blocks the script: `powershell -ExecutionPolicy Bypass -File .\scripts\run-local.ps1`.
 
@@ -62,7 +67,8 @@ same on every machine; the login page lists them), and that `.\scripts\run-local
 "No numbers yet" on the dashboard just means the Databricks pipeline hasn't loaded Neon.
 
 ## Stop (only when asked)
-`& "$root\scripts\run-local.ps1" -Stop` (ends whatever listens on 8000 and 5173), or by hand: `taskkill /PID <owning pid> /T /F`
+`& "$root\scripts\run-local.ps1" -Stop` (ends the 3 bridge workers and whatever listens on 8000 and 5173; Camunda's
+Docker containers keep running), or by hand: `taskkill /PID <owning pid> /T /F`
 (`Get-NetTCPConnection -LocalPort <port> -State Listen`).
 
 ## First-time setup (only if something is missing)

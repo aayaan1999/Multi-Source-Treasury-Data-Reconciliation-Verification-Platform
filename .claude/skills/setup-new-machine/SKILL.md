@@ -98,8 +98,9 @@ backend venv, per `specs/camunda-bpmn-process-design.md`:
 & "<root>\backend\.venv\Scripts\python.exe" "<root>\camunda\bridge\deploy.py"        # deploys the BPMN process + form, once
 & "<root>\backend\.venv\Scripts\python.exe" "<root>\camunda\bridge\poll_worker.py"   # syncs flagged_transactions -> Camunda process instances
 & "<root>\backend\.venv\Scripts\python.exe" "<root>\camunda\bridge\outcome_worker.py" # writes review outcomes back to review_outcomes in Neon
+& "<root>\backend\.venv\Scripts\python.exe" "<root>\camunda\bridge\breach_check.py" --loop 300 # KPI limit breaches -> CRO tasks
 ```
-`poll_worker.py` and `outcome_worker.py` are long-running — start them as background tool calls,
+`poll_worker.py`, `outcome_worker.py` and `breach_check.py` are long-running (`scripts/run-local.ps1` now starts all three) — start them as background tool calls,
 same pattern as the app's own servers, not in a way that blocks the session.
 
 Without this stack, the Tasks and Audit & Oversight tabs still load in the frontend but won't show
