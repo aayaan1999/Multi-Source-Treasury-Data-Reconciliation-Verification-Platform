@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ..db import query, query_one, write
+from ..roles import screen
 from ..security import current_user
 
 router = APIRouter(prefix="/workflow", tags=["screen 6 - report workflow"], dependencies=[Depends(current_user)])
@@ -246,7 +247,9 @@ def policy():
     return query("SELECT key, value, description, is_placeholder, updated_at FROM app_settings WHERE key LIKE 'task.%' ORDER BY key")
 
 
-@router.get("/audit-log")
+# The audit trail and the management stats are the Audit & Oversight screen's (specs/user-roles.md): the
+# task endpoints around them are for everyone with tasks, these only for those with that screen.
+@router.get("/audit-log", dependencies=[Depends(screen("audit"))])
 def audit_log(
     object_type: Optional[str] = None,
     object_id: Optional[str] = None,
@@ -286,7 +289,7 @@ def breaches(status: Optional[str] = None):
     )
 
 
-@router.get("/stats")
+@router.get("/stats", dependencies=[Depends(screen("audit"))])
 def stats():
     """Small management view (specs/screen-06-report-workflow.md section 2.6): on-time vs late
     report submissions, open breaches by age bucket, and a best-effort average turnaround from

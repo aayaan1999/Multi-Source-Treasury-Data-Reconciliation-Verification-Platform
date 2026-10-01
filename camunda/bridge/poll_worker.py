@@ -123,7 +123,15 @@ async def start_run_signoffs(client: ZeebeClient, conn) -> int:
     """Files every reconciliation task under its run, then starts a sign-off for each run whose tasks
     are all decided (specs/reconciliation-approvals.md). Runs after the task starters, so a new group
     or gap is counted before a run is judged complete."""
-    recon_runs_db.sync_runs(conn)
+    for run in recon_runs_db.sync_runs(conn):                  # emptied by a newer delivery: nothing to sign off
+        if run["process_instance_key"] is not None:
+            try:
+                await client.cancel_process_instance(run["process_instance_key"])
+            except ProcessInstanceNotFoundError:
+                pass  # already finished or cancelled
+            except Exception as e:  # noqa: BLE001 - one failed cancel shouldn't stop the pass
+                print(f"Could not cancel the sign-off {run['process_instance_key']} of superseded run {run['run_id']}: {e}")
+        print(f"Superseded run {run['run_id']}: a newer delivery replaced all its tasks; its sign-off was cancelled")
     runs = recon_runs_db.fetch_ready(conn)
     for run in runs:
         variables = recon_runs_db.process_variables(run)

@@ -213,6 +213,15 @@ def _item(recon_id: int) -> dict:
 
 # Values are entered while the team reviews the item; the CFO approves them with the decision.
 EDITABLE_STATUSES = ("WITH_TEAM",)
+# The values Notebook 2's checks accept (notebooks/02_data_quality_verification.py VALID_*): a fixed value
+# outside these would be rejected again on the next run, so it's refused here. Keep the two in step.
+ALLOWED_VALUES = {
+    "currency": ("USD", "EUR", "LBP", "SAR", "QAR"),
+    "channel": ("ATM", "Branch", "Mobile", "Online"),
+    "segment": ("Corporate", "Retail", "SME"),
+    "risk_rating": ("A", "B", "C", "D", "E"),
+    "stage": ("1", "2", "3"),
+}
 
 # Key columns identify the record; correcting one would detach the correction from the record.
 KEY_COLUMNS = {
@@ -270,6 +279,17 @@ def propose_correction(recon_id: int, body: CorrectionRequest, user: dict = Depe
         raise HTTPException(400, f"{body.field_name} identifies the record and can't be corrected here")
     old = data[body.field_name]
     old_value = None if old is None else str(old)
+    new_value = body.new_value.strip()
+    if old_value is not None and new_value.casefold() == old_value.strip().casefold():
+        raise HTTPException(400, f"{new_value} is the same as the rejected value: it would be rejected again")
+    allowed = ALLOWED_VALUES.get(body.field_name)
+    if allowed:
+        # The pipeline's check is exact, so a different case is stored the way it accepts it ("usd" -> "USD").
+        match = next((a for a in allowed if a.casefold() == new_value.casefold()
+                      or (body.field_name == "stage" and new_value.replace(".0", "") == a)), None)
+        if match is None:
+            raise HTTPException(400, f"{body.field_name} must be one of {', '.join(allowed)}: the pipeline rejects anything else")
+        new_value = match
     # A numeric field must get a number: Databricks casts the value into the column's type (5b).
     if isinstance(old, (int, float)) and not isinstance(old, bool):
         try:
@@ -287,7 +307,7 @@ def propose_correction(recon_id: int, body: CorrectionRequest, user: dict = Depe
                INSERT INTO audit_log (user_id, action, object_type, object_id, old_value, new_value)
                SELECT %s, 'CORRECTION_PROPOSED', 'reconciliation_correction', %s, old_value, new_value FROM ins)
            SELECT correction_id FROM ins""",
-        (recon_id, item["source_table"], body.record_key, body.field_name, old_value, body.new_value.strip(), user["user_id"],
+        (recon_id, item["source_table"], body.record_key, body.field_name, old_value, new_value, user["user_id"],
          user["user_id"], f"{item['source_table']}:{body.record_key}:{body.field_name}"),
     )
     return {"correction_id": row["correction_id"]}

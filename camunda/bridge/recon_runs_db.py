@@ -68,9 +68,12 @@ def _run(cur, source_system: str, run_key: str, run_date) -> dict:
     return cur.fetchone()
 
 
-def sync_runs(conn) -> None:
+def sync_runs(conn) -> list:
     """Every source's current run exists, and every task is filed under one. Undecided tasks from an
-    older run still open move to the current one; runs left behind that way are SUPERSEDED."""
+    older run still open move to the current one; runs left behind that way are SUPERSEDED. An older
+    delivery's run already in sign-off whose every task was replaced is SUPERSEDED too: returns those
+    ({run_id, process_instance_key}) so the caller cancels their sign-off."""
+    retired = []
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         # Pipeline sources: the run is the newest delivery (an older delivery's undecided items are
         # superseded by reconciliation_db, so they never move).
@@ -93,6 +96,17 @@ def sync_runs(conn) -> None:
                    WHERE source_system = %s AND status = 'OPEN' AND run_key <> %s AND run_key NOT LIKE %s""",
                 (src["source_system"], batch, batch + "#%"),
             )
+            # ...and so are its runs already in sign-off once nothing is left in them to sign off (every task
+            # was replaced by this delivery's): otherwise the CFO is asked to sign off an empty run.
+            cur.execute(
+                """UPDATE reconciliation_runs r SET status = 'SUPERSEDED'
+                   WHERE r.source_system = %s AND r.status = 'IN_SIGNOFF' AND r.run_key <> %s AND r.run_key NOT LIKE %s
+                     AND EXISTS (SELECT 1 FROM pipeline_reconciliation p WHERE p.run_id = r.run_id)
+                     AND NOT EXISTS (SELECT 1 FROM pipeline_reconciliation p WHERE p.run_id = r.run_id AND p.status <> 'SUPERSEDED')
+                   RETURNING r.run_id, r.process_instance_key""",
+                (src["source_system"], batch, batch + "#%"),
+            )
+            retired += [dict(r) for r in cur.fetchall()]
 
         # Break sources: the run is the newest comparison date. A run already in sign-off takes no new
         # tasks: new groups that turn up then (a later comparison the same day) start a follow-on run.
@@ -123,6 +137,7 @@ def sync_runs(conn) -> None:
                 cur.execute("UPDATE reconciliation_runs SET status = 'SUPERSEDED' WHERE source_system = %s AND run_id <> %s AND status = 'OPEN'",
                             (src["source_system"], run["run_id"]))
     conn.commit()
+    return retired
 
 
 UNDECIDED = """(

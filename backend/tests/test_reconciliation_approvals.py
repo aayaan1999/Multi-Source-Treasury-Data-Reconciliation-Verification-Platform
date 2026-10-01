@@ -192,8 +192,21 @@ def test_the_team_enters_a_corrected_value_on_a_rejected_row(client, auth, ids):
     assert r["summary"]["money"] == "Not in our books because of this: USD 4,000.00."
     assert r["run"]["name"] == "core banking files of 29 Sep 2026"
     ok = client.post(f"{API}/reconciliation/pipeline/{ids['pipe_transactions']}/corrections", headers=auth,
-                     json={"record_key": "TN12", "field_name": "channel", "new_value": "Branch"})
+                     json={"record_key": "TN12", "field_name": "channel", "new_value": "branch "})
     assert ok.status_code == 200
+    fixes = client.get(f"{API}/reconciliation/pipeline/{ids['pipe_transactions']}/corrections", headers=auth).json()
+    assert [f["new_value"] for f in fixes] == ["Branch"]          # stored the way the pipeline's check accepts it
+
+
+@pytest.mark.parametrize("value, says", [
+    ("Cheque", "the same as the rejected value"),                  # unchanged: it would be rejected again
+    ("cheque ", "the same as the rejected value"),                 # ...whatever the case and spaces
+    ("Telegraph", "must be one of ATM, Branch, Mobile, Online"),   # not a value the checks accept (found in QA 2026-10-01)
+])
+def test_a_fixed_value_the_pipeline_would_reject_again_is_refused(client, auth, ids, value, says):
+    r = client.post(f"{API}/reconciliation/pipeline/{ids['pipe_transactions']}/corrections", headers=auth,
+                    json={"record_key": "TN12", "field_name": "channel", "new_value": value})
+    assert r.status_code == 400 and says in r.json()["detail"], r.text
 
 
 def test_a_small_task_is_decided_by_the_team_alone(conn, db, ids, users):
@@ -422,6 +435,11 @@ def test_the_cfo_signs_off_the_decided_tasks_and_the_open_one_is_carried(client,
         (carry_run, 1, "core banking files of 30 Sep 2026 (carried over)")
     signed_off = client.get(f"{API}/reconciliation/runs/{run}", headers=auth).json()
     assert (signed_off["signed_tasks"], signed_off["carried_tasks"]) == (2, 1)
+    # ...and the audit trail has the sign-off, by whom and with the note, and one row per carried task
+    db.execute("""SELECT action, user_id, new_value FROM audit_log WHERE action IN ('RUN_SIGNED_OFF', 'CARRIED_OVER')
+                  AND (object_id = %s OR object_id = %s) ORDER BY log_id""", (f"CORE_CSV:{NEW}", str(ids["pipe_transactions"])))
+    assert db.fetchall() == [("CARRIED_OVER", users["admin"], "carried 1x"),
+                             ("RUN_SIGNED_OFF", users["admin"], "2 signed off, 1 carried over: Waiting on core banking ops")]
 
 
 def test_a_task_carried_three_times_is_escalated(conn, db, ids, users):

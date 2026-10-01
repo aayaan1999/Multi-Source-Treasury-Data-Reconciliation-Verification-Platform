@@ -28,6 +28,10 @@ def headers(client, who):
     ("compliance", "/kpi-summary/latest", True), ("compliance", "/reports", False),
     ("auditor", "/reports", True), ("auditor", "/scenario/snapshot", False),
     ("admin", "/ingestion/overview", True), ("admin", "/portfolio/stage-summary", False),
+    # the audit trail is Audit & Oversight's, not every task user's
+    ("auditor", "/workflow/audit-log", True), ("cfo", "/workflow/stats", True), ("admin", "/workflow/audit-log", True),
+    ("cro", "/workflow/audit-log", False), ("recon.analyst", "/workflow/audit-log", False),
+    ("compliance", "/workflow/stats", False), ("reporting", "/workflow/audit-log", False),
 ])
 def test_each_role_reaches_its_own_screens_only(client, who, path, allowed):
     r = client.get(f"{API}{path}", headers=headers(client, who))
