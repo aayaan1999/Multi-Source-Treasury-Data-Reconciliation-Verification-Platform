@@ -4,11 +4,24 @@ Multi-source bank data reconciliation, verification and regulatory reporting pla
 
 | | |
 |---|---|
-| Document date | 2026-10-01 |
-| Repository state | `main` at commit `32309a7` (plus an uncommitted edit to `project-docs/CLIENT-FEEDBACK-BACKLOG.md` adding REC-9..11) |
+| Document date | 2026-10-08 (first issued 2026-10-01) |
+| Repository state | `main` at commit `7db563b` |
 | Source of truth for scope | `project-docs/Middle East bank data cleaning and reporting.md` |
 | Plan being executed | `project-docs/3-WEEK-POC-PLAN.md` |
+| Companion documents | `project-docs/REGULATORY-COMPLIANCE-GAPS.md` (2026-10-07; section 10.5); `project-docs/Platform-Performance-at-Scale-Summary.docx` (2026-10-07; performance as data grows, with prepared client answers) |
 | Method | Every statement is taken from the code, configuration or specs in this repository and cites the file. Where code and documentation disagree, the code is described and the difference is listed in section 10.4. |
+
+### Changes since the 2026-10-01 issue
+
+| Change | Commits | Sections |
+|---|---|---|
+| The core banking database is connected from the Data ingestion tab as **PostgreSQL** and runs **in the job** (`core_banking_ingest` -> `core_banking_reconciliation`), taking a full snapshot each run instead of an `updated_at` watermark. Run live 2026-10-08 | `121f88a`, `7db563b` | 3.3, 4.1.2, 4.4.2, 8.1 |
+| A third comparison source, the **loan origination system** (`los`): a Supabase REST API connected as **REST API**, run as `loans_api_ingest` -> `loans_api_reconciliation` against `loans_clean`. Replaces the Mockaroo plan. Run live 2026-10-08 | `b48b937` | 4.1.2, 4.4.2, 4.4.5, 8.1 |
+| "Test connection" signs in for real for PostgreSQL and the REST API; the PostgreSQL form refuses the app's own database | `121f88a`, `b48b937` | 4.1.2, Appendix C |
+| Serverless fix: the core banking pull no longer caches its read (`NOT_SUPPORTED_WITH_SERVERLESS`) | `7db563b` | 8.2 |
+| The job grows from 10 to 14 tasks | `121f88a`, `b48b937` | 8.1 |
+| Regulatory compliance gap list and the performance-at-scale summary added | `44039c6`, `5e82ecc`, `852d9f7` | 10.5 |
+| REC-9..11 committed to the backlog (were uncommitted) | `0101d4e` | 4.4.6, 10.3 |
 
 ## How to read this document
 
@@ -37,7 +50,7 @@ Every component carries one of these status labels:
 7. Component-to-technology matrix
 8. Orchestration, monitoring and error handling
 9. Running the platform
-10. Placeholders, open questions, roadmap, known issues
+10. Placeholders, open questions, roadmap, known issues, compliance gaps
 11. Hosting and running costs (estimate)
 - Appendix A - Glossary
 - Appendix B - Table catalogue
@@ -51,7 +64,7 @@ Every component carries one of these status labels:
 
 ### 1.1 What the platform does
 
-The platform ingests the bank's core data (customers, accounts, loans, transactions, branches, capital positions, daily liquidity and FX rates) into Azure Databricks, standardises it, runs 28 data-quality checks and 9 fraud/business rules, computes eight headline ratios and portfolio, branch and scenario aggregates, reconciles what each source delivered against what was kept, compares the bank's clean data against a core-banking stand-in and a CRM, and loads the results into PostgreSQL. A FastAPI back end and a React front end present them on role-specific screens. A Camunda 8 workflow engine, driven by three Python bridge workers, turns exceptions, fraud cases, limit breaches, duplicate-company candidates and reconciliation differences into tasks with owners, due dates, approvals and an insert-only audit trail (`CLAUDE.md`; `databricks.yml`; `camunda/process/`; `backend/app/main.py`).
+The platform ingests the bank's core data (customers, accounts, loans, transactions, branches, capital positions, daily liquidity and FX rates) into Azure Databricks, standardises it, runs 28 data-quality checks and 9 fraud/business rules, computes eight headline ratios and portfolio, branch and scenario aggregates, reconciles what each source delivered against what was kept, compares the bank's clean data against three other systems (a core banking database, a CRM and a loan origination system - all demo stand-ins), and loads the results into PostgreSQL. A FastAPI back end and a React front end present them on role-specific screens. A Camunda 8 workflow engine, driven by three Python bridge workers, turns exceptions, fraud cases, limit breaches, duplicate-company candidates and reconciliation differences into tasks with owners, due dates, approvals and an insert-only audit trail (`CLAUDE.md`; `databricks.yml`; `camunda/process/`; `backend/app/main.py`).
 
 It is used by seven roles, each with its own home screen, menu and task list, defined in one table (`backend/app/roles.py`; `specs/user-roles.md`):
 
@@ -82,12 +95,13 @@ The current source-of-truth document widens this to the whole bank: data is scat
 | Data layer | Pipeline reconciliation and completeness check | Verified live (2026-09-28: 72 items over 4 runs, 62 matched, 10 with a gap) | backlog FLOW-3, FLOW-1b |
 | Data layer | Databricks job + load to Neon | Verified live 2026-09-22; file-arrival trigger deployed paused on 2026-09-29 | `specs/pipeline-job-and-neon-load.md`; `specs/screen-data-ingestion.md` |
 | Data layer | Salesforce CRM ingestion + comparison | Verified live 2026-09-29 (in the job) | `specs/multi-source-reconciliation.md` section 3a |
-| Data layer | Core-banking (Neon) ingestion + comparison | Verified live 2026-09-22, run by hand (not in the job) | `specs/multi-source-reconciliation.md` |
-| Data layer | Mockaroo, IMF, Google Sheets ingestion | Spec only (notebooks written, never run) | `specs/multi-source-ingestion-adf.md`; backlog SRC-5 |
+| Data layer | Core banking (PostgreSQL, Neon project 2) ingestion + comparison | Verified live 2026-10-08 in the job (run 408068064859428: 208 customers, 313 accounts); first run by hand 2026-09-22 | `specs/screen-data-ingestion.md` section 3c |
+| Data layer | Loan origination system (REST API, Supabase) ingestion + comparison | Verified live 2026-10-08 in the job (98 loans; every planted difference found) | `specs/screen-data-ingestion.md` section 3d |
+| Data layer | IMF, Google Sheets ingestion | Spec only (notebooks written, never run). The Mockaroo notebook is superseded by the loan origination system | `specs/multi-source-ingestion-adf.md`; `specs/multi-source-reconciliation.md` (update 2026-10-08); backlog SRC-5 |
 | Data layer | Approved-corrections overlay in Notebook 1 | Built; never exercised live | backlog FLOW-5 |
 | Data layer | Notebook 7 (ML fraud scoring) | Future phase | `specs/notebook-07-fraud-ml-future-phase.md` |
 | Application | PostgreSQL schema (58 tables, 23 migrations) on Neon | Verified live (migrations applied and read live) | `db/schema.sql`; backlog live-check header |
-| Application | FastAPI back end (~75 endpoints) | Built and tested locally (~230 pytest tests); runs against Neon from the dev PC | `backend/tests/` |
+| Application | FastAPI back end (~75 endpoints) | Built and tested locally (~244 pytest tests); runs against Neon from the dev PC | `backend/tests/` |
 | Application | React screens (Executive Summary, Portfolio, Regulatory Reporting, Scenario, Branch & Segment, Reconciliation, Tasks, Data ingestion, Audit & Oversight, AI assistant) | Built and tested locally (28 vitest files); Screen 1 browser-checked on a throwaway database only | `frontend/src/`; `specs/screen-01-executive-summary.md` |
 | Workflow | Camunda `transaction-review` process and bridge | Verified live 2026-09-22 | `specs/camunda-bpmn-process-design.md` |
 | Workflow | `reconciliation-task` and `reconciliation-run-signoff` processes | Verified live on the local stack 2026-09-30 (41 of 41 checks); not checked in a browser | `specs/reconciliation-approvals.md`; commit `fd4d8c0` |
@@ -112,7 +126,7 @@ Data scale: all data is generated demo data. The largest set in the repository h
 | Governed review of exceptions, fraud cases, breaches, reconciliation differences, with maker-checker | No | No | Usually yes, for breaks | Yes, for alerts | Yes (Camunda; section 5). Verified live on local stack |
 | Insert-only audit trail | No | No | Varies | Usually | Yes: `audit_log` blocked from UPDATE/DELETE/TRUNCATE by triggers (`db/schema.sql` lines 747-751) |
 | Automatic reconciliation of pipeline totals per source (rows and amounts per currency) | Manual | No | Not of the bank's own pipeline | No | Yes (`notebooks/pipeline_reconciliation.py`). Verified live |
-| Cross-system comparison | Manual | No | Yes, usually at transaction level | No | Field-level, customers and accounts only, against a core-banking stand-in and a CRM. No transaction-level matching (REC-6 blocked) |
+| Cross-system comparison | Manual | No | Yes, usually at transaction level | No | Field-level on customers, accounts and loans, against three stand-ins (core banking, CRM, loan origination system), all in the job. No transaction-level matching (REC-6 blocked) |
 | Approved corrections applied as a layer over source data | Edited in place | No | Sometimes | No | Yes: approved values re-applied by Notebook 1 while the source still sends the old value; source never written (section 4.4.5). Built; never exercised live |
 | Scenario modelling recomputed in the browser | Days in Excel | Usually server-side queries | No | No | Yes: four sliders on a ~50-number snapshot (`frontend/src/scenario/engine.js`). Built and tested locally |
 | Role-specific screens and task lists | No | Row-level filters | Partial | Partial | Seven roles (`backend/app/roles.py`). Built and tested locally |
@@ -128,9 +142,9 @@ Data scale: all data is generated demo data. The largest set in the repository h
 ### 2.3 Where it is shallower than a specialist tool
 
 - **Fraud rules are not an AML system.** The nine rules are "illustrative POC rules, not a validated fraud model": no behavioural baselines, no cross-entity view, no ML, no device or beneficiary data, no regulatory reporting (`specs/notebook-05-fraud-business-rules.md` section 3; backlog FRD-3, FRD-4).
-- **No transaction-level matching.** Cross-system comparison is at customer/account field level only; matching transactions needs a core-banking transaction export the bank has not supplied (backlog REC-6, blocked).
+- **No transaction-level matching.** Cross-system comparison is at customer, account and loan field level only; matching transactions needs a core-banking transaction export the bank has not supplied (backlog REC-6, blocked).
 - **No general-ledger or nostro reconciliation** (listed as "Next" in `project-docs/client-demo/Client-Demo-Overview.html`).
-- **Open differences are not auto-closed** when a later delivery fixes them, and fix-at-source tracking is backlog (REC-9..11, uncommitted).
+- **Open differences are not auto-closed** when a later delivery fixes them, and fix-at-source tracking is backlog (REC-9..11, todo).
 - **One regulatory return.** Only the Capital Adequacy return has figures; some components are demo inputs (`backend/app/reports/capital_adequacy.py`, `is_demo_input`).
 - **FX is not an official rate.** One keyless public API, today's rate applied to every transaction (`notebooks/fx_utils.py`; backlog FX-1..3).
 - **Identity is demo-grade.** Seeded users with JWT; Camunda Tasklist is reached with one shared login; no SSO, no PostgreSQL row-level security (section 3.4, section 5.4).
@@ -145,15 +159,16 @@ Data scale: all data is generated demo data. The largest set in the repository h
 
 | Layer | Components | Where it runs today | Files |
 |---|---|---|---|
-| Data layer | 6 numbered notebooks, `pipeline_reconciliation.py`, `fx_utils.py`, 5 `multi_source_*` ingestion notebooks, `multi_source_reconciliation.py`, `load_to_postgres.py`; one Databricks job | Azure Databricks, serverless jobs compute, Unity Catalog `dbw_bankx_treasury_poc.raw` | `notebooks/`, `databricks.yml` |
+| Data layer | 6 numbered notebooks, `pipeline_reconciliation.py`, `fx_utils.py`, 6 `multi_source_*` ingestion notebooks (3 in the job: Salesforce, core banking, loan system), `multi_source_reconciliation.py`, `load_to_postgres.py`; one Databricks job (14 tasks) | Azure Databricks, serverless jobs compute, Unity Catalog `dbw_bankx_treasury_poc.raw` | `notebooks/`, `databricks.yml` |
 | Application database | PostgreSQL (58 tables) | Neon (managed Postgres, free tier per docs) | `db/schema.sql`, `db/migrations/001..023` |
-| Core-banking stand-in | A second, separate Neon project | Neon | `db/multi_source_demo.env.example`; `scripts/plant_core_system_breaks.py` |
+| Core-banking stand-in | A second, separate Neon project, connected from the Data ingestion tab as PostgreSQL | Neon | `db/multi_source_demo.env.example`; `scripts/plant_core_system_breaks.py` |
+| Loan-origination stand-in | A free Supabase project whose `loans` table Supabase serves as a REST API (read-only to the publishable key by row-level security), connected as REST API | Supabase (free tier; pauses after about a week idle) | `db/loans_api_demo.env.example`; `scripts/seed_loans_api.py` |
 | API | FastAPI, psycopg2, PyJWT, ReportLab, openpyxl | Developer PC, port 8000 | `backend/app/` |
 | Front end | React 19, React Router 7, Tailwind 4, Recharts 3, Vite 8 | Developer PC, port 5173 (Vite dev server) | `frontend/` |
 | Workflow engine | Camunda 8.7.41 Self-Managed: Zeebe, Tasklist, Elasticsearch 8.17.10 (Operate disabled) | Docker Compose on the developer PC | `camunda/docker-compose.yaml`, `camunda/.env.example` |
 | Bridge workers | `poll_worker.py`, `outcome_worker.py`, `breach_check.py` (pyzeebe, psycopg2) | Developer PC, started by `scripts/run-local.ps1` | `camunda/bridge/` |
 | AI assistant model | Any OpenAI-compatible server; today Ollama with `qwen2.5:3b` on CPU | Developer PC | `backend/app/ask/llm.py`; `specs/ask-a-question.md` section 4 |
-| External sources | Salesforce Developer Edition; open.er-api.com (FX); Mockaroo, IMF, Google Sheets (notebooks unrun) | SaaS | `notebooks/multi_source_*.py`; `notebooks/fx_utils.py` |
+| External sources | Salesforce Developer Edition; open.er-api.com (FX); IMF, Google Sheets (notebooks unrun); Mockaroo (notebook superseded) | SaaS | `notebooks/multi_source_*.py`; `notebooks/fx_utils.py` |
 
 ### 3.2 Design patterns actually used
 
@@ -163,22 +178,23 @@ Data scale: all data is generated demo data. The largest set in the repository h
 | Batch processing | One Databricks job, started by a file-arrival trigger on the landing volume or on demand ("Run all sources now" / Refresh Now via the Jobs API). No streaming, no Auto Loader, no daily schedule. | `databricks.yml`; `backend/app/routers/refresh.py` |
 | Precomputed summary tables | Screens read small Gold tables by latest `calculation_date` (`backend/app/db.py` `latest_rows`), not raw transactions. | `backend/app/routers/*.py` |
 | Insert-only, status-preserving merges | `flagged_transactions`, `pipeline_reconciliation` load with `ON CONFLICT DO NOTHING`; `reconciliation_exceptions` updates only `last_seen`/`times_seen`/values and keeps the human status. The pipeline never overwrites a decision. | `notebooks/load_to_postgres.py` lines 165-201 |
-| Rules flag, a person decides | Every rule output becomes a task; the only automatic resolution is formatting-only CRM/core differences (`AUTO_ACCEPTED`). | `notebooks/multi_source_reconciliation.py` lines 261-281 |
+| Rules flag, a person decides | Every rule output becomes a task; the only automatic resolution is formatting-only differences with a source system (`AUTO_ACCEPTED`). | `notebooks/multi_source_reconciliation.py` lines 283-303 |
 | Configuration in the database | Thresholds for fraud rules, task severity and due dates, reconciliation grouping, sign-off cut-off and duplicate matching live in `app_settings` (JSON), all flagged `is_placeholder`. | `db/schema.sql` lines 832-923 |
 | Idempotent re-runs | Overwrite (Notebooks 1, 2, 6), per-date replace (3, 4), insert-only merges (5, pipeline reconciliation), tracking table for Camunda starts. | sections 4 and 8 |
 
 What the platform does not use, although commonly expected: Delta table partitioning, Z-ordering, OPTIMIZE/VACUUM or liquid clustering (no `.partitionBy` on any write); Auto Loader or streaming; slowly-changing-dimension history on entity tables (they are overwritten each run); a data-quality framework such as DLT expectations or Great Expectations (checks are hand-written PySpark); Airflow, Azure Data Factory or Kafka; a dead-letter queue (rejected rows go to `data_quality_exceptions` instead); an ORM or Alembic (plain SQL migrations); APScheduler or Celery (the bridge workers are separate scripts) (grep of `notebooks/*.py`, `databricks.yml`, `backend/requirements.txt`).
 
-### 3.3 The two Neon databases
+### 3.3 The application database and the source-system stand-ins
 
-| | Application database | Core-banking stand-in |
-|---|---|---|
-| Role | Holds everything the screens, API and workflow read and write | Plays the bank's core banking system for the cross-system comparison |
-| Written by | `load_to_postgres.py`, FastAPI, bridge workers | `scripts/plant_core_system_breaks.py` (copies the app's customers/accounts, then plants differences) |
-| Read by | FastAPI, bridge workers, Notebooks 1, 5, 6 (corrections, fraud thresholds, entity groups) | `notebooks/multi_source_neon_ingestion.py` only |
-| Databricks secret scope | `neon` (host, database, user, password) | `multi-source-demo` (`neon_jdbc_url`, `neon_user`, `neon_password`) |
+| | Application database | Core-banking stand-in | Loan-origination stand-in |
+|---|---|---|---|
+| Product | Neon project 1 | Neon project 2 | Supabase project (REST API over a `loans` table) |
+| Role | Holds everything the screens, API and workflow read and write | Plays the bank's core banking system for the cross-system comparison | Plays the bank's loan origination system |
+| Written by | `load_to_postgres.py`, FastAPI, bridge workers, the source ingestion notebooks (`ingestion_runs`) | `scripts/plant_core_system_breaks.py` (copies the app's customers/accounts, then plants differences) | `scripts/seed_loans_api.py` (copies the app's loans, then plants one difference per feature) |
+| Read by | FastAPI, bridge workers, Notebooks 1, 5, 6 (corrections, fraud thresholds, entity groups) | `notebooks/multi_source_neon_ingestion.py` (job task `core_banking_ingest`); the API's Test connection | `notebooks/multi_source_rest_api_ingestion.py` (job task `loans_api_ingest`); the API's Test connection |
+| Databricks secret scope | `neon` (host, database, user, password) | `bank-data-sources`: `postgresql-host`, `-port`, `-database`, `-username`, `-password`, written by the app's Connect & Save. The older hand-made `multi-source-demo` scope is no longer read | `bank-data-sources`: `rest_api-base_url`, `-endpoint`, `-auth_header`, `-api_key` |
 
-They must stay separate because the comparison is only meaningful if the "source" is independent of the copy being checked: pointing the comparison at the app database would compare the bank's data with itself and always match. The planting script syncs from the app and "never writes app DB" (`scripts/plant_core_system_breaks.py` docstring; `project-docs/PREREQUISITES.md` "Dev Tooling"; `CLAUDE.md`).
+They must stay separate because the comparison is only meaningful if the "source" is independent of the copy being checked: pointing the comparison at the app database would compare the bank's data with itself and always match. The planting script syncs from the app and "never writes app DB" (`scripts/plant_core_system_breaks.py` docstring; `project-docs/PREREQUISITES.md` "Dev Tooling"; `CLAUDE.md`). Since 2026-10-08 this is also enforced: Test connection and Connect & Save refuse a PostgreSQL form whose host (Neon's `-pooler` host counts as the same) and database match `DATABASE_URL` (`backend/app/connectors.py` `is_app_database`; 422 on connect).
 
 ### 3.4 Access-control mechanics
 
@@ -186,7 +202,7 @@ They must stay separate because the comparison is only meaningful if the "source
 - **Authorisation:** the role table in `backend/app/roles.py`. Routers for ingestion, portfolio, scenario, performance, reports and reconciliation carry a `screen(...)` guard (403 for roles without the screen). KPI, workflow, refresh and ask routers have no screen guard; inside workflow, `/audit-log` and `/stats` need the audit screen. The auditor role is refused every non-GET request except sign-in, the assistant and exports (`no_writes_for_read_only`, `backend/app/main.py`). The "read" versus "full" distinction for other roles is a front-end affordance; write endpoints carry their own role checks (`backend/app/routers/ingestion.py` `_can_manage`, `refresh.py`, `reconciliation.py` `resolve`).
 - **No PostgreSQL row-level security** is defined; the schema says so explicitly (`db/schema.sql` lines 947-948).
 - **Audit log** is protected by two triggers that raise on UPDATE/DELETE (per row) and TRUNCATE (`db/schema.sql` lines 747-751). A superuser can still disable triggers (schema comment).
-- **Credentials** for Databricks-side access live in Databricks secret scopes (`neon`, `multi-source-demo`, `bank-data-sources`); the app writes connector secrets straight into `bank-data-sources` and stores only field names in Postgres (`backend/app/connectors.py`; `backend/tests/test_source_connectors.py`: "secret never in Postgres or audit log").
+- **Credentials** for Databricks-side access live in Databricks secret scopes (`neon` for the app database; `bank-data-sources` for every source connected from the app - Salesforce, core banking, loan system; `multi-source-demo` only for the unrun IMF/Google Sheets/Mockaroo notebooks); the app writes connector secrets straight into `bank-data-sources` and stores only field names in Postgres (`backend/app/connectors.py`; `backend/tests/test_source_connectors.py`: "secret never in Postgres or audit log").
 
 ### 3.5 Architecture diagram
 
@@ -196,15 +212,15 @@ flowchart LR
     CSV["Core banking CSVs<br/>8 files"]
     SF["Salesforce<br/>Developer Edition"]
     CORE["Neon project 2<br/>core-banking stand-in"]
+    LOS["Supabase REST API<br/>loan-origination stand-in"]
     FX["open.er-api.com<br/>live FX"]
-    OTH["Mockaroo / IMF / Google Sheets<br/>notebooks unrun"]
+    OTH["IMF / Google Sheets<br/>notebooks unrun"]
   end
 
   subgraph DBX["Azure Databricks - Unity Catalog dbw_bankx_treasury_poc.raw"]
     VOL["Volume raw/resources<br/>landing folder"]
-    JOB["Job bank_data_pipeline<br/>10 tasks, serverless"]
-    DELTA["Delta tables<br/>raw_* / *_clean / Gold"]
-    MAN["Manual notebooks<br/>Neon ingestion + comparison"]
+    JOB["Job bank_data_pipeline<br/>14 tasks, serverless"]
+    DELTA["Delta tables<br/>raw_* / *_clean / bronze_* / Gold"]
   end
 
   subgraph APPDB["Neon project 1 - application PostgreSQL"]
@@ -227,12 +243,14 @@ flowchart LR
   VOL -->|"file arrival trigger"| JOB
   SF -->|"OAuth client credentials"| JOB
   FX -->|"HTTPS inline call"| JOB
-  CORE -->|"JDBC"| MAN
+  CORE -->|"Spark postgresql format<br/>full snapshot"| JOB
+  LOS -->|"HTTPS JSON, paged"| JOB
   JOB --> DELTA
-  MAN --> DELTA
   JOB -->|"load_to_postgres<br/>one transaction"| PG
   PG -->|"corrections, fraud.rules,<br/>customer_entity"| JOB
   API -->|"psycopg2"| PG
+  API -->|"Test connection<br/>read-only sign-in / one GET"| CORE
+  API -.-> LOS
   API -->|"Jobs API run-now<br/>Files API"| DBX
   API -->|"OpenAI-compatible HTTP"| LLM
   WEB -->|"/api proxy, JWT"| API
@@ -267,7 +285,11 @@ flowchart TD
   CLEAN --> PR
   PR --> PRT["pipeline_reconciliation"]
   SFAPI["Salesforce REST API"] --> SFI["salesforce_ingest"] --> BSF["bronze_salesforce_accounts"]
-  BSF --> MSR["multi_source_reconciliation<br/>source=salesforce"]
+  COREDB["Core banking PostgreSQL"] --> CBI["core_banking_ingest"] --> BNE["bronze_neon_customers / _accounts"]
+  LOSAPI["Loan system REST API"] --> LAI["loans_api_ingest"] --> BLO["bronze_los_loans"]
+  BSF --> MSR["multi_source_reconciliation<br/>source = salesforce / neon / los"]
+  BNE --> MSR
+  BLO --> MSR
   CLEAN --> MSR
   MSR --> REX["reconciliation_exceptions"]
   FXAPI["open.er-api.com"] -.-> N3
@@ -291,11 +313,11 @@ flowchart TD
 | | |
 |---|---|
 | Purpose | Get each source's data into Databricks |
-| Inputs | 8 core CSV files; Salesforce Accounts; core-banking stand-in tables (manual runs); live FX rates |
-| Outputs | Files in the landing volume; `bronze_salesforce_accounts`; `bronze_neon_customers` / `bronze_neon_accounts` (manual); `ingestion_runs` rows |
-| Engine | Databricks notebooks (PySpark, Python `requests`); FastAPI for uploads |
+| Inputs | 8 core CSV files; Salesforce Accounts; core banking customers and accounts (PostgreSQL); loan system loans (REST API); live FX rates |
+| Outputs | Files in the landing volume; `bronze_salesforce_accounts`; `bronze_neon_customers` / `bronze_neon_accounts`; `bronze_los_loans`; `ingestion_runs` rows |
+| Engine | Databricks notebooks (PySpark, Python `requests`); FastAPI for uploads and Test connection |
 | Storage | CSV files in a Unity Catalog volume; Delta tables |
-| Status | Core CSV path and Salesforce: Verified live. Neon stand-in: Verified live (manual). Other sources: Spec only (notebooks written, never run) |
+| Status | Core CSV path, Salesforce, core banking and loan system: Verified live (the last two on 2026-10-08). IMF and Google Sheets: Spec only (notebooks written, never run) |
 
 #### 4.1.1 Core banking CSVs
 
@@ -338,16 +360,27 @@ There is no virus or malware scan (requested in ING-3; not in code). Notebook 1 
 | Source | Stands in for | Notebook | Authentication | Writes | In job? | Status |
 |---|---|---|---|---|---|---|
 | Salesforce Developer Edition | CRM | `multi_source_salesforce_ingestion.py` | OAuth 2.0 client credentials against the org's My Domain `/services/oauth2/token` (External Client App; replaced username-password on 2026-09-29). Secrets `salesforce-instance_url`, `salesforce-client_id`, `salesforce-client_secret` in scope `bank-data-sources` | `bronze_salesforce_accounts` (Id, AccountNumber, Name, Industry, BillingCountry, CreatedDate, `source_system = 'SALESFORCE'`, ingested_at), overwrite; one `ingestion_runs` row per run | Yes, task `salesforce_ingest` | Verified live 2026-09-29 |
-| Neon project 2 | Core banking system | `multi_source_neon_ingestion.py` | JDBC URL, user, password from scope `multi-source-demo` | `bronze_neon_customers` or `bronze_neon_accounts` (chosen by widgets), append; watermark table `multi_source_watermarks` (`updated_at > last`) | No, run by hand | Verified live 2026-09-22 |
-| Mockaroo | Loan origination system | `multi_source_mockaroo_ingestion.py` | `X-API-Key` from `multi-source-demo/mockaroo_api_key` | `bronze_mockaroo_loans` | No | Spec only (written, never run) |
+| Neon project 2, connected as **PostgreSQL** | Core banking system | `multi_source_neon_ingestion.py` | Host, port, database, username, password from scope `bank-data-sources` (`postgresql-*`); a read-only user is recommended | Reads `customers` (customer_id, name, segment, risk_rating, branch_id) and `accounts` (account_id, customer_id, type, currency, balance) with Databricks' `postgresql` format; **replaces** `bronze_neon_customers` / `bronze_neon_accounts` - a full snapshot each run (the earlier `updated_at` watermark needed a column the bank may not have, missed deletions and kept an old database's watermark). One `ingestion_runs` row per table, shown as "PostgreSQL · Database" | Yes, task `core_banking_ingest` (since 2026-10-08) | Verified live 2026-10-08 (run 408068064859428: 208 customers, 313 accounts). The first live run (776501334971850) recorded a failure because the read was cached (`.cache()`), which serverless refuses; removed in `7db563b` |
+| Supabase project, connected as **REST API** | Loan origination system | `multi_source_rest_api_ingestion.py` | Base URL, endpoint, optional auth header and API key from scope `bank-data-sources` (`rest_api-*`); in the demo header `apikey` with the project's publishable key | A JSON array of loans (or one under `data` / `items` / `records` / `results`) with `loan_id, customer_id, product, currency, principal, outstanding, interest_rate`; pages of 1,000 with `limit` / `offset`, stopping when the API ignores paging; **replaces** `bronze_los_loans`. No loans at all, or a missing field, records a failure rather than turning every loan into a "missing" task. One `ingestion_runs` row, shown as "REST API · API · loans" | Yes, task `loans_api_ingest` (since 2026-10-08) | Verified live 2026-10-08 (98 loans) |
+| Mockaroo | Loan origination system (earlier plan) | `multi_source_mockaroo_ingestion.py` | `X-API-Key` from `multi-source-demo/mockaroo_api_key` | `bronze_mockaroo_loans` | No | Superseded by the Supabase REST API (written, never run) |
 | IMF SDMX JSON API | Regulatory / macro feed | `multi_source_imf_ingestion.py` | None | `bronze_imf_macro` | No | Spec only (written, never run; whether the legacy endpoint still answers is unverified) |
 | Google Sheets | Branch / finance data | `multi_source_google_sheets_ingestion.py` | Service-account JSON in `multi-source-demo` | `bronze_branch_finance` | No | Spec only (written, never run; the notebook has no `%pip install gspread`) |
 
-The Salesforce query is `SELECT Id, AccountNumber, Name, Industry, BillingCountry, CreatedDate FROM Account` (API v60.0, following `nextRecordsUrl`). If the source is not connected the task exits "skipped"; on an authentication or query failure it records a failed `ingestion_runs` row and exits "failed" **without failing the job**, and the downstream comparison then skips itself (`notebooks/multi_source_salesforce_ingestion.py` lines 115-183; `notebooks/multi_source_reconciliation.py` lines 70-74).
+The Salesforce query is `SELECT Id, AccountNumber, Name, Industry, BillingCountry, CreatedDate FROM Account` (API v60.0, following `nextRecordsUrl`). All three connected-source notebooks behave the same way: if the source is not connected the task exits "skipped"; on an authentication, query or read failure it records a failed `ingestion_runs` row (first line of the error) and exits "failed" **without failing the job**; it sets the task value `status` (loaded / skipped / failed), and the downstream comparison skips itself unless that run "loaded" (`notebooks/multi_source_salesforce_ingestion.py` lines 115-183; `notebooks/multi_source_neon_ingestion.py`; `notebooks/multi_source_rest_api_ingestion.py`; `notebooks/multi_source_reconciliation.py` lines 77-89). A comparison therefore never runs against a snapshot an earlier run left behind.
 
 None of the `bronze_*` tables feeds Notebooks 1-6; their only consumer is the cross-system comparison (section 4.4.2).
 
-**Connector registry.** The Data ingestion screen offers the connector types in `backend/app/connectors.py` `SOURCE_TYPES`: `core_files` (built in), `salesforce`, `postgresql`, `rest_api`, `aws_s3`, `snowflake`. Connecting a source validates the form, writes each secret field to the Databricks secret scope `bank-data-sources` as `<source>-<field>`, and stores only the non-secret configuration and the secret field names in `source_connectors` (audited `SOURCE_CONNECTED`). "Test connection" checks form completeness only ("A live sign-in check isn't enabled in this demo yet", `live: false`). Only Salesforce has an ingestion notebook; the PostgreSQL, REST API, S3 and Snowflake connectors have none (backlog ING-1).
+**Connector registry.** The Data ingestion screen offers the connector types in `backend/app/connectors.py` `SOURCE_TYPES`: `core_files` (built in), `salesforce`, `postgresql` ("Core banking database: customers and accounts"), `rest_api` ("Loan origination system: loans (JSON)"), `aws_s3`, `snowflake`. Connecting a source validates the form, writes each secret field to the Databricks secret scope `bank-data-sources` as `<source>-<field>`, and stores only the non-secret configuration and the secret field names in `source_connectors` (audited `SOURCE_CONNECTED`). Salesforce, PostgreSQL and REST API have ingestion notebooks in the job; S3 and Snowflake have none (backlog ING-1).
+
+**Test connection** (`POST /api/v1/ingestion/sources/{key}/test`; `backend/app/connectors.py` `test_connection`). Status: Built and tested locally (`backend/tests/test_source_connectors.py`, 20 tests). Both checks were used live on 2026-10-08 to connect the two stand-ins; the PostgreSQL one is recorded as connected and tested in a browser (`specs/screen-data-ingestion.md` sections 3c, 3d).
+
+| Connector | What the check does | Answer (`live`) |
+|---|---|---|
+| PostgreSQL | Signs in from the API server with `sslmode=require`, `connect_timeout=10`, a read-only session and a 10 s statement timeout; checks that `customers` and `accounts` exist with the columns the notebook reads (`CORE_BANKING_TABLES`) and counts their rows. Refused before signing in if the form points at the app's own database | "Signed in to host/db: found N customers and M accounts", or the database's own first error line (`live: true`) |
+| REST API | One `GET {base_url}{endpoint}?limit=1` with `Prefer: count=exact` (15 s timeout); accepts 200 or 206 (Supabase answers 206 Partial Content to a counted request - found live); checks the body is a JSON list of loans with every `LOAN_COLUMNS` field and reads the total from `Content-Range`. A 404 on a `*.supabase.co` URL without `/rest/v1` gets a hint | "Reached …: found N loans with every field the comparison needs", or the status and message, no loans, missing fields, not JSON, unreachable (`live: true`) |
+| Salesforce, S3, Snowflake | Form completeness and format only | "… details are complete and well-formed. A live sign-in check isn't enabled in this demo yet." (`live: false`) |
+
+A failed live check answers HTTP 200 with `ok: false`; the form shows the reason and an error toast (`frontend/src/ingestion/SourceModal.jsx`). Passwords and keys are never echoed in the answer.
 
 #### 4.1.3 Live FX
 
@@ -548,7 +581,7 @@ No notebook exists. `specs/notebook-07-fraud-ml-future-phase.md` designs an unsu
 
 ### 4.4 Step 4 - Reconciliation
 
-**In plain terms.** The platform runs two different reconciliations. The first asks "did we keep everything a source sent us?" - it compares rows and money received with rows and money kept, per source, country and table. The second asks "does our cleaned data agree with the bank's other systems?" - it compares customer and account details with the core banking system and the CRM. Every difference becomes a task; decisions that change data, or that involve large amounts, need the CFO.
+**In plain terms.** The platform runs two different reconciliations. The first asks "did we keep everything a source sent us?" - it compares rows and money received with rows and money kept, per source, country and table. The second asks "does our cleaned data agree with the bank's other systems?" - it compares customer, account and loan details with the core banking system, the CRM and the loan origination system. Every difference becomes a task; decisions that change data, or that involve large amounts, need the CFO.
 
 ```mermaid
 flowchart TD
@@ -560,8 +593,8 @@ flowchart TD
     G1 -- yes --> O1["OPEN item"]
   end
   subgraph X["Cross-system comparison"]
-    S2["bronze_neon_* or bronze_salesforce_accounts"] --> J2["full outer join on key"]
-    K2["customers_clean / accounts_clean"] --> J2
+    S2["bronze_neon_* / bronze_salesforce_accounts / bronze_los_loans"] --> J2["full outer join on key"]
+    K2["customers_clean / accounts_clean / loans_clean"] --> J2
     J2 --> T2{"difference type"}
     T2 -- "formatting only" --> A2["AUTO_ACCEPTED"]
     T2 -- "value or missing record" --> O2["OPEN break"]
@@ -594,20 +627,22 @@ flowchart TD
 
 #### 4.4.2 Cross-system comparison
 
-`notebooks/multi_source_reconciliation.py`; `specs/multi-source-reconciliation.md`; `specs/reconciliation-groups.md`. Status: core banking (`source=neon`) Verified live 2026-09-22, run by hand; CRM (`source=salesforce`) Verified live 2026-09-29 in the job (5 planted differences found, 4 groups - backlog ING-7).
+`notebooks/multi_source_reconciliation.py` (one notebook, three sources chosen by the `source` parameter); `specs/multi-source-reconciliation.md`; `specs/reconciliation-groups.md`; `specs/screen-data-ingestion.md` sections 3c-3d. Status: all three Verified live in the job - CRM (`source=salesforce`) 2026-09-29 (5 planted differences found, 4 groups - backlog ING-7); core banking (`source=neon`) 2026-10-08 (first run by hand 2026-09-22); loan system (`source=los`) 2026-10-08 (every planted difference found as planned: LN0001-3 one group, LN0004 and LN0007 important, LN0005 rate, LN0006 product, LN0009 cleared automatically, LN0010 and LNLOS01 missing).
 
-| Aspect | Core banking (`source=neon`) | CRM (`source=salesforce`) |
-|---|---|---|
-| Source side | Latest row per entity in `bronze_neon_customers` / `bronze_neon_accounts`, by `ingested_at` | `bronze_salesforce_accounts` |
-| Our side | `customers_clean` / `accounts_clean`, `dropDuplicates(key)` (fix for a 2026-09-23 fan-out) | `customers_clean`, segments Corporate and SME only |
-| Match key | customer_id / account_id | `trim(AccountNumber)`, else `SF:<Id>` |
-| Fields compared | customers: name, segment, risk_rating, branch_id; accounts: type, currency, balance (numeric) | name (trimmed); BillingCountry against `customers_clean.country` |
-| When it runs | Manually | In the job; skipped (`dbutils.notebook.exit("skipped ...")`) unless `salesforce_ingest` reported "loaded" and the table exists |
+| Aspect | Core banking (`source=neon`) | CRM (`source=salesforce`) | Loan origination system (`source=los`) |
+|---|---|---|---|
+| Source side | `bronze_neon_customers` / `bronze_neon_accounts` (a full snapshot each run; latest row per entity by `ingested_at`) | `bronze_salesforce_accounts` | `bronze_los_loans`, `dropDuplicates(loan_id)` |
+| Our side | `customers_clean` / `accounts_clean`, `dropDuplicates(key)` (fix for a 2026-09-23 fan-out) | `customers_clean`, segments Corporate and SME only | `loans_clean`, `dropDuplicates(loan_id)` |
+| Match key | customer_id / account_id | `trim(AccountNumber)`, else `SF:<Id>` | loan_id |
+| Fields compared | customers: name, segment, risk_rating, branch_id; accounts: type, currency, balance (numeric) | name (trimmed); BillingCountry against `customers_clean.country` | customer_id, product, currency (exact); principal, outstanding (numeric, tolerance 1.00); interest_rate (numeric, tolerance `RATE_TOLERANCE = 0.001` percentage points) |
+| Job tasks | `core_banking_ingest` -> `core_banking_reconciliation` | `salesforce_ingest` -> `salesforce_reconciliation` | `loans_api_ingest` -> `loans_api_reconciliation` |
+| Skips when | its ingest task did not report "loaded" this run | `salesforce_ingest` did not report "loaded", or the table does not exist | its ingest task did not report "loaded" this run |
+| Shown as | "Core banking system" | "CRM (Salesforce)" | "Loan origination system" (`frontend/src/reconciliation/CoreSystemSection.jsx` `SYSTEMS`) |
 
-Logic (lines 140-310):
+Logic (lines 156-330):
 
 - **Full outer join** on the key. Source-only records become `MISSING_IN_CANONICAL`; ours-only become `MISSING_IN_SOURCE`; each differing field becomes one `VALUE_MISMATCH` row.
-- **Numeric fields** are flagged when |source - ours| > `NUMERIC_TOLERANCE_USD = 1.00` (line 61). Despite the name, the difference is taken on native balances without conversion. Placeholder assumption.
+- **Numeric fields** each carry their own tolerance; both sides are cast to double and flagged when |source - ours| > tolerance. Amounts use `NUMERIC_TOLERANCE_USD = 1.00` (line 68) - despite the name, taken on native amounts without conversion; interest rates use `RATE_TOLERANCE = 0.001` (line 69). Placeholder assumptions.
 - **Text fields** use exact `!=`. A null on one side is not flagged (the comparison yields null).
 - **Formatting-only auto-clear (REC-1):** if upper-casing both values and removing everything except A-Z and 0-9 makes them equal, the row is written as `AUTO_ACCEPTED`, `resolved_rule = 'FORMATTING_ONLY'`, note "Cleared automatically: formatting only". Everything else is `OPEN`.
 - **Write:** `MERGE` into `reconciliation_exceptions` on (source_system, entity_type, entity_id, mismatch_type, field_name), null-safe. If matched, only `last_seen` and `times_seen + 1` change (status untouched); otherwise the row is inserted. Breaks that disappear are **not** closed (section 4.4.6).
@@ -648,16 +683,17 @@ The team's three decisions on any reconciliation task (`camunda/bridge/recon_tas
 #### 4.4.5 Corrections
 
 - **Pipeline items:** `POST /api/v1/reconciliation/pipeline/{recon_id}/corrections` proposes a value for one field of one rejected record. It is allowed only while the item is `WITH_TEAM`; the record must be a rejected row of that item; key columns are refused; a value equal to the old one is refused; enumerated fields must match Notebook 2's allowed values (and are re-cased); numeric fields must parse. There is at most one `PROPOSED` row per field (partial unique index), audited `CORRECTION_PROPOSED`. A CORRECT decision needs at least one proposal; other decisions withdraw them.
-- **Break groups:** "Correct our data" is refused for missing records and for entities other than accounts and customers. The fixed value is the entered value, otherwise the source's value; it is refused if empty, non-numeric for a numeric field, or equal to ours. The bridge inserts `reconciliation_corrections` (group_id, source_table `accounts` or `customers`, record_key, field, old_value = our value, new_value).
+- **Break groups:** "Correct our data" is refused for missing records and for entities other than accounts, customers and loans (loans added 2026-10-08 with the loan system, `camunda/bridge/recon_tasks_db.py` `ENTITY_TABLE`). The fixed value is the entered value, otherwise the source's value; it is refused if empty, non-numeric for a numeric field, or equal to ours. The bridge inserts `reconciliation_corrections` (group_id, source_table `accounts`, `customers` or `loans`, record_key, field, old_value = our value, new_value).
 - **Approval:** the CFO's approval sets the corrections to `APPROVED` (audited `CORRECTION_APPROVED`); a send-back sets unapplied ones to `WITHDRAWN`.
 - **Application:** Notebook 1 reads every `APPROVED` correction and applies it while the raw field still holds `old_value` (section 4.3.2). The source system is never written to; the correction is a layer over the source data that lapses once the source changes the value.
 
 #### 4.4.6 Known gaps
 
 - Open differences are not closed automatically when a later delivery fixes them. The comparison never resolves breaks it no longer sees, and pipeline items are per batch, so an old gap stays until a person decides it or a newer run supersedes it (`notebooks/multi_source_reconciliation.py`; `camunda/bridge/reconciliation_db.py`).
-- Tracking whether a fix was made at source, telling the source owner, and exporting a corrections file are backlog items REC-9, REC-10 and REC-11 (todo; uncommitted backlog text).
+- Tracking whether a fix was made at source, telling the source owner, and exporting a corrections file are backlog items REC-9, REC-10 and REC-11 (todo).
 - Transaction-level matching is blocked until the bank supplies a core-banking transaction export (REC-6).
-- The core-banking comparison is not part of the job; it runs only when someone runs the two notebooks by hand (`databricks.yml`; `project-docs/DATABRICKS-SETUP.md` section 10 step 7).
+- A comparison source that is not connected, or whose pull fails, is skipped for that run without an alert; the only sign is the "skipped" / "failed" row under Recent ingestions (section 8.3).
+- The demo loan system is a free Supabase project, which pauses after about a week without activity; a paused project makes `loans_api_ingest` record a failure (`specs/screen-data-ingestion.md` section 3d).
 
 ### 4.5 Step 5 - Load and serving
 
@@ -993,7 +1029,7 @@ Runs once, or every 300 s. Each pass runs `breaches_db.evaluate` (section 5.6.4)
 
 | Concept | Rule |
 |---|---|
-| Run | One per source delivery: for the CSV pipeline the newest `ingest_batch_id`; for the comparison sources (`neon`, `salesforce`) the newest date of `max(last_seen)`. Statuses `OPEN`, `IN_SIGNOFF`, `SIGNED_OFF`, `SUPERSEDED`. Names: "core banking files", "core banking comparison", "CRM comparison" |
+| Run | One per source delivery: for the CSV pipeline the newest `ingest_batch_id`; for the comparison sources (`neon`, `salesforce`, `los`) the newest date of `max(last_seen)`. Statuses `OPEN`, `IN_SIGNOFF`, `SIGNED_OFF`, `SUPERSEDED`. Names: "core banking files", "core banking comparison", "CRM comparison", "loan system comparison" |
 | Supersession | Older `OPEN` runs become `SUPERSEDED`. Pipeline items of an older delivery that nobody decided (`OPEN` / `WITH_TEAM` / `WITH_CFO`, no live correction) become `SUPERSEDED` with an audit row and their process is cancelled. An older run already `IN_SIGNOFF` whose items were all superseded is retired and its sign-off cancelled (commit `2c8fc6d`) |
 | Follow-on run | New groups arriving while a run is `IN_SIGNOFF` or `SIGNED_OFF` go to a follow-on run `<date>#<n>` |
 | Ready for sign-off | `OPEN`, no sign-off process, and no undecided tasks (pipeline items not DECIDED/APPROVED/SUPERSEDED, groups not CLOSED, open ungrouped breaks; `AWAITING_CFO` counts as undecided) - **or** the cut-off has passed |
@@ -1143,10 +1179,11 @@ Covered in section 4.1.4: CFO and admin can start the job from the Executive Sum
 | Ingestion | Landing volume | `databricks.yml` | Unity Catalog volume | CSV | Files API / UI / CLI | Verified live |
 | Ingestion | Job trigger | `databricks.yml` | Databricks Jobs, file arrival | - | - | Verified live; paused since 2026-09-29 |
 | Ingestion | Refresh Now / Run all sources | `backend/app/routers/refresh.py` | FastAPI | - | Jobs API 2.1 `run-now` | Built and tested locally |
-| Ingestion | Connector registry | `backend/app/connectors.py` | FastAPI | `source_connectors`; Databricks secrets | Secrets API | Built and tested locally |
+| Ingestion | Connector registry and Test connection | `backend/app/connectors.py` | FastAPI, psycopg2, urllib | `source_connectors`; Databricks secrets | Secrets API; live sign-in (PostgreSQL, TLS) and HTTPS GET (REST API) | Built and tested locally; used live 2026-10-08 |
 | Ingestion | Salesforce ingestion | `notebooks/multi_source_salesforce_ingestion.py` | PySpark, `requests` | Delta `bronze_salesforce_accounts` | OAuth 2.0 client credentials, REST | Verified live |
-| Ingestion | Core-banking stand-in ingestion | `notebooks/multi_source_neon_ingestion.py` | PySpark | Delta `bronze_neon_*` (append) | JDBC | Verified live (manual) |
-| Ingestion | Mockaroo / IMF / Google Sheets ingestion | `notebooks/multi_source_{mockaroo,imf,google_sheets}_ingestion.py` | PySpark | Delta `bronze_*` | REST / SDMX / Sheets API | Spec only (written, never run) |
+| Ingestion | Core banking ingestion | `notebooks/multi_source_neon_ingestion.py` | PySpark | Delta `bronze_neon_*` (overwrite, full snapshot) | Databricks `postgresql` format | Verified live 2026-10-08 (in the job) |
+| Ingestion | Loan origination system ingestion | `notebooks/multi_source_rest_api_ingestion.py` | PySpark, `requests` | Delta `bronze_los_loans` (overwrite) | HTTPS JSON, `limit`/`offset` paging | Verified live 2026-10-08 (in the job) |
+| Ingestion | IMF / Google Sheets ingestion (Mockaroo superseded) | `notebooks/multi_source_{imf,google_sheets,mockaroo}_ingestion.py` | PySpark | Delta `bronze_*` | SDMX / Sheets API / REST | Spec only (written, never run) |
 | Ingestion | Live FX | `notebooks/fx_utils.py` | Python `requests` | Delta `fx_rate_usage_log` (append) | HTTPS | Verified live |
 | Raw | Notebook 1 | `notebooks/01_ingestion_standardisation.py` | PySpark, serverless | Delta `raw_*` (overwrite) | - | Verified live |
 | Raw | Corrections overlay | same | PySpark | Delta `applied_corrections` | Spark `postgresql` read | Built; not exercised live |
@@ -1157,7 +1194,7 @@ Covered in section 4.1.4: CFO and admin can start the job from the Executive Sum
 | Gold | Notebook 6 | `notebooks/06_portfolio_branch_scenario_snapshot.py` | PySpark | Delta (10 tables) | Spark `postgresql` read of `customer_entity` | Verified live |
 | Future | Notebook 7 | (none) | MLflow, Isolation Forest (design) | - | - | Future phase |
 | Reconciliation | Pipeline reconciliation | `notebooks/pipeline_reconciliation.py` | PySpark | Delta `pipeline_reconciliation` (insert-only) | - | Verified live |
-| Reconciliation | Cross-system comparison | `notebooks/multi_source_reconciliation.py` | PySpark | Delta `reconciliation_exceptions` (merge) | Jobs task values | Verified live (CRM in job; core banking manual) |
+| Reconciliation | Cross-system comparison | `notebooks/multi_source_reconciliation.py` | PySpark | Delta `reconciliation_exceptions` (merge) | Jobs task values | Verified live (all three sources in the job) |
 | Load | Postgres load | `notebooks/load_to_postgres.py` | PySpark + psycopg2 | Postgres `staging` -> `public` | Databricks `postgresql` connector; TLS | Verified live |
 | Orchestration | Databricks job | `databricks.yml` | Databricks Asset Bundle, serverless jobs | - | `databricks bundle deploy` | Verified live |
 | Storage | Application database | `db/schema.sql`, `db/migrations/` | PostgreSQL on Neon | 58 tables | SQL over TLS | Verified live |
@@ -1185,7 +1222,7 @@ Covered in section 4.1.4: CFO and admin can start the job from the Executive Sum
 
 ### 8.1 The Databricks job
 
-`databricks.yml`: bundle `bank-data-pipeline`, job `bank_data_pipeline`, target `default` only. Compute: serverless (no clusters, job clusters or environments defined; seven notebooks carry an `environment_version = "5"` header). Trigger: file arrival (section 4.1.4). `max_concurrent_runs: 1`, queue enabled. Ten tasks:
+`databricks.yml`: bundle `bank-data-pipeline`, job `bank_data_pipeline`, target `default` only. Compute: serverless (no clusters, job clusters or environments defined; seven notebooks carry an `environment_version = "5"` header). Trigger: file arrival (section 4.1.4). `max_concurrent_runs: 1`, queue enabled. Fourteen tasks (ten until 2026-10-08):
 
 | Task | Notebook | Depends on | Parameters | Retries |
 |---|---|---|---|---|
@@ -1198,9 +1235,13 @@ Covered in section 4.1.4: CFO and admin can start the job from the Executive Sum
 | `pipeline_reconciliation` | `pipeline_reconciliation.py` | quality | - | 0 |
 | `salesforce_ingest` | `multi_source_salesforce_ingestion.py` | - (runs alongside ingest) | - | 0 |
 | `salesforce_reconciliation` | `multi_source_reconciliation.py` | salesforce_ingest, quality | `source=salesforce` | 0 |
-| `load_postgres` | `load_to_postgres.py` | kpi_summary, exception_summary, fraud_rules, portfolio_snapshot, pipeline_reconciliation, salesforce_reconciliation | - | 1 |
+| `core_banking_ingest` | `multi_source_neon_ingestion.py` | - (runs alongside ingest) | - | 0 |
+| `core_banking_reconciliation` | `multi_source_reconciliation.py` | core_banking_ingest, quality | `source=neon` | 0 |
+| `loans_api_ingest` | `multi_source_rest_api_ingestion.py` | - (runs alongside ingest) | - | 0 |
+| `loans_api_reconciliation` | `multi_source_reconciliation.py` | loans_api_ingest, quality | `source=los` | 0 |
+| `load_postgres` | `load_to_postgres.py` | kpi_summary, exception_summary, fraud_rules, portfolio_snapshot, pipeline_reconciliation, salesforce_reconciliation, core_banking_reconciliation, loans_api_reconciliation | - | 1 |
 
-The four retried tasks are the three that call the live FX API and the load (Neon cold start). No retry interval or retry-on-timeout is set.
+The four retried tasks are the three that call the live FX API and the load (Neon cold start). No retry interval or retry-on-timeout is set. The three source ingest tasks start with the run, in parallel with `ingest`; they read external systems only and never block the core CSV path.
 
 ```mermaid
 flowchart LR
@@ -1212,15 +1253,21 @@ flowchart LR
   quality --> pipeline_reconciliation
   salesforce_ingest --> salesforce_reconciliation
   quality --> salesforce_reconciliation
+  core_banking_ingest --> core_banking_reconciliation
+  quality --> core_banking_reconciliation
+  loans_api_ingest --> loans_api_reconciliation
+  quality --> loans_api_reconciliation
   kpi_summary --> load_postgres
   exception_summary --> load_postgres
   fraud_rules --> load_postgres
   portfolio_snapshot --> load_postgres
   pipeline_reconciliation --> load_postgres
   salesforce_reconciliation --> load_postgres
+  core_banking_reconciliation --> load_postgres
+  loans_api_reconciliation --> load_postgres
 ```
 
-Not in the job: the core-banking stand-in ingestion and `source=neon` comparison, and the Mockaroo, IMF and Google Sheets notebooks. Deployment of the job is manual (`databricks bundle deploy`); a GitHub Actions workflow (`.github/workflows/databricks-sync.yml`) only pulls the Databricks Repo on every push to `main` (`project-docs/DATABRICKS-SETUP.md` section 7a). Run time on the demo data: "about 6 minutes" (`project-docs/DEMO-GUIDE.md`); the client overview says "about ten minutes"; no measured log is kept in the repo.
+Not in the job: the Mockaroo (superseded), IMF and Google Sheets notebooks. Deployment of the job is manual (`databricks bundle deploy`); a GitHub Actions workflow (`.github/workflows/databricks-sync.yml`) only pulls the Databricks Repo on every push to `main` (`project-docs/DATABRICKS-SETUP.md` section 7a). Run time on the demo data: "about 6 minutes" (`project-docs/DEMO-GUIDE.md`); the client overview says "about ten minutes"; no measured log is kept in the repo.
 
 ### 8.2 Failure behaviour per step
 
@@ -1234,7 +1281,9 @@ Not in the job: the core-banking stand-in ingestion and `source=neon` comparison
 | Fraud thresholds unreadable | Built-in defaults used | Notebook 5 lines 95-97 |
 | `customer_entity` unreadable | Exposures per individual customer | Notebook 6 lines 200-202 |
 | FX API down | 3 attempts, then error; the task is retried once by the job; no stale fallback | `notebooks/fx_utils.py`; `databricks.yml` |
-| Salesforce not connected or failing | Task ends "skipped" / "failed" in a success state, writes an `ingestion_runs` row; the comparison skips itself; the rest of the run continues | `notebooks/multi_source_salesforce_ingestion.py`; `notebooks/multi_source_reconciliation.py` |
+| A connected source (Salesforce, core banking, loan system) not connected or failing | Task ends "skipped" / "failed" in a success state, writes an `ingestion_runs` row (failures with the first error line); its comparison skips itself; the rest of the run continues | `notebooks/multi_source_{salesforce,neon,rest_api}_ingestion.py`; `notebooks/multi_source_reconciliation.py` lines 77-89 |
+| Loan system returns no loans or lacks a field | Recorded as "failed", so the comparison skips instead of opening a "missing" task for every loan | `notebooks/multi_source_rest_api_ingestion.py` |
+| Serverless-only restrictions | Generic `format("jdbc")` and `.cache()` are refused on serverless (`UNSUPPORTED_DATA_SOURCE_WRITE`, `NOT_SUPPORTED_WITH_SERVERLESS`); the notebooks use the bundled `postgresql` format and do not cache. The `.cache()` case made the first live core banking run (776501334971850) record a failure; fixed in `7db563b` | `notebooks/load_to_postgres.py`; `notebooks/multi_source_neon_ingestion.py` line 156 |
 | Neon asleep | 4 connection attempts 10 s apart, plus 1 job retry | `notebooks/load_to_postgres.py` lines 223-232 |
 | Postgres merge error (duplicate key, foreign key) | Whole merge rolled back - all or nothing; staging schema left in place | `notebooks/load_to_postgres.py` lines 338-348 |
 | Row-count mismatch after load | Error raised after commit (data already written) | `notebooks/load_to_postgres.py` lines 356-380 |
@@ -1272,7 +1321,7 @@ Configuration (`backend/.env.example`; `backend/app/config.py`): `DATABASE_URL` 
 
 ### 9.2 Databricks deployment
 
-`databricks bundle deploy` with the Databricks CLI (`project-docs/PREREQUISITES.md`; `specs/pipeline-job-and-neon-load.md`), optionally `--var trigger_pause_status=PAUSED`. The notebooks are developed in the workspace's Repo folder and synced from GitHub. Secret scopes to create: `neon` (host, database, user, password), `multi-source-demo` (core-banking stand-in and the unrun sources), `bank-data-sources` (written by the app's connector screen) (`project-docs/DATABRICKS-SETUP.md` section 10). Databricks Premium tier is stated as required for Unity Catalog (`DATABRICKS-SETUP.md`).
+`databricks bundle deploy` with the Databricks CLI (`project-docs/PREREQUISITES.md`; `specs/pipeline-job-and-neon-load.md`), optionally `--var trigger_pause_status=PAUSED`. The notebooks are developed in the workspace's Repo folder and synced from GitHub. Secret scopes to create: `neon` (host, database, user, password), `bank-data-sources` (written by the app's connector screen: Salesforce, core banking PostgreSQL, loan system REST API), and `multi-source-demo` only if the unrun IMF / Google Sheets notebooks are revived (the core banking pull no longer reads it). The demo stand-ins are filled by `scripts/plant_core_system_breaks.py` (`db/multi_source_demo.env`) and `scripts/seed_loans_api.py` (`db/loans_api_demo.env`, a Supabase Session-pooler connection string), both git-ignored (`project-docs/DATABRICKS-SETUP.md` section 10). Databricks Premium tier is stated as required for Unity Catalog (`DATABRICKS-SETUP.md`).
 
 ### 9.3 Camunda stack
 
@@ -1282,7 +1331,7 @@ From `camunda/`: `docker compose up -d elasticsearch`, wait until healthy, `dock
 
 | Suite | Scope | Size |
 |---|---|---|
-| Backend pytest (`backend/tests/`) | Real FastAPI app against a throwaway embedded PostgreSQL (`pgserver`) built from `db/schema.sql`, with demo users and small hand-built rows; Databricks and the LLM are faked | ~230 test functions in 20 files: API and auth (26), Screens 2-5 incl. reports and exports (43), assistant (32 + 9 hard), reconciliation approvals (25), file upload (15), task cases (10), source connectors (9), KPI explanations (7), pipeline reconciliation (7), breach levels, entity matching, reconciliation groups, refresh, ingestion, DB pool (6 each), roles (4), flood guards (3), country view and superseded sign-off (2 each) |
+| Backend pytest (`backend/tests/`) | Real FastAPI app against a throwaway embedded PostgreSQL (`pgserver`) built from `db/schema.sql`, with demo users and small hand-built rows; Databricks and the LLM are faked | ~244 test functions in 21 files: API and auth (26), Screens 2-5 incl. reports and exports (43), assistant (32 + 9 hard), reconciliation approvals (25), source connectors incl. live PostgreSQL and REST API checks (20), file upload (15), task cases (10), loan system seed script (3), KPI explanations (7), pipeline reconciliation (7), breach levels, entity matching, reconciliation groups, refresh, ingestion, DB pool (6 each), roles (4), flood guards (3), country view and superseded sign-off (2 each) |
 | Load logic (`db/test_load_logic.py`) | Postgres merge rules of `load_to_postgres.py` | 20 checks |
 | Frontend vitest (`frontend/src/**/*.test.*`) | Components and pure logic with jsdom and Testing Library: access, pages, Tasks and review panels, reconciliation sections, scenario engine, derive helpers, KPI limits, task dates and due dates | 28 files, ~217 cases |
 | Assistant evaluation (`scripts/eval_ask.py`) | Real model against golden, hard and held-out question sets (`ask_questions*.json`) | 54 / 29 / 30 questions |
@@ -1313,7 +1362,8 @@ All values below are Placeholder assumptions. The `app_settings` and `limits` ro
 | Expected deliveries | CORE_CSV from Lebanon, Saudi Arabia, Qatar; bank-wide tables once as `Group` | `notebooks/pipeline_reconciliation.py` lines 72-76 | Bank |
 | Reporting currency | USD | `specs/cfo-country-view.md` | Bank (question 5) |
 | FX source | open.er-api.com, keyless, today's rate for every transaction | `notebooks/fx_utils.py` | Bank (FX-2, FX-3) |
-| Cross-system numeric tolerance | 1.00 (native currency, despite the `_USD` name) | `notebooks/multi_source_reconciliation.py` line 61 | Bank |
+| Cross-system numeric tolerance | Amounts 1.00 (native currency, despite the `_USD` name); interest rates 0.001 percentage points | `notebooks/multi_source_reconciliation.py` lines 68-69 | Bank |
+| Fields the source systems must provide | Core banking: `customers` (customer_id, name, segment, risk_rating, branch_id), `accounts` (account_id, customer_id, type, currency, balance); loan system: loan_id, customer_id, product, currency, principal, outstanding, interest_rate - with the same IDs as ours | `backend/app/connectors.py` `CORE_BANKING_TABLES`, `LOAN_COLUMNS` | Bank (owners of each system) |
 | Pipeline amount tolerance | 0.005 | `notebooks/pipeline_reconciliation.py` line 64 | Bank |
 | `recon.rules` | important_amount 10,000; important_fields name, currency, type, segment; size_bands 100 / 1,000 / 10,000; same_difference_min 3; max_group_size 1,000; owner_team OPERATIONS; second_approval_total 100,000 (unused) | `app_settings` (migration 016) | Bank (REC-1/3/4/5/7) |
 | Mass-missing threshold | 20 records (code default only) | `camunda/bridge/recon_groups_db.py` line 28 | Bank |
@@ -1348,7 +1398,7 @@ From "Waiting on the bank" and the questions for the bank's sponsor in `project-
 9. AML typologies and reporting thresholds (FRD-3); device, login and beneficiary data (FRD-4).
 10. SLAs per team; sign-off on how tasks are created (TSK-3/4).
 11. Reconciliation tolerances, harmless causes, key fields, owning team and deadlines, escalation age, run sign-off requirement (REC-1/3/4/5/7); a core-banking transaction export (REC-6).
-12. The owner of each source system and how they should be told about fixes at source (REC-10/11; uncommitted backlog text).
+12. The owner of each source system and how they should be told about fixes at source (REC-10/11).
 13. Official FX source per currency; which LBP rate for which report (FX-2/3).
 14. Each source's delivery method, credential owner and pull times; who may upload by hand (ING-1/2/3).
 15. The source-system list and transaction-code lists (SRC-4; `transaction_code_mapping` is empty until then).
@@ -1365,11 +1415,12 @@ Also open in `project-docs/PREREQUISITES.md` and `PLATFORM-BUILD-PLAN.md`: hosti
 | Notebook 7 ML scoring | Future phase | `specs/notebook-07-fraud-ml-future-phase.md` |
 | SSO via Keycloak / Camunda Identity, per-person task access | Future phase | `project-docs/PREREQUISITES.md`; `specs/camunda-bpmn-process-design.md` section 7 |
 | Transaction-level matching (REC-6) | Blocked on the bank | backlog |
-| Fix-at-source status, notify source owner, corrections file (REC-9..11) | Todo (uncommitted) | backlog |
+| Fix-at-source status, notify source owner, corrections file (REC-9..11) | Todo | backlog |
 | FX by transaction date, pluggable official source, multiple LBP rates, rate shown on exports (FX-1..4) | Todo / blocked | backlog |
 | Source on drill-downs, lineage view (SRC-2, SRC-3) | Todo | backlog |
-| Connector notebooks for PostgreSQL, REST, S3, Snowflake; live "Test connection"; real schedules; failures in `ingestion_runs`; history across runs; removing demo fallbacks (ING-1, 2, 4, 5, 6) | Todo | backlog |
-| Mockaroo, IMF, Google Sheets live runs (SRC-5) | Todo | backlog |
+| Connector notebooks and live "Test connection" for PostgreSQL and REST API | **Done 2026-10-08** (core banking and loan system, in the job) | `specs/screen-data-ingestion.md` sections 3c, 3d |
+| Connector notebooks for S3 and Snowflake; live "Test connection" for Salesforce, S3, Snowflake; real schedules; history across runs; removing demo fallbacks (ING-1, 2, 4, 5, 6) | Todo | backlog |
+| IMF, Google Sheets live runs (SRC-5); Mockaroo dropped in favour of the REST API loan system | Todo | backlog; `specs/multi-source-reconciliation.md` |
 | Assistant: reconciliation and report queries, pre-filtered "View records" (AST-1..3); read-only database login; vLLM on a bank GPU server; Arabic | Todo / future | backlog; `specs/ask-a-question.md` |
 | Read-back of review outcomes into Databricks | Spec only | `specs/bidirectional-sync.md` |
 | Reconciliation deadlines and escalation, run progress bar, sign-off evidence pack | Not built | `specs/reconciliation-approvals.md` section 9 |
@@ -1395,13 +1446,15 @@ Defects found in code (from reading the code; none has a failing test in the rep
 | D10 | **Live queries on page load** despite the precompute rule: `/performance/channels` scans all transactions; `/kpi-summary/{key}/breakdown` recomputes from source tables. | `backend/app/routers/performance.py`; `backend/app/routers/kpi.py` |
 | D11 | **Cache coverage.** Only `/portfolio/overview` is cached; the cache has no TTL and is per process (a multi-worker deployment would need a shared cache). | `backend/app/cache.py`; `backend/app/routers/portfolio.py` line 66 |
 | D12 | **Six unused tables:** `workflow_steps`, `workflow_instances`, `tasks`, `submitted_files`, `transaction_code_mapping`, `reconciliation_signoffs`. | `db/schema.sql` |
-| D13 | **Tolerance name.** `NUMERIC_TOLERANCE_USD` is applied to native-currency balances without conversion. | `notebooks/multi_source_reconciliation.py` line 61 |
-| D14 | **Neon ingestion watermark** is compared and ordered as a string, and the pushdown SQL is built with an f-string. | `notebooks/multi_source_neon_ingestion.py` lines 289, 310 |
+| D13 | **Tolerance name.** `NUMERIC_TOLERANCE_USD` is applied to native-currency balances, principals and outstandings without conversion. | `notebooks/multi_source_reconciliation.py` line 68 |
+| D14 | ~~**Neon ingestion watermark** is compared and ordered as a string, and the pushdown SQL is built with an f-string.~~ **Resolved 2026-10-08:** the watermark was removed; the notebook takes a full snapshot each run. | `notebooks/multi_source_neon_ingestion.py` (commit `121f88a`) |
 | D15 | **Leftover candidate group** `reconciliation-team` (retired process) in the Tasklist search. | `frontend/src/workflow/tasklistApi.js` |
 | D16 | **Rate limiting** exists only on `POST /ask`; none on `/auth/login`. | `backend/app/routers/ask.py`; `backend/app/routers/auth.py` |
 | D17 | **`audit_log.ip_address`** exists but is never written. | `db/schema.sql`; routers |
 | D18 | **FX log** records successful fetches only; failures are not logged as the spec asked. | `notebooks/fx_utils.py`; `specs/fx-realtime-ingestion.md` section 4 |
 | D19 | **`fx_rates` still ingested and checked** although the spec marks the path superseded by live FX. | Notebooks 1-2; `notebooks/load_to_postgres.py` line 63; `specs/fx-realtime-ingestion.md` lines 99-104 |
+| D20 | **Server-side connection to a user-supplied address.** Test connection makes the API server sign in to any PostgreSQL host or GET any URL typed into the form. It is limited to CFO and admin, read-only, time-limited and never echoes secrets, but there is no allow-list of hosts. | `backend/app/connectors.py` `check_postgresql`, `check_rest_api`; `backend/app/routers/ingestion.py` `test_source` |
+| D21 | **Core banking read twice.** Without `.cache()` (refused on serverless), `count()` and the Bronze write each read the source, so the row count recorded in `ingestion_runs` can differ from the rows written if the source changes in between (the notebook accepts this at core banking's size). | `notebooks/multi_source_neon_ingestion.py` lines 154-160 |
 
 Documentation that disagrees with the code (code is described in this document):
 
@@ -1416,14 +1469,16 @@ Documentation that disagrees with the code (code is described in this document):
 | X7 | `/workflow` placeholder and `frontend/src/pages/Workflow.jsx`; "Screen 6 and Camunda are not built" | No such route or file; Screen 6 = `/tasks` + `/audit-oversight`; Camunda chain verified live | `CLAUDE.md`; `frontend/src/App.jsx` |
 | X8 | Fixes for core-banking / CRM differences happen in the source system | Group corrections are inserted into `reconciliation_corrections` and Notebook 1 applies all `APPROVED` rows to our raw data | `project-docs/DEMO-GUIDE.md` ("Honest answers"); `camunda/bridge/recon_tasks_db.py` lines 209-217; `notebooks/01_ingestion_standardisation.py` line 320 |
 | X9 | Mass-missing threshold and duplicate-review cap are "placeholders in the settings" | Code constants (20, 25), not seeded in `app_settings` (overridable there) | `project-docs/DEMO-GUIDE.md`; `recon_groups_db.py` line 28; `duplicates_db.py` line 20 |
-| X10 | Neon core-banking reconciliation runs in the pipeline | Not in `databricks.yml`; run by hand | `project-docs/client-demo/Client-Demo-Overview.html`; `databricks.yml` |
+| X10 | ~~Neon core-banking reconciliation runs in the pipeline (was run by hand)~~ | **Now true** since 2026-10-08 (`core_banking_ingest` -> `core_banking_reconciliation`); the client overview is no longer wrong on this point | `project-docs/client-demo/Client-Demo-Overview.html`; `databricks.yml` |
 | X11 | Client overview: CFO-first loop, second approver at 100,000, 4 logins, breaches to Compliance, daily schedule, about 10 minutes per run | Team decides first; CFO approves Important items and fixes and signs off runs; 7 roles; breaches to CRO; no schedule; about 6 minutes per DEMO-GUIDE | `project-docs/client-demo/Client-Demo-Overview.html` |
 | X12 | Spec status "Spec only - not yet implemented" | Built (routers, pages, tests) | `specs/screen-02..06-*.md` |
 | X13 | Backend spec: Screen 3, Screen 6, scenario save, upload not built; role restrictions not implemented | All exist | `specs/fastapi-backend.md` |
 | X14 | Not yet run live | Ran live per the backlog (2026-09-28) | `specs/task-cases.md`, `breach-levels.md`, `entity-matching.md`, `source-tagging.md`, `pipeline-reconciliation.md`, `cfo-country-view.md` status lines |
-| X15 | Multi-source: "none run against a live source"; Salesforce criterion uses username-password `sf_*` secrets; Neon notebook header "written but unrun"; "Mockaroo and Salesforce remain spec-only" | Neon ran 2026-09-22; Salesforce ran 2026-09-29 with client credentials | `specs/multi-source-ingestion-adf.md` lines 3, 177-179; `notebooks/multi_source_neon_ingestion.py` lines 7-11; `specs/multi-source-reconciliation.md` line 11 |
+| X15 | Multi-source: "none run against a live source"; Salesforce criterion uses username-password `sf_*` secrets; "Mockaroo/Salesforce reconciliation remain spec-only"; Mockaroo stands in for the loan origination system | Neon ran 2026-09-22 and in the job 2026-10-08; Salesforce ran 2026-09-29 with client credentials; the loan origination system is a Supabase REST API (Mockaroo superseded) | `specs/multi-source-ingestion-adf.md` lines 3, 177-179; `CLAUDE.md` and `project-docs/PREREQUISITES.md` ("Mockaroo/Salesforce reconciliation ... spec-only") |
+| X28 | `multi_source_reconciliation.py` header: "Written but unrun until both are done" | Ran live for all three sources | `notebooks/multi_source_reconciliation.py` line 37 |
+| X29 | `project-docs/PREREQUISITES.md` lists Mockaroo as the loan origination stand-in among the free cloud sources | Supabase REST API since 2026-10-08 (section 11 of this document is updated) | `project-docs/PREREQUISITES.md`; `specs/multi-source-ingestion-adf.md` |
 | X16 | "No fuzzy / normalised comparison" | Formatting-only auto-clear exists (REC-1) | `specs/multi-source-reconciliation.md` section 9 |
-| X17 | Pipeline job spec: Notebooks 1-6 DAG, serverless JDBC unverified, acceptance boxes unchecked | 10 tasks; bundled `postgresql` connector verified live | `specs/pipeline-job-and-neon-load.md` |
+| X17 | Pipeline job spec: Notebooks 1-6 DAG, serverless JDBC unverified, acceptance boxes unchecked | 14 tasks; bundled `postgresql` connector verified live | `specs/pipeline-job-and-neon-load.md` |
 | X18 | Notebook 6 writes 9 tables | 10 | `project-docs/DATABRICKS-SETUP.md` section 8 |
 | X19 | Schema has 41 tables; "four seeded demo users" | 58 tables; seven users | `specs/postgres-schema.md`; `db/schema.sql` comment; `camunda/README.md` |
 | X20 | Camunda "not yet verified against a live Zeebe/Tasklist deployment"; compose header lists Operate | Verified live 2026-09-22; Operate commented out | `camunda/README.md`; `camunda/docker-compose.yaml` |
@@ -1434,6 +1489,26 @@ Documentation that disagrees with the code (code is described in this document):
 | X25 | KPI tile thresholds "no such [limits] table exists yet" | Tiles read `limits` | `frontend/src/kpi/kpiConfig.js` header |
 | X26 | Spec says log FX failures; Notebook 5 spec lists 4 rules | Successes only; 9 rules | `specs/fx-realtime-ingestion.md`; `specs/notebook-05-fraud-business-rules.md` line 113 |
 | X27 | Screen 1 24-month trend | The demo's KPI history is synthetic, rebuilt by `db/demo_trends/02_kpi_history.sql` | `db/demo_trends/` (commit `b05fab0`) |
+
+### 10.5 Regulatory compliance gaps
+
+`project-docs/REGULATORY-COMPLIANCE-GAPS.md` (2026-10-07) states that the platform, as a proof of concept, **does not currently meet** banking regulatory requirements (BCBS 239, ISO 27001 / SOC 2, NIST CSF; CBUAE / DFSA, SAMA + NCA, QCB and the regional data-protection laws). It lists 28 gaps, each with evidence in the code, the reason it fails, the production fix, a priority (P1 blocks any regulated use, P2 needed before go-live, P3 can follow) and the effort of a demo-only fix (Quick, Small, Medium, No).
+
+| Area | Gaps | Examples (P1 in bold) | Overlap with this document |
+|---|---|---|---|
+| Infrastructure | 1-5 | **Data hosted outside the region**; **cloud use not notified to the regulator**; **app and Camunda on a laptop**; no HA/DR; no alerting or timeouts | sections 8.3, 9, 11.1 |
+| Security | 6-14 | **No MFA / SSO**; **Camunda security off with a shared `demo` login**; **all task groups visible, filtered in the browser**; no row-level security; 8-hour sessions; no login rate limit; audit `ip_address` empty; no scanning or pen test | sections 3.4, 5.1, 5.4; D16, D17 |
+| Encryption | 15-18 | **Browser to API over plain HTTP**; **Camunda traffic unencrypted**; provider-managed keys; unmasked customer names | sections 5.1, 9.1 |
+| Data accuracy and record-keeping | 19-24 | **Placeholder KPIs**; **ageing boundary, missing regions, period mix**; exception history overwritten; null and duplicate-key checks; never tested at bank volume | D1-D7, D13, D18; section 4.5.4 |
+| Paperwork and process | 25-28 | No policies; **Camunda non-production licence and no vendor review**; **no independent assessment**; no AI model-governance note | section 11.4 |
+
+It also lists what already meets regulatory expectations (drill-to-source traceability, kept rejected rows, maker-checker and run sign-off, the insert-only audit log, server-side roles, PBKDF2 password storage, secrets in a vault, a local AI model), a recommended set of demo fixes (all Quick items about one day; Small items two to three days more) and wording for the items that cannot be fixed for the demo. A demo fix "does **not** make the platform compliant".
+
+Since that document was written, gap 13 (an f-string SQL in the Neon notebook, D14) no longer applies: the notebook was rewritten on 2026-10-08 to read whole tables with the `postgresql` format. The new live Test connection adds an item of the same kind as gaps 9-12 (D20).
+
+### 10.6 Performance-at-scale summary
+
+`project-docs/Platform-Performance-at-Scale-Summary.docx` (2026-10-07) is a client-facing summary of how the platform behaves as data grows: pipeline run times, workflow task load on Camunda and the Tasks page, and the role of the developer PC, with infrastructure, security, encryption, scalability, hosting costs and the changes needed before production volumes, plus prepared answers to client questions (how data comes in, infrastructure, encryption, security, what the AI is). Apart from the measured ~6-minute demo run, its figures are marked as estimates; it does not replace the load test listed in section 4.5.4.
 
 ---
 
@@ -1464,13 +1539,13 @@ All production estimates below therefore assume **UAE North** for every componen
 
 | Component | Demo today | Source in repo |
 |---|---|---|
-| Databricks | Azure Databricks Premium, serverless jobs compute (no cluster defined), 10 tasks, about 6 minutes per run on the demo data; region not recorded | `databricks.yml`; `project-docs/DATABRICKS-SETUP.md`; `project-docs/DEMO-GUIDE.md` |
+| Databricks | Azure Databricks Premium, serverless jobs compute (no cluster defined), 14 tasks (10 when costs were checked), about 6 minutes per run on the demo data; region not recorded | `databricks.yml`; `project-docs/DATABRICKS-SETUP.md`; `project-docs/DEMO-GUIDE.md` |
 | Application database | Neon, pooled host on AWS; spec describes the free tier (~0.5 GB, suspends when idle); plan not verified | `backend/.env.example`; `specs/pipeline-job-and-neon-load.md` |
 | Core-banking stand-in | Second Neon project (demo only; in production this is the bank's own core system, not a platform cost) | `project-docs/PREREQUISITES.md` |
 | Camunda | 8.7.41 + Elasticsearch 8.17.10 in Docker Compose on the laptop (~2.5 GB); the compose header says it is "not designed to be used in production" and recommends Kubernetes with Helm | `camunda/docker-compose.yaml` |
 | API, front end, workers | On the laptop via `scripts/run-local.ps1` | `scripts/run-local.ps1` |
 | AI assistant | Ollama, `qwen2.5:3b`, CPU only, ~6 s per question; planned vLLM on a bank GPU server | `specs/ask-a-question.md` |
-| Other sources | Salesforce Developer Edition, Mockaroo, IMF API, Google Sheets (only Salesforce runs in the job) | `project-docs/PREREQUISITES.md`; `databricks.yml` |
+| Other sources | Salesforce Developer Edition and a free Supabase project (loan system) run in the job; IMF API and Google Sheets notebooks unrun; Mockaroo superseded | `project-docs/PREREQUISITES.md`; `databricks.yml`; `specs/screen-data-ingestion.md` section 3d |
 | SSO | None | `CLAUDE.md` |
 
 ### 11.3 Sizing assumptions (all for the bank to confirm)
@@ -1545,12 +1620,12 @@ Monthly, USD. "Lean" = one production environment without HA; "HA" = production 
 | Monitoring | Logs and metrics (none today) | None | Log Analytics | per GB ingested | 16.45 / 82.25 / 312.55 | 82.25 / 180.95 / 641.55 | (GB - 5) x 3.29 for 10 / 30 / 100 GB and 30 / 60 / 200 GB |
 | Egress | Browser traffic, exports | - | Azure bandwidth | per GB | 0 / 0 / 72.40 | 0 / 18.10 / 72.40 | 200 GB: 100 x 0.181; 500 GB: 400 x 0.181 |
 | Salesforce | CRM source | Developer Edition | The bank's own CRM licence | per user | excluded | excluded | Bank's existing licence; e.g. 10 Pro Suite users would be 10 x $100 = $1,000/month (illustration only) |
-| Mockaroo, IMF, Google Sheets | Demo sources | Free tiers | Replaced by the bank's systems; IMF and Sheets API at no charge at current quotas | - | 0 | 0 | Mockaroo stands in for a loan origination system |
+| Supabase, IMF, Google Sheets | Demo sources | Free tiers | Replaced by the bank's systems; IMF and Sheets API at no charge at current quotas | - | 0 | 0 | Supabase (Free plan) stands in for the loan origination system since 2026-10-08, replacing Mockaroo; its price was not checked on 2026-10-01 and is not a platform cost in production |
 | Core-banking stand-in | Second Neon project | Neon | The bank's own core system | - | 0 | 0 | Not a platform cost |
 
 ### 11.6 Totals
 
-**(a) The demo as it runs today.** Only Databricks serverless usage is billed; everything else is on the laptop or a free tier (two Neon projects, Salesforce Developer Edition, Mockaroo Free, IMF, Google Sheets, Ollama, Camunda under the non-production licence). Assumed demo usage at $0.50 per DBU:
+**(a) The demo as it runs today.** Only Databricks serverless usage is billed; everything else is on the laptop or a free tier (two Neon projects, a Supabase Free project, Salesforce Developer Edition, IMF, Google Sheets, Ollama, Camunda under the non-production licence). Assumed demo usage at $0.50 per DBU:
 
 | | Low | Expected | High |
 |---|---|---|---|
@@ -1684,8 +1759,9 @@ Implementation and integration work; support and operations staff; bank-side wor
 | `pipeline_reconciliation` | `pipeline_reconciliation.py` (insert-only merge) | load |
 | `reconciliation_exceptions` | `multi_source_reconciliation.py` (merge) | load |
 | `bronze_salesforce_accounts` | Salesforce ingestion (overwrite) | cross-system comparison |
-| `bronze_neon_customers`, `bronze_neon_accounts` | Neon ingestion (append) | cross-system comparison |
-| `multi_source_watermarks` | Neon ingestion | Neon ingestion |
+| `bronze_neon_customers`, `bronze_neon_accounts` | Core banking ingestion (overwrite, full snapshot; append before 2026-10-08) | cross-system comparison (`source=neon`) |
+| `bronze_los_loans` | Loan system ingestion (overwrite) | cross-system comparison (`source=los`) |
+| `multi_source_watermarks` | No longer written (watermark removed 2026-10-08); may still exist in the workspace | none |
 | `bronze_mockaroo_loans`, `bronze_imf_macro`, `bronze_branch_finance` | Unrun notebooks | none |
 
 ### B.2 PostgreSQL tables (application database)
@@ -1722,7 +1798,7 @@ Implementation and integration work; support and operations staff; bank-side wor
 | `saved_scenarios` | API | Screen 4 |
 | `ask_history` | API | assistant |
 | `source_connectors` | API | Data ingestion screen |
-| `ingestion_runs` | Salesforce notebook | Data ingestion screen |
+| `ingestion_runs` | Salesforce, core banking and loan system notebooks | Data ingestion screen (Recent ingestions) |
 | `workflow_steps`, `workflow_instances`, `tasks`, `transaction_code_mapping` | none | none |
 | `staging.*` | load (temporary) | load; dropped after a successful merge |
 
@@ -1792,8 +1868,8 @@ All paths are prefixed with `/api/v1`. Auth: JWT Bearer unless stated.
 | POST | `/reconciliation/{exception_id}/resolve` | Override one break | admin only |
 | GET | `/ingestion/overview` | Data ingestion screen data | ingestion |
 | POST | `/ingestion/upload` | Upload a CSV to the landing volume | CFO, admin |
-| POST | `/ingestion/sources/{key}/test` | Form check (no live sign-in) | CFO, admin |
-| POST | `/ingestion/sources/{key}/connect` | Store config; secrets to Databricks | CFO, admin |
+| POST | `/ingestion/sources/{key}/test` | Live sign-in for PostgreSQL and REST API; form check for the others | CFO, admin |
+| POST | `/ingestion/sources/{key}/connect` | Store config; secrets to Databricks (422 if PostgreSQL points at the app's own database) | CFO, admin |
 | DELETE | `/ingestion/sources/{key}` | Disconnect | CFO, admin |
 | POST | `/ingestion/run` | Run all sources (Jobs API) | CFO, admin |
 | POST | `/ingestion/sources/{key}/sync` | Same pipeline run | CFO, admin |
