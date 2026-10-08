@@ -99,7 +99,10 @@ tagged by country (Lebanon, Saudi Arabia, Qatar, plus "Group" for bank-wide tabl
 
 ## 3c. PostgreSQL = the core banking system, end to end (2026-10-08)
 
-Not yet run live on Databricks or checked in a browser; backend and frontend tests pass.
+**Run live 2026-10-08** (run 408068064859428): 208 customers and 313 accounts loaded, comparison and load
+succeeded. The first live run (776501334971850) failed this step cleanly with NOT_SUPPORTED_WITH_SERVERLESS:
+the notebook cached the read (`.cache()`), which serverless compute refuses; removed. Connected and tested
+from the Ingestion tab in a browser.
 
 - **What it is for:** the core banking database the reconciliation compares our data with
   (`specs/multi-source-reconciliation.md`, source `neon`). It must hold `customers` (customer_id, name,
@@ -126,7 +129,10 @@ Not yet run live on Databricks or checked in a browser; backend and frontend tes
 
 ## 3d. REST API = the loan origination system, end to end (2026-10-08)
 
-Not yet run live on Databricks or checked in a browser; backend and frontend tests pass.
+**Run live 2026-10-08** (run 776501334971850): 98 loans loaded and every planted difference found as planned
+(LN0001-3 one group, LN0004 and LN0007 important, LN0005 rate, LN0006 product, LN0009 cleared automatically,
+LN0010 and LNLOS01 missing). Found while connecting: Supabase answers the Test connection's
+`Prefer: count=exact` call with 206 Partial Content, now accepted (and by the notebook).
 
 - **What it is for:** a third system our data is compared with: the loan origination system's loans
   against ours (`multi_source_reconciliation.py`, source `los`, shown as "Loan origination system" on the

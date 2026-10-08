@@ -153,8 +153,11 @@ def read_table(name, columns):
 frames = {}
 for name, (_, columns) in TABLES.items():
     try:
-        df = read_table(name, columns).cache()
-        frames[name] = (df, df.count())          # count() forces the read, so sign-in errors surface here
+        # No .cache(): serverless compute refuses it (NOT_SUPPORTED_WITH_SERVERLESS, found on the first live run).
+        # count() still forces the read, so sign-in and missing-column errors surface here, before any write;
+        # the write below reads the table again, which costs little at core banking's size.
+        df = read_table(name, columns)
+        frames[name] = (df, df.count())
     except Exception as e:
         # First line only: Spark's error text can run to pages, and never contains the password.
         reason = f"Couldn't read {name} from {HOST}/{DATABASE}: {str(e).strip().splitlines()[0][:300]}"
