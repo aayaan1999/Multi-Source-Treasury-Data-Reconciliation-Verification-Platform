@@ -1,5 +1,9 @@
 # Spec: Multi-Source Reconciliation
 
+**Update 2026-10-08:** the core banking database is now connected from the app's Data ingestion tab as
+PostgreSQL and runs in the job as `core_banking_ingest` → `core_banking_reconciliation`, with a full
+snapshot per run instead of the `updated_at` watermark - see `specs/screen-data-ingestion.md` section 3c.
+Not yet run live in that form; the live results below are from the earlier hand-run setup.
 **Status:** Neon slice implemented and verified end-to-end on a live cluster (2026-09-22): a second
 Neon project was provisioned and seeded per section 4, `multi_source_neon_ingestion.py` ran for
 both `customers` and `accounts`, `multi_source_reconciliation.py` ran and produced the expected

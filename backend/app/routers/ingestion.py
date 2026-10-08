@@ -38,6 +38,7 @@ router = APIRouter(prefix="/ingestion", tags=["data ingestion"], dependencies=[D
 PIPELINE_TRIGGER = "On file arrival"
 
 SYSTEM_LABELS = {"CORE_CSV": "Core Banking"}
+RUN_TYPES = {"postgresql": "Database", "snowflake": "Database", "aws_s3": "File"}     # "Recent ingestions" Type column
 # Upload files (specs/screen-data-ingestion.md section 3b): the day's core banking files go straight to the pipeline's landing
 # folder. Notebook 1 reads these eight CSVs by name, so only they are accepted; each must carry its columns.
 UPLOAD_FORMATS = ["CSV"]
@@ -116,7 +117,7 @@ def _source_runs() -> list:
     for r in rows:
         spec = connectors.SOURCE_TYPES.get(r["source_key"], {"name": r["source_key"]})
         failed = r["status"] == "failed"
-        out.append({"source": spec["name"], "type": "API", "data": r["data_name"], "received": r["rows_received"],
+        out.append({"source": spec["name"], "type": RUN_TYPES.get(r["source_key"], "API"), "data": r["data_name"], "received": r["rows_received"],
                     "kept": r["rows_received"], "held": 0, "status": r["status"],
                     "reason": r["message"] if failed else None, "at": r["ran_at"].isoformat()})
     return out
@@ -338,6 +339,8 @@ def connect_source(key: str, form: SourceForm, user: dict = Depends(current_user
     """Connect & Save: validates, hands the credentials to Databricks (or nowhere), saves the rest."""
     _can_manage(user)
     config, secrets = connectors.validate(key, form.values)
+    if key == "postgresql" and connectors.is_app_database(config):
+        raise HTTPException(422, connectors.APP_DATABASE_REFUSED)
     result = connectors.connect_to_databricks_pipeline(key, config, secrets)
     write("""INSERT INTO source_connectors (source_key, config, secret_fields, credentials, connected_by)
              VALUES (%s, %s, %s, %s, %s)

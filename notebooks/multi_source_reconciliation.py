@@ -3,7 +3,9 @@
 # MAGIC # Multi-Source Reconciliation (core banking and CRM)
 # MAGIC
 # MAGIC **Two sources, chosen with the `source` parameter** (default `neon`):
-# MAGIC * `neon` - core banking, as below.
+# MAGIC * `neon` - core banking, as below. Connected from the app's Data ingestion tab as PostgreSQL and
+# MAGIC   run as the `core_banking_reconciliation` task (added 2026-10-08), which skips when that run didn't
+# MAGIC   load core banking, like the CRM task.
 # MAGIC * `salesforce` - the CRM (added 2026-09-29): each Salesforce Account (`bronze_salesforce_accounts`,
 # MAGIC   from `multi_source_salesforce_ingestion.py`) is matched to our customer by Account Number =
 # MAGIC   `customer_id` and compared on `name` and `country`, against our Corporate and SME customers only
@@ -72,6 +74,11 @@ if SOURCE == "salesforce":
     loaded = dbutils.jobs.taskValues.get(taskKey="salesforce_ingest", key="status", default="skipped", debugValue="loaded")
     if loaded != "loaded" or not spark.catalog.tableExists("bronze_salesforce_accounts"):
         dbutils.notebook.exit(f"skipped: Salesforce was not loaded in this run ({loaded})")
+else:
+    # Same for core banking (connected as PostgreSQL in the app): never compare a snapshot an earlier run left behind.
+    loaded = dbutils.jobs.taskValues.get(taskKey="core_banking_ingest", key="status", default="skipped", debugValue="loaded")
+    if loaded != "loaded":
+        dbutils.notebook.exit(f"skipped: core banking was not loaded in this run ({loaded})")
 
 # COMMAND ----------
 

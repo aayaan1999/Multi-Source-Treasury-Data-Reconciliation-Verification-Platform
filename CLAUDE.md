@@ -173,9 +173,11 @@ Lake:
   compares `bronze_neon_customers`/`bronze_neon_accounts` against the canonical `*_clean` tables
   and flags disagreements into `reconciliation_exceptions`, same insert-only/status-preserving
   discipline as `flagged_transactions`. Needs its own, *separate* second Neon project (standing in
-  for Core Banking System — never the app's own database) and a `multi-source-demo` Databricks
-  secret scope, distinct from the app database's `neon` scope; see "Dev Tooling" in
-  `PREREQUISITES.md`. Mockaroo/Salesforce reconciliation remain spec-only. Spec:
+  for Core Banking System — never the app's own database), connected from the app's Data
+  ingestion tab as **PostgreSQL** (credentials in the `bank-data-sources` secret scope; the old
+  `multi-source-demo` scope is no longer read). Since 2026-10-08 it runs in the job as
+  `core_banking_ingest` → `core_banking_reconciliation` (full snapshot each run; skips when not
+  connected) — not yet run live in that form; see `specs/screen-data-ingestion.md` section 3c. Mockaroo/Salesforce reconciliation remain spec-only. Spec:
   `specs/multi-source-reconciliation.md`.
 
 Conventions when building these notebooks: PySpark + `.format("delta")` for every output table;

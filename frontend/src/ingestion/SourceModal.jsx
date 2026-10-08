@@ -41,7 +41,9 @@ export default function SourceModal({ source, onClose, onSaved, onDisconnected, 
   const test = () => run("test", async () => {
     const r = await api.testSource(source.key, filledValues(source.fields, values));
     setResult({ ok: r.ok, text: r.message });
-    notify(`${source.name}: details checked`, "success");
+    // A live sign-in (PostgreSQL) can fail with a 200 answer: say so instead of "checked".
+    if (!r.ok) notify(`${source.name}: connection test failed`, "error");
+    else notify(`${source.name}: ${r.live ? "signed in" : "details checked"}`, "success");
   });
 
   const save = (e) => {

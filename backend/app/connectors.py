@@ -11,11 +11,22 @@ and the connector is saved without credentials, which the screen says plainly.
 import os
 import re
 from typing import Optional
+from urllib.parse import urlparse
 
+import psycopg2
 from fastapi import HTTPException
 
 SECRET_SCOPE = "bank-data-sources"      # Databricks secret scope the notebooks read connector credentials from
 MAX_VALUE = 500
+# What the core banking notebook (notebooks/multi_source_neon_ingestion.py) reads from a connected PostgreSQL
+# database; the reconciliation compares these columns with our own customers and accounts.
+CORE_BANKING_TABLES = {
+    "customers": ["customer_id", "name", "segment", "risk_rating", "branch_id"],
+    "accounts": ["account_id", "customer_id", "type", "currency", "balance"],
+}
+CORE_BANKING_SSL = "require"     # Test connection signs in encrypted only (the tests' local server has no SSL)
+APP_DATABASE_REFUSED = ("That is this app's own database. Connect the core banking system's database instead: "
+                        "comparing the app with itself would find nothing.")
 
 # field: (key, label, kind, required, placeholder). kind "secret" is never stored or returned.
 SOURCE_TYPES = {
@@ -33,8 +44,9 @@ SOURCE_TYPES = {
             ("client_secret", "Consumer secret", "secret", True, ""),
         ],
     },
+    # Read by notebooks/multi_source_neon_ingestion.py: CORE_BANKING_TABLES below, compared with our own data.
     "postgresql": {
-        "name": "PostgreSQL", "code": "PG", "detail": "Core banking or ERP database",
+        "name": "PostgreSQL", "code": "PG", "detail": "Core banking database: customers and accounts",
         "fields": [
             ("host", "Host", "text", True, "db.bank.internal"),
             ("port", "Port", "port", True, "5432"),
@@ -169,11 +181,65 @@ def forget_in_databricks(source_key: str) -> None:
         _api("POST", "/api/2.0/secrets/delete", {"scope": SECRET_SCOPE, "key": key})
 
 
+def is_app_database(config: dict) -> bool:
+    """Whether the PostgreSQL form points at the app's own database. Reconciling the app against itself
+    proves nothing and gives the pipeline a login to it, so it is refused. Neon's pooled host counts as the same."""
+    parsed = urlparse(os.environ.get("DATABASE_URL", ""))
+    def norm(host):
+        return (host or "").lower().replace("-pooler.", ".")
+    return bool(parsed.hostname) and norm(config.get("host")) == norm(parsed.hostname) \
+        and config.get("database") == parsed.path.lstrip("/")
+
+
+def check_postgresql(config: dict, secrets: dict) -> dict:
+    """A live sign-in to the core banking database, read-only, with the settings the notebook will use:
+    are CORE_BANKING_TABLES there with the columns it reads, and how many rows each has. The answer never
+    contains the password; a failure gives the database's own first line (e.g. wrong password, no such table)."""
+    try:
+        conn = psycopg2.connect(host=config["host"], port=int(config["port"]), dbname=config["database"],
+                                user=config["username"], password=secrets["password"], sslmode=CORE_BANKING_SSL,
+                                connect_timeout=10, options="-c default_transaction_read_only=on -c statement_timeout=10000")
+    except psycopg2.Error as e:
+        first = (str(e).strip().splitlines() or [type(e).__name__])[0]
+        return {"ok": False, "live": True, "message": f"Couldn't sign in to {config['host']}/{config['database']}: {first}"}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT table_name, column_name FROM information_schema.columns
+                           WHERE table_schema = ANY (current_schemas(false)) AND table_name = ANY (%s)""",
+                        (list(CORE_BANKING_TABLES),))
+            found = {}
+            for table, column in cur.fetchall():
+                found.setdefault(table, set()).add(column)
+            problems = []
+            for table, columns in CORE_BANKING_TABLES.items():
+                if table not in found:
+                    problems.append(f"no {table} table")
+                elif missing := [c for c in columns if c not in found[table]]:
+                    problems.append(f"{table} has no {', '.join(missing)}")
+            if problems:
+                return {"ok": False, "live": True,
+                        "message": f"Signed in, but the pipeline can't read it: {'; '.join(problems)}."}
+            counts = {}
+            for table in CORE_BANKING_TABLES:                    # fixed names from the constant, never user input
+                cur.execute(f"SELECT count(*) FROM {table}")
+                counts[table] = cur.fetchone()[0]
+    except psycopg2.Error as e:
+        return {"ok": False, "live": True, "message": f"Signed in, but reading failed: {str(e).strip().splitlines()[0]}"}
+    finally:
+        conn.close()
+    found_text = " and ".join(f"{n:,} {t}" for t, n in counts.items())
+    return {"ok": True, "live": True, "message": f"Signed in to {config['host']}/{config['database']}: found {found_text}."}
+
+
 def test_connection(source_key: str, values: dict) -> dict:
-    """The "Test connection" check. Today it checks the form is complete and well-formed; a live sign-in
-    to each system comes with its connector (backlog ING-1), so the answer says which it was."""
+    """The "Test connection" check. PostgreSQL signs in for real (check_postgresql); the others check the
+    form is complete and well-formed until their connector is built (backlog ING-1), and say so."""
     config, secrets = validate(source_key, values)
     name = SOURCE_TYPES[source_key]["name"]
+    if source_key == "postgresql":
+        if is_app_database(config):
+            return {"ok": False, "live": False, "message": APP_DATABASE_REFUSED}
+        return {**check_postgresql(config, secrets), "checked": sorted([*config, *secrets])}
     return {"ok": True, "live": False,
             "message": f"{name} details are complete and well-formed. A live sign-in check isn't enabled in this demo yet.",
             "checked": sorted([*config, *secrets])}

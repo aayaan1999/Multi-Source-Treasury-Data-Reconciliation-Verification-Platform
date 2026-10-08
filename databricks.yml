@@ -109,6 +109,21 @@ resources:
             base_parameters:
               source: salesforce
 
+        - task_key: core_banking_ingest
+          description: Core banking customers and accounts from PostgreSQL to bronze_neon_* (connected from the app's Data ingestion tab; skips when not connected).
+          notebook_task:
+            notebook_path: ./notebooks/multi_source_neon_ingestion.py
+
+        - task_key: core_banking_reconciliation
+          description: Core banking vs our customers and accounts into reconciliation_exceptions; skips when core banking wasn't loaded this run.
+          depends_on:
+            - task_key: core_banking_ingest
+            - task_key: quality
+          notebook_task:
+            notebook_path: ./notebooks/multi_source_reconciliation.py
+            base_parameters:
+              source: neon
+
         - task_key: load_postgres
           description: Merge Silver/Gold into Neon Postgres in one transaction.
           depends_on:
@@ -118,6 +133,7 @@ resources:
             - task_key: portfolio_snapshot
             - task_key: pipeline_reconciliation
             - task_key: salesforce_reconciliation
+            - task_key: core_banking_reconciliation
           # Neon can be suspended and take a moment to wake; one retry covers a slow first connect.
           max_retries: 1
           notebook_task:

@@ -129,6 +129,19 @@ describe("Data ingestion", () => {
     expect(api.ingestionOverview).toHaveBeenCalledTimes(1);                           // no reload
   });
 
+  it("a failed live sign-in shows the database's reason and an error toast, not 'checked'", async () => {
+    api.testSource.mockResolvedValue({ ok: false, live: true,
+      message: 'Couldn\'t sign in to core.example.com/corebanking: password authentication failed for user "ingest"' });
+    await show();
+    fireEvent.click(within(sourceCard("Salesforce")).getByRole("button", { name: "Connect" }));
+    const dialog = screen.getByRole("dialog", { name: "Connect Salesforce" });
+    fillSalesforce(dialog);
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Test connection" })));
+    expect(within(dialog).getByText(/password authentication failed/)).toBeTruthy();
+    expect(toastText()).toMatch(/Salesforce: connection test failed/);
+    expect(toastText()).not.toMatch(/details checked|signed in/);
+  });
+
   it("configure opens the saved settings with secrets empty, and can disconnect", async () => {
     const connected = { ...SALESFORCE, status: "connected", config: { instance_url: "https://bankx.my.salesforce.com", client_id: "3MVG9", username: "u" } };
     api.ingestionOverview.mockResolvedValue({ ...OVERVIEW, connectors: { ...OVERVIEW.connectors, items: [SOURCES[0], connected] } });

@@ -1,22 +1,38 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Multi-Source Ingestion: Neon (Postgres)
+# MAGIC # Multi-Source Ingestion: Core Banking (PostgreSQL)
 # MAGIC
-# MAGIC Third of the 5 free-cloud-source ingestion notebooks from `specs/multi-source-ingestion-adf.md`
-# MAGIC (section 9). Stands in for the core banking system's customer/account data.
-# MAGIC **Requires manual setup before this notebook can run**: provision a free Neon project,
-# MAGIC create `customers`/`accounts` tables with sample rows, and put the JDBC connection string in
-# MAGIC the `multi-source-demo` secret scope as `neon_jdbc_url` (with credentials embedded or
-# MAGIC supplied separately as `neon_user`/`neon_password`). None of that has been done yet — this
-# MAGIC notebook is written but unrun.
+# MAGIC Reads the core banking system's `customers` and `accounts` tables from a PostgreSQL database into
+# MAGIC Bronze, for the core-system reconciliation (`multi_source_reconciliation.py` with `source=neon`).
+# MAGIC Connected from the app's Data ingestion tab (`specs/screen-data-ingestion.md`), the same way as
+# MAGIC Salesforce. In the demo the database is a second Neon project, never the app's own database.
 # MAGIC
-# MAGIC Uses a watermark, not a full-table pull each run, per the pattern already established in
-# MAGIC `specs/bidirectional-sync.md`: track the max `updated_at` pulled last time in a small Delta
-# MAGIC control table, filter on it this run, then advance it — so a second run only picks up rows
-# MAGIC that changed since the first, not the whole table again.
+# MAGIC **Settings** come from the Databricks secret scope `bank-data-sources`, where the app's Connect &
+# MAGIC Save puts them: `postgresql-host`, `postgresql-port`, `postgresql-database`, `postgresql-username`,
+# MAGIC `postgresql-password`. When PostgreSQL isn't connected the notebook stops cleanly with "skipped";
+# MAGIC when sign-in or a read fails it records the failure and stops with "failed: ...". Either way the
+# MAGIC rest of the pipeline run is unaffected. (Until 2026-10-08 this notebook read a hand-made
+# MAGIC `multi-source-demo` scope instead; that scope is no longer used.)
 # MAGIC
-# MAGIC Input: none (external JDBC read)
-# MAGIC Output: Delta table `bronze_neon_customers`; control table `multi_source_watermarks`
+# MAGIC **A full snapshot every run, not an incremental pull.** The earlier version appended only rows whose
+# MAGIC `updated_at` had moved past a watermark. That needed an `updated_at` column the bank's tables may not
+# MAGIC have, never noticed a deleted row, and kept the old database's watermark when a different database
+# MAGIC was connected. Reconciliation compares against the system's current state, so each run replaces
+# MAGIC the Bronze tables with what the database holds now.
+# MAGIC
+# MAGIC Input: PostgreSQL tables `customers` (customer_id, name, segment, risk_rating, branch_id) and
+# MAGIC `accounts` (account_id, customer_id, type, currency, balance) - other columns are ignored
+# MAGIC Output: Delta tables `bronze_neon_customers`, `bronze_neon_accounts`; one row per table per run in
+# MAGIC Neon `ingestion_runs` (shown under "Recent ingestions"); task value `status` (loaded / skipped /
+# MAGIC failed), which the `core_banking_reconciliation` task checks before comparing.
+
+# COMMAND ----------
+
+# MAGIC %pip install psycopg2-binary
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
 
 # COMMAND ----------
 
@@ -28,114 +44,141 @@ spark.sql("USE SCHEMA raw")
 
 # COMMAND ----------
 
+import json
+
+import psycopg2
 from pyspark.sql import functions as F
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Config
+# MAGIC
+# MAGIC The Bronze table names keep their `neon` prefix: the reconciliation notebook, `load_to_postgres.py`
+# MAGIC and the app's Reconciliation screen all know core banking as source `neon`.
 
 # COMMAND ----------
 
-dbutils.widgets.text("secret_scope", "multi-source-demo", "Databricks secret scope name")
-dbutils.widgets.text("source_table", "customers", "Neon source table name")
-dbutils.widgets.text("output_table", "bronze_neon_customers", "Output Delta table name")
+dbutils.widgets.text("secret_scope", "bank-data-sources", "Databricks secret scope the app writes connector settings to")
 
 SECRET_SCOPE = dbutils.widgets.get("secret_scope")
-SOURCE_TABLE = dbutils.widgets.get("source_table")
-OUTPUT_TABLE = dbutils.widgets.get("output_table")
-WATERMARK_SOURCE_KEY = f"neon_{SOURCE_TABLE}"
-WATERMARK_TABLE = "multi_source_watermarks"
+SOURCE_KEY = "postgresql"                       # the app's source key (backend/app/connectors.py)
+# source table -> (Bronze table, columns read). The same columns the app's Test connection checks.
+TABLES = {
+    "customers": ("bronze_neon_customers", ["customer_id", "name", "segment", "risk_rating", "branch_id"]),
+    "accounts": ("bronze_neon_accounts", ["account_id", "customer_id", "type", "currency", "balance"]),
+}
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Watermark read
+# MAGIC ## Recording the run in Neon
 # MAGIC
-# MAGIC Defaults to the epoch if this source has never run before, so the first run pulls
-# MAGIC everything and every subsequent run is incremental.
+# MAGIC One `ingestion_runs` row per table per run (success or failure) so the app can show it. Uses the
+# MAGIC app database's `neon` secret scope, like `load_to_postgres.py`. A failure to record never hides
+# MAGIC the real outcome.
 
 # COMMAND ----------
 
-if spark.catalog.tableExists(WATERMARK_TABLE):
-    watermark_row = (
-        spark.table(WATERMARK_TABLE)
-        .filter(F.col("source_key") == WATERMARK_SOURCE_KEY)
-        .orderBy(F.col("last_watermark").desc())
-        .limit(1)
-        .collect()
+def record_run(data_name, status, rows, message):
+    try:
+        conn = psycopg2.connect(host=dbutils.secrets.get("neon", "host"), dbname=dbutils.secrets.get("neon", "database"),
+                                user=dbutils.secrets.get("neon", "user"), password=dbutils.secrets.get("neon", "password"),
+                                sslmode="require", connect_timeout=30)
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO ingestion_runs (source_key, data_name, status, rows_received, message, databricks_run)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (SOURCE_KEY, data_name, status, rows, message[:500], json.dumps(run_context())),
+            )
+        conn.close()
+    except Exception as e:                       # the Delta write already happened (or the real error is reported below)
+        print(f"Couldn't record the run in Neon: {type(e).__name__}")
+
+
+def run_context():
+    try:
+        tags = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().safeToJson())["attributes"]
+        return {"job_id": tags.get("jobId"), "run_id": tags.get("multitaskParentRunId") or tags.get("currentRunId")}
+    except Exception:
+        return {}
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Is PostgreSQL connected?
+# MAGIC
+# MAGIC The settings exist only once someone has connected PostgreSQL in the app. Without them the
+# MAGIC notebook ends here, successfully, so "Run all sources now" still loads everything else.
+
+# COMMAND ----------
+
+def setting(key):
+    try:
+        return dbutils.secrets.get(SECRET_SCOPE, f"{SOURCE_KEY}-{key}")
+    except Exception:
+        return None
+
+HOST, PORT, DATABASE, USERNAME, PASSWORD = (setting(k) for k in ("host", "port", "database", "username", "password"))
+if not (HOST and DATABASE and USERNAME and PASSWORD):
+    dbutils.jobs.taskValues.set(key="status", value="skipped")
+    dbutils.notebook.exit("skipped: PostgreSQL is not connected in the app")
+PORT = PORT or "5432"
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Read both tables
+# MAGIC
+# MAGIC Databricks' bundled `postgresql` format, not generic `format("jdbc")`: this job runs on serverless
+# MAGIC compute, which rejects the generic JDBC source (`specs/pipeline-job-and-neon-load.md`). Selecting
+# MAGIC the named columns pushes the column list down to the database and turns a missing column into a
+# MAGIC clear error. Both tables are read before either is written, so a failure on `accounts` never
+# MAGIC leaves Bronze holding today's customers next to yesterday's accounts.
+
+# COMMAND ----------
+
+def read_table(name, columns):
+    return (
+        spark.read.format("postgresql")
+        .option("host", HOST).option("port", PORT).option("database", DATABASE)
+        .option("dbtable", name)
+        .option("user", USERNAME).option("password", PASSWORD)
+        .load()
+        .select(*columns)
+        .withColumn("source_system", F.lit("CORE_POSTGRES"))
+        .withColumn("ingested_at", F.current_timestamp())
     )
-    last_watermark = watermark_row[0]["last_watermark"] if watermark_row else "1970-01-01T00:00:00Z"
-else:
-    last_watermark = "1970-01-01T00:00:00Z"
 
-print(f"Pulling {SOURCE_TABLE} where updated_at > {last_watermark}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## JDBC read
-
-# COMMAND ----------
-
-jdbc_url = dbutils.secrets.get(SECRET_SCOPE, "neon_jdbc_url")
-jdbc_user = dbutils.secrets.get(SECRET_SCOPE, "neon_user")
-jdbc_password = dbutils.secrets.get(SECRET_SCOPE, "neon_password")
-
-pushdown_query = f"(SELECT * FROM {SOURCE_TABLE} WHERE updated_at > '{last_watermark}') AS watermarked"
-
-neon_df = spark.read.jdbc(
-    url=jdbc_url,
-    table=pushdown_query,
-    properties={"user": jdbc_user, "password": jdbc_password, "driver": "org.postgresql.Driver"},
-).withColumn("ingested_at", F.current_timestamp())
-
-new_row_count = neon_df.count()
-print(f"Fetched {new_row_count} new/changed rows")
+frames = {}
+for name, (_, columns) in TABLES.items():
+    try:
+        df = read_table(name, columns).cache()
+        frames[name] = (df, df.count())          # count() forces the read, so sign-in errors surface here
+    except Exception as e:
+        # First line only: Spark's error text can run to pages, and never contains the password.
+        reason = f"Couldn't read {name} from {HOST}/{DATABASE}: {str(e).strip().splitlines()[0][:300]}"
+        record_run(name, "failed", 0, reason)
+        dbutils.jobs.taskValues.set(key="status", value="failed")
+        dbutils.notebook.exit(f"failed: {reason}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Write to Bronze (append — this is an incremental pull, not a full snapshot, so each
-# MAGIC run's new/changed rows accumulate rather than overwriting prior pulls)
+# MAGIC ## Write to Bronze (replace)
 
 # COMMAND ----------
 
-(
-    neon_df.write.format("delta")
-    .mode("append")
-    .option("mergeSchema", "true")
-    .saveAsTable(OUTPUT_TABLE)
-)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Advance the watermark
-# MAGIC
-# MAGIC Only if rows were actually fetched — advancing on a zero-row run is harmless but skipping it
-# MAGIC avoids writing a no-op watermark row every single run.
-
-# COMMAND ----------
-
-if new_row_count > 0 and "updated_at" in neon_df.columns:
-    new_watermark = neon_df.agg(F.max("updated_at").alias("v")).collect()[0]["v"]
-    watermark_row_df = spark.createDataFrame(
-        [(WATERMARK_SOURCE_KEY, str(new_watermark))], schema=["source_key", "last_watermark"]
-    ).withColumn("recorded_at", F.current_timestamp())
-
+for name, (df, count) in frames.items():
+    output_table = TABLES[name][0]
     (
-        watermark_row_df.write.format("delta")
-        .mode("append")
-        .option("mergeSchema", "true")
-        .saveAsTable(WATERMARK_TABLE)
+        df.write.format("delta")
+        .mode("overwrite")
+        .option("overwriteSchema", "true")
+        .saveAsTable(output_table)
     )
+    print(f"{output_table}: {count} rows")
+    record_run(name, "success", count, f"{count} {name} loaded into {output_table}")
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Sanity checks
-
-# COMMAND ----------
-
-print(f"{OUTPUT_TABLE} total rows: {spark.table(OUTPUT_TABLE).count() if spark.catalog.tableExists(OUTPUT_TABLE) else 0}")
+dbutils.jobs.taskValues.set(key="status", value="loaded")       # read by the core_banking_reconciliation task
+dbutils.notebook.exit("loaded: " + ", ".join(f"{count} {name}" for name, (_, count) in frames.items()))

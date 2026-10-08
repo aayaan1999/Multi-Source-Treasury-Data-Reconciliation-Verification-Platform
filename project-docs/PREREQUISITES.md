@@ -30,9 +30,11 @@ Notebook 1-2 rewrite. `bank-x poc-brief.md` is historical reference only — see
   to reconcile against. Don't reuse the app's Neon project for it, or reconciliation compares data
   against itself and can never find anything (see `specs/multi-source-reconciliation.md` for why).
   Its connection string lives in the git-ignored `db/multi_source_demo.env` (copy
-  `db/multi_source_demo.env.example`) and its credentials go in the Databricks secret scope
-  `multi-source-demo` (`neon_jdbc_url`/`neon_user`/`neon_password`) — separate from the app
-  database's `neon` secret scope. **Implemented so far**: the Neon slice only (customers/accounts);
+  `db/multi_source_demo.env.example`). **Since 2026-10-08 it is connected from the app's Data
+  ingestion tab as PostgreSQL** (CFO or admin): Connect & Save puts its credentials in the
+  Databricks secret scope `bank-data-sources` (`postgresql-host`/`-port`/`-database`/`-username`/
+  `-password`), separate from the app database's `neon` scope. The older hand-made
+  `multi-source-demo` scope is no longer read and can be deleted. **Implemented so far**: the Neon slice only (customers/accounts);
   Mockaroo/Salesforce reconciliation is still spec-only.
 
 ## Application Layer (replaces the original Appian scope)

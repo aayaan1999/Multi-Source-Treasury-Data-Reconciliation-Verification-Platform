@@ -145,3 +145,82 @@ def test_loads_recorded_by_source_notebooks_appear_under_recent_ingestions(clien
         assert any("invalid_client" in (r["reason"] or "") for r in salesforce)
     finally:
         db.execute("DELETE FROM ingestion_runs")
+
+
+# ---- PostgreSQL (core banking): Test connection signs in for real -----------------------------------------
+@pytest.fixture
+def core_banking(db, monkeypatch):
+    """A second database on the test server standing in for the core banking system, and the Connect form for it."""
+    from urllib.parse import urlparse
+    import os
+    import psycopg2
+    monkeypatch.setattr(connectors, "CORE_BANKING_SSL", "disable")          # the local test server has no SSL
+    db.execute("DROP DATABASE IF EXISTS corebanking")
+    db.execute("CREATE DATABASE corebanking")
+    url = urlparse(os.environ["DATABASE_URL"])
+    conn = psycopg2.connect(host=url.hostname, port=url.port, user=url.username, dbname="corebanking")
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute("""CREATE TABLE customers (customer_id text, name text, segment text, risk_rating text, branch_id text, extra text);
+                   CREATE TABLE accounts (account_id text, customer_id text, type text, currency text, balance numeric);
+                   INSERT INTO customers VALUES ('C1', 'A', 'Retail', 'A', 'B1', NULL), ('C2', 'B', 'SME', 'B', 'B1', NULL);
+                   INSERT INTO accounts VALUES ('A1', 'C1', 'Current', 'USD', 10)""")
+    form = {"host": url.hostname, "port": str(url.port), "database": "corebanking", "username": url.username, "password": "pw"}
+    yield form, cur
+    conn.close()
+    db.execute("DROP DATABASE IF EXISTS corebanking WITH (FORCE)")
+
+
+def test_postgresql_test_connection_signs_in_and_counts_what_the_pipeline_will_read(client, admin, core_banking):
+    form, _ = core_banking
+    r = client.post(f"{API}/ingestion/sources/postgresql/test", headers=admin, json={"values": form}).json()
+    assert r["ok"] is True and r["live"] is True
+    assert r["message"] == f"Signed in to {form['host']}/corebanking: found 2 customers and 1 accounts."
+    assert "pw" not in r["message"]
+
+
+def test_postgresql_test_connection_names_what_is_missing(client, admin, core_banking):
+    form, cur = core_banking
+    cur.execute("ALTER TABLE accounts DROP COLUMN balance")
+    r = client.post(f"{API}/ingestion/sources/postgresql/test", headers=admin, json={"values": form}).json()
+    assert r["ok"] is False and r["live"] is True and "accounts has no balance" in r["message"]
+    cur.execute("DROP TABLE customers")
+    assert "no customers table" in client.post(f"{API}/ingestion/sources/postgresql/test", headers=admin, json={"values": form}).json()["message"]
+
+
+def test_postgresql_test_connection_reports_a_failed_sign_in(client, admin, core_banking):
+    form, _ = core_banking
+    r = client.post(f"{API}/ingestion/sources/postgresql/test", headers=admin,
+                    json={"values": {**form, "database": "no_such_db"}}).json()
+    assert r["ok"] is False and r["live"] is True
+    assert r["message"].startswith(f"Couldn't sign in to {form['host']}/no_such_db:") and "no_such_db" in r["message"]
+
+
+def test_postgresql_refuses_the_apps_own_database(client, admin, core_banking, no_databricks):
+    form, _ = core_banking
+    own = {**form, "database": "postgres"}                     # the database DATABASE_URL points at
+    r = client.post(f"{API}/ingestion/sources/postgresql/test", headers=admin, json={"values": own}).json()
+    assert r["ok"] is False and "this app's own database" in r["message"]
+    c = client.post(f"{API}/ingestion/sources/postgresql/connect", headers=admin, json={"values": own})
+    assert c.status_code == 422 and "this app's own database" in c.json()["detail"]
+    assert connectors.is_app_database({"host": "ep-x-pooler.eu.aws.neon.tech", "database": "db"}) is False
+
+
+def test_postgresql_connect_hands_the_notebook_its_settings(client, admin, core_banking, fake_databricks):
+    form, _ = core_banking
+    r = client.post(f"{API}/ingestion/sources/postgresql/connect", headers=admin, json={"values": form})
+    assert r.status_code == 200 and r.json()["source"]["credentials"] == "databricks"
+    # exactly the keys notebooks/multi_source_neon_ingestion.py reads
+    assert {k: v for k, v in fake_databricks.items() if k.startswith("postgresql-")} == {
+        "postgresql-host": form["host"], "postgresql-port": form["port"], "postgresql-database": "corebanking",
+        "postgresql-username": form["username"], "postgresql-password": "pw"}
+
+
+def test_core_banking_loads_show_as_database_runs(client, admin, db):
+    db.execute("""INSERT INTO ingestion_runs (source_key, data_name, status, rows_received, message)
+                  VALUES ('postgresql', 'customers', 'success', 200, '200 customers loaded')""")
+    try:
+        items = client.get(f"{API}/ingestion/overview", headers=admin).json()["recent"]["items"]
+        assert [(r["type"], r["data"], r["received"]) for r in items if r["source"] == "PostgreSQL"] == [("Database", "customers", 200)]
+    finally:
+        db.execute("DELETE FROM ingestion_runs")

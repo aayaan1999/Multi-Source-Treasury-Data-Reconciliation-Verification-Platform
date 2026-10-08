@@ -4,11 +4,11 @@ current customers and accounts exactly, then plant known differences - one per f
 
     python scripts/plant_core_system_breaks.py
 
-Never touches the app's own database (it only reads from it). Every changed row gets
-updated_at = now(), because the core-system ingestion (notebooks/multi_source_neon_ingestion.py)
-only pulls rows changed since its last run - which is also why a planted "missing record" leaves a
-row out rather than deleting one (a deletion would never be seen). Then run, in Databricks:
-multi_source_neon_ingestion (customers, then accounts) -> multi_source_reconciliation -> load_to_postgres.
+Never touches the app's own database (it only reads from it). Changed rows still get updated_at = now()
+for anyone reading the table, though the core-system ingestion (notebooks/multi_source_neon_ingestion.py)
+now takes a full snapshot each run (2026-10-08) and no longer needs it. Then connect this database on the
+app's Data ingestion tab as PostgreSQL, if it isn't already, and press Run all sources now (the job's
+core_banking_ingest -> core_banking_reconciliation -> load_postgres tasks).
 """
 import pathlib
 

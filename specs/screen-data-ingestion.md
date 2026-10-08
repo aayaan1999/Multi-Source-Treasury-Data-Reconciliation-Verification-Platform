@@ -47,7 +47,7 @@ explains itself on hover or focus, the same pattern as the existing "Assumption"
 | Files, records received / kept / held back, failed loads | Latest run in `pipeline_reconciliation` (Notebooks 1-2 via `load_to_postgres.py`) | **Real** when a run exists; demo rows otherwise |
 | Recent ingestions | Same rows, one per source × country × data type; "failed" = the completeness check's "No rows delivered" (FLOW-1b) | **Real** when a run exists; demo rows otherwise |
 | Run All Sources | Refresh now, Databricks Jobs API | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
-| Sources connected, Connect a source | Catalogue in `app/connectors.py` (core banking files, Salesforce, PostgreSQL, REST API, AWS S3, Snowflake) + `source_connectors` (migration 018): non-secret settings only | **Real state** (ING-1 part 1); "Test connection" checks the form, not a live sign-in |
+| Sources connected, Connect a source | Catalogue in `app/connectors.py` (core banking files, Salesforce, PostgreSQL, REST API, AWS S3, Snowflake) + `source_connectors` (migration 018): non-secret settings only | **Real state** (ING-1 part 1); "Test connection" signs in for real for PostgreSQL (section 3c), checks the form only for the others |
 | Scheduled pulls | `DEMO["schedules"]` | Demo (ING-2) |
 | Upload files (the pipeline's eight CSVs) | `POST /ingestion/upload` → Databricks Files API into the landing volume (section 3b) | **Real** (ING-3; needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
 | Run All Sources, each source's Sync | `POST /ingestion/run`, `POST /ingestion/sources/{key}/sync` → Databricks `POST /api/2.1/jobs/run-now` (via refresh.py); spinner and toasts | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
@@ -62,7 +62,9 @@ tagged by country (Lebanon, Saudi Arabia, Qatar, plus "Group" for bank-wide tabl
   every required field is filled and well-formed (https:// addresses, ports 1-65535). The server checks
   the same rules again (`connectors.validate`) and refuses unknown fields.
 - **Test connection** (`POST /ingestion/sources/{key}/test`) checks the details are complete and
-  well-formed and says so; it does not sign in to the system yet (backlog ING-1).
+  well-formed and says so. For PostgreSQL it also signs in for real (section 3c); for the others it
+  does not sign in yet (backlog ING-1), and the answer says which it was (`live`). A failed live
+  sign-in answers 200 with `ok: false`; the form shows the reason and an error toast.
 - **Connect & Save** (`POST /ingestion/sources/{key}/connect`) calls
   `connect_to_databricks_pipeline()`: passwords, keys and tokens go to the Databricks secret scope
   `bank-data-sources` as `<source>-<field>`, where ingestion notebooks read them. They are **never**
@@ -94,6 +96,33 @@ tagged by country (Lebanon, Saudi Arabia, Qatar, plus "Group" for bank-wide tabl
   (`specs/multi-source-reconciliation.md` covers the Neon slice only).
 - `databricks.yml` has a `trigger_pause_status` variable (default UNPAUSED). The 2026-09-29 deploy used
   `--var trigger_pause_status=PAUSED` to keep file-arrival runs off, as they were in the workspace.
+
+## 3c. PostgreSQL = the core banking system, end to end (2026-10-08)
+
+Not yet run live on Databricks or checked in a browser; backend and frontend tests pass.
+
+- **What it is for:** the core banking database the reconciliation compares our data with
+  (`specs/multi-source-reconciliation.md`, source `neon`). It must hold `customers` (customer_id, name,
+  segment, risk_rating, branch_id) and `accounts` (account_id, customer_id, type, currency, balance),
+  with the same IDs as ours; other columns are ignored (`connectors.CORE_BANKING_TABLES`). It must be
+  reachable from Databricks serverless compute over the internet.
+- **Form:** Host, Port, Database, Username, Password (use a read-only user). **Test connection** signs in
+  from the API server with SSL required, in a read-only session with a 10-second limit, checks both
+  tables and their columns, and answers "Signed in to host/db: found N customers and M accounts", or the
+  database's own reason (wrong password, no such table, missing column). The password is never in the
+  answer. Pointing the form at the app's own database (same host - Neon's pooled host counts - and
+  database as `DATABASE_URL`) is refused by both Test connection and Connect & Save (422).
+- **Pipeline:** `core_banking_ingest` (`notebooks/multi_source_neon_ingestion.py`) reads
+  `bank-data-sources/postgresql-*`, reads both tables with Databricks' `postgresql` format (serverless
+  rejects generic JDBC), and **replaces** `bronze_neon_customers` / `bronze_neon_accounts` - a full
+  snapshot each run, replacing the earlier `updated_at` watermark (needed a column the bank may not have,
+  missed deletions, and kept an old database's watermark). One `ingestion_runs` row per table, shown as
+  "PostgreSQL · Database" under Recent ingestions. Not connected → "skipped"; a failed read → "failed"
+  with the first line of the error, without failing the run. `core_banking_reconciliation`
+  (`multi_source_reconciliation.py`, `source=neon`) runs after it and `quality`, and skips unless this run
+  loaded core banking; `load_postgres` waits for it.
+- **Replaces** the hand-made `multi-source-demo` secret scope (`neon_jdbc_url`, ...), which nothing reads
+  any more.
 
 ## 3b. Upload files (added 2026-09-30, ING-3)
 
