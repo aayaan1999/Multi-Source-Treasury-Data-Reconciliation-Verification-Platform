@@ -177,7 +177,10 @@ Lake:
   ingestion tab as **PostgreSQL** (credentials in the `bank-data-sources` secret scope; the old
   `multi-source-demo` scope is no longer read). Since 2026-10-08 it runs in the job as
   `core_banking_ingest` → `core_banking_reconciliation` (full snapshot each run; skips when not
-  connected) — not yet run live in that form; see `specs/screen-data-ingestion.md` section 3c. Mockaroo/Salesforce reconciliation remain spec-only. Spec:
+  connected) — not yet run live in that form; see `specs/screen-data-ingestion.md` section 3c. A third
+  source, the **loan origination system** (a Supabase REST API connected as **REST API**, seeded by
+  `scripts/seed_loans_api.py`), runs as `loans_api_ingest` → `loans_api_reconciliation` against
+  `loans_clean` — built 2026-10-08, not yet run live; section 3d. Mockaroo/Salesforce reconciliation remain spec-only. Spec:
   `specs/multi-source-reconciliation.md`.
 
 Conventions when building these notebooks: PySpark + `.format("delta")` for every output table;

@@ -15,6 +15,7 @@ import RunStatus from "./RunStatus";
 export const SYSTEMS = {
   neon: { name: "Core banking system", label: "Core system", long: "the core banking system" },
   salesforce: { name: "CRM (Salesforce)", label: "CRM", long: "the CRM (Salesforce)" },
+  los: { name: "Loan origination system", label: "Loan system", long: "the loan origination system" },
 };
 const SOURCE_KEYS = Object.keys(SYSTEMS);
 const systemOf = (key) => SYSTEMS[key] || { name: key, label: key, long: key };

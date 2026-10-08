@@ -16,9 +16,10 @@ FLAG_FIELD = {
 }
 
 # A source, as a sentence names it.
-SYSTEM_NAME = {"neon": "core banking", "salesforce": "the CRM", "CORE_CSV": "the core banking files"}
-RUN_NAME = {"CORE_CSV": "core banking files", "neon": "core banking comparison", "salesforce": "CRM comparison"}
-ENTITY = {"account": "account", "customer": "customer"}
+SYSTEM_NAME = {"neon": "core banking", "salesforce": "the CRM", "los": "the loan system", "CORE_CSV": "the core banking files"}
+RUN_NAME = {"CORE_CSV": "core banking files", "neon": "core banking comparison", "salesforce": "CRM comparison",
+            "los": "loan system comparison"}
+ENTITY = {"account": "account", "customer": "customer", "loan": "loan"}
 
 
 def _day(d) -> str:

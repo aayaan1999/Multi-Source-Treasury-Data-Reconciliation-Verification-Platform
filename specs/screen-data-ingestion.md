@@ -47,7 +47,7 @@ explains itself on hover or focus, the same pattern as the existing "Assumption"
 | Files, records received / kept / held back, failed loads | Latest run in `pipeline_reconciliation` (Notebooks 1-2 via `load_to_postgres.py`) | **Real** when a run exists; demo rows otherwise |
 | Recent ingestions | Same rows, one per source × country × data type; "failed" = the completeness check's "No rows delivered" (FLOW-1b) | **Real** when a run exists; demo rows otherwise |
 | Run All Sources | Refresh now, Databricks Jobs API | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
-| Sources connected, Connect a source | Catalogue in `app/connectors.py` (core banking files, Salesforce, PostgreSQL, REST API, AWS S3, Snowflake) + `source_connectors` (migration 018): non-secret settings only | **Real state** (ING-1 part 1); "Test connection" signs in for real for PostgreSQL (section 3c), checks the form only for the others |
+| Sources connected, Connect a source | Catalogue in `app/connectors.py` (core banking files, Salesforce, PostgreSQL, REST API, AWS S3, Snowflake) + `source_connectors` (migration 018): non-secret settings only | **Real state** (ING-1 part 1); "Test connection" connects for real for PostgreSQL and the REST API (sections 3c, 3d), checks the form only for the others |
 | Scheduled pulls | `DEMO["schedules"]` | Demo (ING-2) |
 | Upload files (the pipeline's eight CSVs) | `POST /ingestion/upload` → Databricks Files API into the landing volume (section 3b) | **Real** (ING-3; needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
 | Run All Sources, each source's Sync | `POST /ingestion/run`, `POST /ingestion/sources/{key}/sync` → Databricks `POST /api/2.1/jobs/run-now` (via refresh.py); spinner and toasts | Real (needs `DATABRICKS_HOST` / `DATABRICKS_TOKEN`) |
@@ -123,6 +123,34 @@ Not yet run live on Databricks or checked in a browser; backend and frontend tes
   loaded core banking; `load_postgres` waits for it.
 - **Replaces** the hand-made `multi-source-demo` secret scope (`neon_jdbc_url`, ...), which nothing reads
   any more.
+
+## 3d. REST API = the loan origination system, end to end (2026-10-08)
+
+Not yet run live on Databricks or checked in a browser; backend and frontend tests pass.
+
+- **What it is for:** a third system our data is compared with: the loan origination system's loans
+  against ours (`multi_source_reconciliation.py`, source `los`, shown as "Loan origination system" on the
+  Reconciliation screen). Compared per `loan_id`: customer_id, product, currency (exact), principal and
+  outstanding (more than $1), interest rate (more than 0.001 percentage points). Corrections ("our copy is
+  wrong") go to `loans` like accounts and customers.
+- **Demo system:** a free **Supabase** project whose `loans` table Supabase serves as a REST API.
+  `scripts/seed_loans_api.py` (Postgres connection string in the git-ignored `db/loans_api_demo.env`,
+  Session pooler) copies the app's loans into it and plants one difference per feature: +15 on three
+  loans (one group), +25,000 on one (important), a rate change, a product change, a currency change
+  (important), a product in capitals (cleared automatically), one loan left out and one extra loan. The
+  table is read-only to the publishable key (row-level security, one SELECT policy). Supabase pauses free
+  projects after about a week without activity.
+- **Form:** Base URL `https://<project>.supabase.co/rest/v1`, Endpoint `/loans`, Auth header `apikey`,
+  API key = the project's publishable key. **Test connection** calls the API for one loan, asking for the
+  total (`Prefer: count=exact`), and answers "Reached …: found N loans with every field the comparison
+  needs", or why not (the API's status and message, no loans, missing fields, not JSON, unreachable). The
+  key is never in the answer.
+- **Pipeline:** `loans_api_ingest` (`notebooks/multi_source_rest_api_ingestion.py`) reads
+  `bank-data-sources/rest_api-*`, reads every page (`limit`/`offset`, 1,000 at a time, stopping when the
+  API ignores paging), and **replaces** `bronze_los_loans`. No loans at all, or a missing field, fails the
+  task rather than turning every loan into a "missing" task. One `ingestion_runs` row, shown as
+  "REST API · API · loans". `loans_api_reconciliation` (`source=los`) runs after it and `quality`, skips
+  unless this run loaded the loan system; `load_postgres` waits for it.
 
 ## 3b. Upload files (added 2026-09-30, ING-3)
 

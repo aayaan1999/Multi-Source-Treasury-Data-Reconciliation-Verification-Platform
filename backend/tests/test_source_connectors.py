@@ -224,3 +224,82 @@ def test_core_banking_loads_show_as_database_runs(client, admin, db):
         assert [(r["type"], r["data"], r["received"]) for r in items if r["source"] == "PostgreSQL"] == [("Database", "customers", 200)]
     finally:
         db.execute("DELETE FROM ingestion_runs")
+
+
+# ---- REST API (loan origination system): Test connection calls the API for real -------------------------
+LOS = {"base_url": "https://abc.supabase.co/rest/v1", "endpoint": "/loans", "auth_header": "apikey", "api_key": "sb_publishable_SECRET"}
+LOAN = {"loan_id": "L001", "customer_id": "C001", "product": "Corporate", "principal": 1000000, "outstanding": 800000,
+        "currency": "USD", "interest_rate": 6.5, "maturity_date": "2026-01-10"}
+
+
+@pytest.fixture
+def api_answers(monkeypatch):
+    """Stands in for the network: records each call, answers with what the test sets."""
+    # What Supabase really answers for ?limit=1 with Prefer: count=exact - 206 Partial Content, the total in Content-Range.
+    calls, answer = [], {"status": 206, "headers": {"Content-Range": "0-0/313"}, "body": [LOAN]}
+
+    def fake_get(url, headers, timeout=15):
+        calls.append((url, headers))
+        body = answer["body"]
+        if isinstance(body, Exception):
+            raise body
+        return answer["status"], answer["headers"], body if isinstance(body, str) else connectors.json.dumps(body)
+
+    monkeypatch.setattr(connectors, "http_get", fake_get)
+    return calls, answer
+
+
+def try_rest_api(client, headers, values=None):
+    return client.post(f"{API}/ingestion/sources/rest_api/test", headers=headers, json={"values": values or LOS}).json()
+
+
+def test_rest_api_test_connection_reads_one_loan_with_the_key_in_the_named_header(client, admin, api_answers):
+    calls, _ = api_answers
+    r = try_rest_api(client, admin)
+    assert r["ok"] is True and r["live"] is True
+    assert r["message"] == "Reached https://abc.supabase.co/rest/v1/loans: found 313 loans with every field the comparison needs."
+    url, sent = calls[0]
+    assert url == "https://abc.supabase.co/rest/v1/loans?limit=1"
+    assert sent["apikey"] == "sb_publishable_SECRET" and sent["Prefer"] == "count=exact"
+    assert "SECRET" not in r["message"]
+
+
+def test_rest_api_test_connection_explains_what_is_wrong(client, admin, api_answers):
+    _, answer = api_answers
+    answer.update(status=401, body='{"message":"Invalid API key"}')
+    assert try_rest_api(client, admin)["message"] == 'The API answered 401 at https://abc.supabase.co/rest/v1/loans: {"message":"Invalid API key"}'
+    answer.update(status=200, body=[])
+    assert "returned no loans" in try_rest_api(client, admin)["message"]
+    answer.update(body=[{"loan_id": "L1", "amount": 5}])
+    r = try_rest_api(client, admin)
+    assert r["ok"] is False and "have no customer_id, product, currency, principal, outstanding, interest_rate" in r["message"]
+    answer.update(body="<html>login</html>")
+    assert "didn't answer with JSON" in try_rest_api(client, admin)["message"]
+    answer.update(status=200, body={"data": [LOAN]}, headers={})   # an ordinary 200 with a wrapped list, no total: still fine
+    assert try_rest_api(client, admin)["message"].endswith("found loans with every field the comparison needs.")
+    answer.update(body=connectors.urllib.error.URLError("Name or service not known"))
+    assert try_rest_api(client, admin)["message"] == "Couldn't reach https://abc.supabase.co/rest/v1/loans: Name or service not known"
+
+
+def test_rest_api_without_a_key_sends_no_auth_header(client, admin, api_answers):
+    calls, _ = api_answers
+    assert try_rest_api(client, admin, {"base_url": "https://loans.example.com", "endpoint": "loans"})["ok"] is True
+    url, sent = calls[0]
+    assert url == "https://loans.example.com/loans?limit=1" and set(sent) == {"Accept", "Prefer"}
+
+
+def test_rest_api_connect_hands_the_notebook_its_settings(client, admin, fake_databricks):
+    r = client.post(f"{API}/ingestion/sources/rest_api/connect", headers=admin, json={"values": LOS})
+    assert r.status_code == 200 and r.json()["source"]["detail"] == "https://abc.supabase.co/rest/v1"
+    # exactly the keys notebooks/multi_source_rest_api_ingestion.py reads
+    assert {k: v for k, v in fake_databricks.items() if k.startswith("rest_api-")} == {
+        "rest_api-base_url": LOS["base_url"], "rest_api-endpoint": "/loans", "rest_api-auth_header": "apikey",
+        "rest_api-api_key": "sb_publishable_SECRET"}
+
+
+def test_rest_api_a_supabase_url_without_rest_v1_says_how_to_fix_it(client, admin, api_answers):
+    _, answer = api_answers
+    answer.update(status=404, body='{"error":"requested path is invalid"}')
+    r = try_rest_api(client, admin, {**LOS, "base_url": "https://abc.supabase.co"})
+    assert r["message"].endswith("end the Base URL with /rest/v1.")
+    assert "/rest/v1" not in try_rest_api(client, admin, {**LOS, "base_url": "https://loans.example.com"})["message"]

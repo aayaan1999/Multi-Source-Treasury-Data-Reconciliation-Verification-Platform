@@ -25,7 +25,8 @@ RECORD_TYPE = "recon_run"
 SOURCE_TABLE = "reconciliation_runs"
 FLAG_LABEL = "RECON_RUN"
 # What a run is called in a sentence, per source.
-RUN_NAME = {"CORE_CSV": "core banking files", "neon": "core banking comparison", "salesforce": "CRM comparison"}
+RUN_NAME = {"CORE_CSV": "core banking files", "neon": "core banking comparison", "salesforce": "CRM comparison",
+            "los": "loan system comparison"}
 PIPELINE_DONE = ("DECIDED", "APPROVED")
 RESOLVED = ("ACCEPTED", "CORRECTED", "DISMISSED")
 

@@ -20,10 +20,10 @@ RECORD_TYPE = "recon_group"
 SOURCE_TABLE = "reconciliation_groups"
 FLAG_LABEL = "RECON_GROUP"
 DECISION_STATUS = {"ACCEPT": "ACCEPTED", "DISMISS": "DISMISSED", "CORRECT": "CORRECTED"}
-ENTITY_LABEL = {"account": "Account", "customer": "Customer"}
+ENTITY_LABEL = {"account": "Account", "customer": "Customer", "loan": "Loan"}
 MISMATCH_TEXT = {"MISSING_IN_CANONICAL": "missing in our data", "MISSING_IN_SOURCE": "missing in the source system"}
 # The systems we compare with, as a sentence names them.
-SYSTEM_NAME = {"neon": "core banking", "salesforce": "the CRM"}
+SYSTEM_NAME = {"neon": "core banking", "salesforce": "the CRM", "los": "the loan system"}
 # This many records missing the same way in one pass is a file problem (recon.rules can override it).
 MASS_MISSING_MIN = 20
 MASS = "mass"

@@ -18,6 +18,7 @@ const row = (id, source_system, entity_id, extra = {}) => ({
 const RUNS = {
   neon: { run_date: "2026-09-28", source_system: "neon", breaks_seen: 31, auto_cleared: 2, groups_open: 11, important_open: 3, recurring_open: 2 },
   salesforce: { run_date: "2026-09-29", source_system: "salesforce", breaks_seen: 5, auto_cleared: 1, groups_open: 4, important_open: 3, recurring_open: 0 },
+  los: { run_date: null, source_system: "los" },          // the loan system, connected but not compared yet
 };
 const CURRENT = [
   { run_id: 1, source_system: "CORE_CSV", name: "core banking files of 29 Sep 2026", status: "OPEN", tasks: 3, decided: 0, awaiting_cfo: 0 },
@@ -46,8 +47,10 @@ const groups = () => screen.getByRole("table", { name: "Groups of breaks" });
 describe("reconciliation against the source systems", () => {
   it("shows every source by default: added-up run, each source's sign-off status, and a Source column", async () => {
     await show();
-    expect(api.reconRun.mock.calls.map((c) => c[0])).toEqual(["neon", "salesforce"]);
+    expect(api.reconRun.mock.calls.map((c) => c[0])).toEqual(["neon", "salesforce", "los"]);
     expect(within(screen.getByRole("list", { name: "Latest run" })).getByText("36")).toBeTruthy();       // 31 + 5
+    expect(within(screen.getByLabelText("Source")).getAllByRole("option").map((o) => o.textContent))
+      .toEqual(["All sources", "Core banking system", "CRM (Salesforce)", "Loan origination system"]);
     expect(screen.getByRole("generic", { name: "Run: core banking comparison of 28 Sep 2026" })).toBeTruthy();
     expect(screen.getByRole("generic", { name: "Run: CRM comparison of 29 Sep 2026" })).toBeTruthy();
     expect(screen.queryByRole("generic", { name: "Run: core banking files of 29 Sep 2026" })).toBeNull();   // the pipeline's run lives above

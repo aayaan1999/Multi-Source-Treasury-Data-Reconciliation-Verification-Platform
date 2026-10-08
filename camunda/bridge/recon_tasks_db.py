@@ -23,7 +23,7 @@ CFO_ROLES = ("approver", "admin")
 PIPELINE, GROUP = reconciliation_db.RECORD_TYPE, recon_groups_db.RECORD_TYPE
 # A break's entity -> the table a correction patches (Notebook 1 applies approved corrections by table,
 # record key and field).
-ENTITY_TABLE = {"account": "accounts", "customer": "customers"}
+ENTITY_TABLE = {"account": "accounts", "customer": "customers", "loan": "loans"}
 
 
 def _refused(**variables) -> dict:

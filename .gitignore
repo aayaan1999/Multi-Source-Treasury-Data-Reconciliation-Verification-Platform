@@ -23,6 +23,8 @@ resources/
 # Demo-source Neon connection string (specs/multi-source-reconciliation.md) — same secrecy as .env,
 # named differently since it's a second, separate database from backend/.env's DATABASE_URL.
 db/multi_source_demo.env
+# Supabase project standing in for the loan origination system (scripts/seed_loans_api.py).
+db/loans_api_demo.env
 
 # Python environments and caches
 .venv/

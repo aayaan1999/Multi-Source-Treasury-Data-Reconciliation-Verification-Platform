@@ -124,6 +124,21 @@ resources:
             base_parameters:
               source: neon
 
+        - task_key: loans_api_ingest
+          description: Loan origination system's loans from its REST API to bronze_los_loans (connected from the app's Data ingestion tab; skips when not connected).
+          notebook_task:
+            notebook_path: ./notebooks/multi_source_rest_api_ingestion.py
+
+        - task_key: loans_api_reconciliation
+          description: Loan system vs our loans into reconciliation_exceptions; skips when the loan system wasn't loaded this run.
+          depends_on:
+            - task_key: loans_api_ingest
+            - task_key: quality
+          notebook_task:
+            notebook_path: ./notebooks/multi_source_reconciliation.py
+            base_parameters:
+              source: los
+
         - task_key: load_postgres
           description: Merge Silver/Gold into Neon Postgres in one transaction.
           depends_on:
@@ -134,6 +149,7 @@ resources:
             - task_key: pipeline_reconciliation
             - task_key: salesforce_reconciliation
             - task_key: core_banking_reconciliation
+            - task_key: loans_api_reconciliation
           # Neon can be suspended and take a moment to wake; one retry covers a slow first connect.
           max_retries: 1
           notebook_task:

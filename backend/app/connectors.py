@@ -8,10 +8,13 @@ puts them in a Databricks secret scope, where the ingestion notebooks read them 
 when the app isn't connected to Databricks (no DATABRICKS_HOST / DATABRICKS_TOKEN) they are discarded
 and the connector is saved without credentials, which the screen says plainly.
 """
+import json
 import os
 import re
+import urllib.error
+import urllib.request
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import psycopg2
 from fastapi import HTTPException
@@ -24,6 +27,8 @@ CORE_BANKING_TABLES = {
     "customers": ["customer_id", "name", "segment", "risk_rating", "branch_id"],
     "accounts": ["account_id", "customer_id", "type", "currency", "balance"],
 }
+# What the loan system notebook reads from each loan the REST API returns.
+LOAN_COLUMNS = ["loan_id", "customer_id", "product", "currency", "principal", "outstanding", "interest_rate"]
 CORE_BANKING_SSL = "require"     # Test connection signs in encrypted only (the tests' local server has no SSL)
 APP_DATABASE_REFUSED = ("That is this app's own database. Connect the core banking system's database instead: "
                         "comparing the app with itself would find nothing.")
@@ -55,12 +60,14 @@ SOURCE_TYPES = {
             ("password", "Password", "secret", True, ""),
         ],
     },
+    # Read by notebooks/multi_source_rest_api_ingestion.py: a JSON list of loans with LOAN_COLUMNS, compared with
+    # our loans. In the demo, a Supabase project's REST API (scripts/seed_loans_api.py).
     "rest_api": {
-        "name": "REST API", "code": "API", "detail": "Any JSON API, e.g. a loan origination system",
+        "name": "REST API", "code": "API", "detail": "Loan origination system: loans (JSON)",
         "fields": [
-            ("base_url", "Base URL", "url", True, "https://api.example.com/v1"),
+            ("base_url", "Base URL", "url", True, "https://your-project.supabase.co/rest/v1"),
             ("endpoint", "Endpoint path", "text", True, "/loans"),
-            ("auth_header", "Auth header name", "text", False, "Authorization"),
+            ("auth_header", "Auth header name", "text", False, "apikey"),
             ("api_key", "API key / bearer token", "secret", False, ""),
         ],
     },
@@ -231,8 +238,56 @@ def check_postgresql(config: dict, secrets: dict) -> dict:
     return {"ok": True, "live": True, "message": f"Signed in to {config['host']}/{config['database']}: found {found_text}."}
 
 
+def http_get(url: str, headers: dict, timeout: int = 15):
+    """One GET: (status, response headers, body text). Kept apart so tests can stand in for the network."""
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status, dict(response.headers), response.read(1_000_000).decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers or {}), e.read(2000).decode("utf-8", "replace")
+
+
+def check_rest_api(config: dict, secrets: dict) -> dict:
+    """A live call to the loan system's API with the settings the notebook will use: one loan, asking for
+    the total (Supabase answers with Content-Range), and are LOAN_COLUMNS there. Never echoes the key."""
+    url = config["base_url"].rstrip("/") + "/" + config["endpoint"].lstrip("/")
+    headers = {"Accept": "application/json", "Prefer": "count=exact"}
+    if config.get("auth_header") and secrets.get("api_key"):
+        headers[config["auth_header"]] = secrets["api_key"]
+    try:
+        status, response_headers, body = http_get(f"{url}?{urlencode({'limit': 1})}", headers)
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        reason = getattr(e, "reason", None) or type(e).__name__
+        return {"ok": False, "live": True, "message": f"Couldn't reach {url}: {reason}"}
+    # 206 Partial Content: Supabase (PostgREST) answers so when asked for the total and sending only part of it.
+    if status not in (200, 206):
+        hint = ""
+        if status == 404 and urlparse(url).hostname.endswith(".supabase.co") and "/rest/v1" not in url:
+            hint = " Supabase serves tables under /rest/v1: end the Base URL with /rest/v1."
+        return {"ok": False, "live": True, "message": f"The API answered {status} at {url}: {body.strip()[:200]}{hint}"}
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return {"ok": False, "live": True, "message": f"Reached {url}, but it didn't answer with JSON."}
+    if isinstance(data, dict):
+        data = next((data[k] for k in ("data", "items", "records", "results") if isinstance(data.get(k), list)), data)
+    if not isinstance(data, list):
+        return {"ok": False, "live": True, "message": f"Reached {url}, but it didn't return a list of loans."}
+    if not data:
+        return {"ok": False, "live": True,
+                "message": f"Reached {url}, but it returned no loans. Check the endpoint, and that the key may read them."}
+    if not isinstance(data[0], dict) or (missing := [c for c in LOAN_COLUMNS if c not in data[0]]):
+        missing = missing if isinstance(data[0], dict) else LOAN_COLUMNS
+        return {"ok": False, "live": True, "message": f"Reached {url}, but its loans have no {', '.join(missing)}."}
+    total = (response_headers.get("Content-Range") or response_headers.get("content-range") or "").rpartition("/")[2]
+    found = f"{int(total):,} loans" if total.isdigit() else "loans"
+    return {"ok": True, "live": True, "message": f"Reached {url}: found {found} with every field the comparison needs."}
+
+
 def test_connection(source_key: str, values: dict) -> dict:
-    """The "Test connection" check. PostgreSQL signs in for real (check_postgresql); the others check the
+    """The "Test connection" check. PostgreSQL and the REST API connect for real (check_postgresql,
+    check_rest_api); the others check the
     form is complete and well-formed until their connector is built (backlog ING-1), and say so."""
     config, secrets = validate(source_key, values)
     name = SOURCE_TYPES[source_key]["name"]
@@ -240,6 +295,8 @@ def test_connection(source_key: str, values: dict) -> dict:
         if is_app_database(config):
             return {"ok": False, "live": False, "message": APP_DATABASE_REFUSED}
         return {**check_postgresql(config, secrets), "checked": sorted([*config, *secrets])}
+    if source_key == "rest_api":
+        return {**check_rest_api(config, secrets), "checked": sorted([*config, *secrets])}
     return {"ok": True, "live": False,
             "message": f"{name} details are complete and well-formed. A live sign-in check isn't enabled in this demo yet.",
             "checked": sorted([*config, *secrets])}

@@ -13,7 +13,7 @@ import { blockedReason, carryBadge, carryText, DECISION_PAST, DECISIONS, decisio
 const BUTTON = "rounded-md border border-hair px-3.5 py-1.5 text-sm text-ink transition-colors hover:border-accent/40 hover:bg-page disabled:opacity-60";
 const PRIMARY = "rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-on-accent transition hover:brightness-110 disabled:opacity-60";
 const INPUT = "rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink";
-const SYSTEM = { neon: "Core banking", salesforce: "CRM" };
+const SYSTEM = { neon: "Core banking", salesforce: "CRM", los: "Loan system" };
 const COMMENT_KEY = {
   reconciliation: (key) => ({ source_table: "pipeline_reconciliation", record_key: key, flag_label: "RECONCILIATION" }),
   recon_group: (key) => ({ source_table: "reconciliation_groups", record_key: key, flag_label: "RECON_GROUP" }),
