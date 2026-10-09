@@ -232,6 +232,7 @@ export const api = {
   reconRun: (source) => request(`/reconciliation/run${query({ source_system: source })}`),
   reconRuns: () => request("/reconciliation/runs"),
   reconCarried: () => request("/reconciliation/carried"),
+  reconTaskRuns: () => request("/reconciliation/task-runs"),
   reconRunDetail: (runId) => request(`/reconciliation/runs/${runId}`),
   // Received vs kept per source, country and table (specs/pipeline-reconciliation.md)
   pipelineReconciliation: (params) => request(`/reconciliation/pipeline${query(params)}`),

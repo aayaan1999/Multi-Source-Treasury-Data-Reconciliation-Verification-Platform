@@ -19,6 +19,9 @@ FLAG_FIELD = {
 SYSTEM_NAME = {"neon": "core banking", "salesforce": "the CRM", "los": "the loan system", "CORE_CSV": "the core banking files"}
 RUN_NAME = {"CORE_CSV": "core banking files", "neon": "core banking comparison", "salesforce": "CRM comparison",
             "los": "loan system comparison"}
+# A source as a filter or column names it (the Tasks screen's Source filter).
+SOURCE_LABEL = {"CORE_CSV": "Core banking files", "neon": "Core banking system", "salesforce": "CRM (Salesforce)",
+                "los": "Loan origination system"}
 ENTITY = {"account": "account", "customer": "customer", "loan": "loan"}
 
 
@@ -34,11 +37,16 @@ def _money(x: float) -> str:
     return f"{abs(x):,.2f}"
 
 
-def run_name(source_system: str, run_date, run_key: str = "") -> str:
-    """E.g. "core banking comparison of 25 Sep 2026", "... of 30 Sep 2026 (carried over)"."""
+def run_day(run_date, run_key: str = "") -> str:
+    """A run within its source, e.g. "30 Sep 2026", "30 Sep 2026 (carried over)", "30 Sep 2026 (part 2)"."""
     tail = run_key.split("#")[1] if "#" in (run_key or "") else ""
     part = " (carried over)" if tail.startswith("c") else f" (part {tail})" if tail else ""
-    return f"{RUN_NAME.get(source_system, source_system + ' run')} of {_day(run_date)}{part}"
+    return f"{_day(run_date)}{part}"
+
+
+def run_name(source_system: str, run_date, run_key: str = "") -> str:
+    """E.g. "core banking comparison of 25 Sep 2026", "... of 30 Sep 2026 (carried over)"."""
+    return f"{RUN_NAME.get(source_system, source_system + ' run')} of {run_day(run_date, run_key)}"
 
 
 def pipeline_summary(item: dict, records: list) -> dict:

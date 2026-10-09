@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ..db import query, query_one, write
-from ..recon_text import FLAG_FIELD, group_summary, pipeline_summary, run_name
+from ..recon_text import FLAG_FIELD, SOURCE_LABEL, group_summary, pipeline_summary, run_day, run_name
 from ..security import current_user
 
 router = APIRouter(prefix="/reconciliation", tags=["reconciliation"], dependencies=[Depends(current_user)])
@@ -359,6 +359,31 @@ def carried_tasks():
     for r in rows:
         out[r["kind"]][r["id"]] = {"carried_count": r["carried_count"], "carried_since": r["carried_since"],
                                    "escalated": r["escalated_at"] is not None}
+    return out
+
+
+@router.get("/task-runs")
+def task_runs():
+    """The run each open reconciliation task belongs to, by kind and id, for the Tasks screen's Source
+    and Run filters. From the database, not the task's variables: a carried-over task moves to a new run."""
+    rows = query(
+        """SELECT t.kind, t.id, r.run_id, r.source_system, r.run_date, r.run_key FROM (
+               SELECT 'reconciliation' AS kind, recon_id::text AS id, run_id FROM pipeline_reconciliation
+               WHERE run_id IS NOT NULL AND status IN ('OPEN', 'WITH_TEAM', 'AWAITING_CFO')
+               UNION ALL
+               SELECT 'recon_group', group_id::text, run_id FROM reconciliation_groups
+               WHERE run_id IS NOT NULL AND status IN ('PENDING', 'OPEN', 'AWAITING_CFO')
+               UNION ALL
+               SELECT 'recon_run', run_id::text, run_id FROM reconciliation_runs WHERE status IN ('OPEN', 'IN_SIGNOFF')
+           ) t JOIN reconciliation_runs r ON r.run_id = t.run_id"""
+    )
+    out = {"reconciliation": {}, "recon_group": {}, "recon_run": {}}
+    for r in rows:
+        out[r["kind"]][r["id"]] = {
+            "run_id": r["run_id"], "source_system": r["source_system"],
+            "source_name": SOURCE_LABEL.get(r["source_system"], r["source_system"]),
+            "run_date": r["run_date"], "day": run_day(r["run_date"], r["run_key"]),
+        }
     return out
 
 

@@ -430,7 +430,13 @@ def test_the_cfo_signs_off_the_decided_tasks_and_the_open_one_is_carried(client,
     assert db.fetchone()[0] == "OPEN"                                            # the delivery's carry-over run stays
     assert client.get(f"{API}/reconciliation/carried", headers=auth).json()["reconciliation"] == {
         str(ids["pipe_transactions"]): {"carried_count": 1, "carried_since": run_date.isoformat(), "escalated": False}}
-    runs = {r["source_system"]: r for r in client.get(f"{API}/reconciliation/runs", headers=auth).json()}
+    # The Tasks screen's Source and Run filters: the carried task is now in the carry-over run, by its source
+    task_runs = client.get(f"{API}/reconciliation/task-runs", headers=auth).json()
+    assert task_runs["reconciliation"][str(ids["pipe_transactions"])] == {
+        "run_id": carry_run, "source_system": "CORE_CSV", "source_name": "Core banking files",
+        "run_date": "2026-09-30", "day": "30 Sep 2026 (carried over)"}
+    assert str(run) not in task_runs["recon_run"]                                # a signed-off run has no task left
+    runs ={r["source_system"]: r for r in client.get(f"{API}/reconciliation/runs", headers=auth).json()}
     assert (runs["CORE_CSV"]["run_id"], runs["CORE_CSV"]["carried_in"], runs["CORE_CSV"]["name"]) == \
         (carry_run, 1, "core banking files of 30 Sep 2026 (carried over)")
     signed_off = client.get(f"{API}/reconciliation/runs/{run}", headers=auth).json()

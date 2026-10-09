@@ -308,6 +308,26 @@ export function recordLabel(task) {
   return `${SOURCE_TABLE_LABEL[sourceTable] || sourceTable} ${recordKey}`;
 }
 
+/** A reconciliation task's run in one cell, e.g. "Core banking files · 8 Oct 2026". */
+export function runLabel(run) {
+  return run ? `${run.source_name} · ${run.day}` : "—";
+}
+
+/** The sources the given tasks' runs came from, for the Source filter, by name. */
+export function sourcesOf(tasks) {
+  const byKey = new Map(tasks.filter((t) => t.run).map((t) => [t.run.source_system, t.run.source_name]));
+  return [...byKey].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** The runs behind the given tasks, newest first (then by source), for the Run filter: just the day once a source is
+ * picked, the source and day otherwise. */
+export function runsOf(tasks, source) {
+  const byId = new Map(tasks.filter((t) => t.run && (!source || t.run.source_system === source)).map((t) => [t.run.run_id, t.run]));
+  return [...byId.values()]
+    .sort((a, b) => b.run_date.localeCompare(a.run_date) || a.source_name.localeCompare(b.source_name) || b.run_id - a.run_id)
+    .map((r) => ({ value: String(r.run_id), label: source ? r.day : runLabel(r) }));
+}
+
 async function loadTasks() {
   const tasks = await searchTasks({ state: "CREATED" });
   // account_id isn't a Camunda variable (only recordKey=transaction_id is, for fraud tasks) - one
@@ -316,14 +336,18 @@ async function loadTasks() {
   const txnIds = [...new Set(tasks.filter((t) => t.vars.sourceTable === "transactions").map((t) => t.vars.recordKey))];
   const hasBreaches = tasks.some((t) => t.vars.sourceTable === "breaches");
   const hasRecon = tasks.some((t) => ["reconciliation", "recon_group"].includes(t.vars.recordType));
+  const hasAnyRecon = tasks.some((t) => RECON_KINDS.includes(t.vars.recordType));
   // Due days come from the task policy (specs/task-cases.md); without it, only cases show a due date.
   // Tasks carried over at a sign-off (specs/reconciliation-approvals.md section 10): the database knows,
   // not the task's variables (a running process's variables are fixed at its start).
-  const [accountIds, breaches, policy, carried] = await Promise.all([
+  // The run each reconciliation task is part of, for the Source and Run filters: also from the database,
+  // since a carried-over task moves to a new run.
+  const [accountIds, breaches, policy, carried, runs] = await Promise.all([
     txnIds.length ? api.lookupAccountIds(txnIds) : {},
     hasBreaches ? api.breaches().catch(() => []) : [],
     api.taskPolicy().catch(() => []),
     hasRecon ? api.reconCarried().catch(() => ({})) : {},
+    hasAnyRecon ? api.reconTaskRuns().catch(() => ({})) : {},
   ]);
   const today = new Date().toISOString().slice(0, 10);
   const breachById = Object.fromEntries(breaches.map((b) => [String(b.breach_id), b]));
@@ -332,8 +356,9 @@ async function loadTasks() {
     .map((t) => {
       const breach = t.vars.sourceTable === "breaches" ? breachById[t.vars.recordKey] : undefined;
       const carry = carried?.[t.vars.recordType]?.[String(t.vars.recordKey)];
+      const run = runs?.[t.vars.recordType]?.[String(t.vars.recordKey)];
       return {
-        ...t, accountId: accountIds[t.vars.recordKey] || t.vars.accountId, breach, carry,
+        ...t, accountId: accountIds[t.vars.recordKey] || t.vars.accountId, breach, carry, run,
         // Carried over: a high priority, due today.
         severity: carry ? "HIGH" : t.vars.severity || null, due: carry ? today : taskDue(t, dueDays, breach),
       };
@@ -352,12 +377,17 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
   // Created between two days (both included); either may be left empty.
   const [createdFrom, setCreatedFrom] = useState("");
   const [createdTo, setCreatedTo] = useState("");
+  // Reconciliation tasks by where the data came from, then by which of that source's runs.
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [runFilter, setRunFilter] = useState("");
 
   // Only this person's tasks (specs/user-roles.md): by record type, and for reconciliation by step.
   // Sent back to the team first, then escalated and carried-over tasks, then by urgency (the list's own order).
   const rank = (t) => (isSentBack(t) ? 0 : t.carry?.escalated ? 1 : t.carry ? 2 : 3);
   const mine = useMemo(() => (data || []).filter((t) => isMyTask(user, t)).sort((a, b) => rank(a) - rank(b)), [data, user]);
   const myTypes = useMemo(() => new Set(mine.map((t) => t.vars.recordType)), [mine]);
+  const mySources = useMemo(() => sourcesOf(mine), [mine]);
+  const myRuns = useMemo(() => runsOf(mine, sourceFilter), [mine, sourceFilter]);
   const filtered = useMemo(() => {
     return mine.filter((t) => {
       if (completedIds.has(t.id)) return false;
@@ -367,10 +397,12 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
         : typeFilter === RECON_FILTER ? !RECON_KINDS.includes(t.vars.recordType)
         : typeFilter && t.vars.recordType !== typeFilter) return false;
       if (nameFilter && !t.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
+      if (sourceFilter && t.run?.source_system !== sourceFilter) return false;
+      if (runFilter && String(t.run?.run_id) !== runFilter) return false;
       if (!createdBetween(t, createdFrom, createdTo)) return false;
       return true;
     });
-  }, [mine, typeFilter, nameFilter, createdFrom, createdTo, completedIds]);
+  }, [mine, typeFilter, nameFilter, sourceFilter, runFilter, createdFrom, createdTo, completedIds]);
 
   if (status === "loading") return <Loading what="your tasks" />;
   if (status === "error" && !data) return <LoadError error={error} onRetry={reload} />;
@@ -396,6 +428,28 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
           {RECON_KINDS.filter((k) => myTypes.has(k)).length > 1 && <option value={RECON_FILTER}>Reconciliation (all)</option>}
           {Object.entries(RECORD_TYPE_LABEL).filter(([value]) => myTypes.has(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
+        {mySources.length > 0 && (
+          <>
+            <select
+              value={sourceFilter}
+              onChange={(e) => { setSourceFilter(e.target.value); setRunFilter(""); }}
+              aria-label="Source"
+              className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40"
+            >
+              <option value="">All sources</option>
+              {mySources.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+            <select
+              value={runFilter}
+              onChange={(e) => setRunFilter(e.target.value)}
+              aria-label="Run"
+              className="rounded-md border border-hair bg-surface px-2 py-1.5 text-sm text-ink transition-colors hover:border-accent/40"
+            >
+              <option value="">All runs</option>
+              {myRuns.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </>
+        )}
         <span className="flex flex-wrap items-center gap-2 text-sm text-ink2">
           Created
           <input
@@ -431,6 +485,7 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
           { key: "name", header: "Name" },
           { key: "group", header: "Group", render: (t) => (t.candidateGroups || []).join(", ") },
           { key: "type", header: "Type", render: (t) => alertType(t.vars) },
+          ...(mySources.length ? [{ key: "run", header: "Run", sort: (t) => t.run?.run_date || "", render: (t) => runLabel(t.run) }] : []),
           { key: "severity", header: "Severity", render: (t) => SEVERITY_LABEL[t.severity] || "—" },
           { key: "due", header: "Due", render: (t) => (t.due ? `${t.due} · ${daysLeftText(t.due)}` : "—") },
           { key: "created", header: "Created", sort: (t) => createdAt(t)?.getTime() ?? 0,
@@ -443,7 +498,9 @@ function TasksTable({ user, onSelect, selectedTaskId, refreshKey, completedIds }
           : isOverdue(t.due) ? { kind: "loss", label: "Overdue" } : null)}
         selectedKey={selectedTaskId}
         onRowClick={(t) => onSelect(t)}
-        emptyText={(createdFrom || createdTo) && mine.length
+        emptyText={(sourceFilter || runFilter) && mine.length
+          ? "None of your tasks are from that source or run. Pick another, or All sources."
+          : (createdFrom || createdTo) && mine.length
           ? "No tasks of yours were created in that period. Change the dates or press Clear dates."
           : user?.access?.tasks?.types?.includes("report")
           ? "Nothing for you yet. Report reviews and approvals will come here once the report workflow is built."
