@@ -359,6 +359,72 @@ left) and the assistant ticks every area listed under "Querying".
 
 ---
 
+## 10. Encryption and data protection (planned 2026-10-08)
+
+**Today:** browser → API is plain HTTP; Camunda's internal traffic is unencrypted (`create_insecure_channel`,
+Elasticsearch security off, `demo/demo` login in `frontend/src/workflow/tasklistApi.js`); stored data uses
+provider-held keys; customer names are shown unmasked to every role. See
+`project-docs/REGULATORY-COMPLIANCE-GAPS.md` items 7, 15-18.
+
+**Plan:** a 5-day phase 1 (Fri 9 Oct → Thu 15 Oct 2026, one developer with Claude Code, weekends off) that
+**does not change stored data**: masking happens only in API responses and exports, so the pipeline,
+reconciliation (which compares names, `multi_source_reconciliation.py`) and duplicate detection (which
+scores name similarity, `camunda/bridge/duplicates_db.py`) keep working unchanged. Full tokenisation and
+Camunda security follow in phase 2 (~12 days). Built to industry standards (NIST, PCI DSS, ISO 27001) until
+the bank's own cryptography policy is available.
+
+**Phase 1 (5 days, with regression testing):**
+
+| ID | Task | Size | Bank input | Status |
+|---|---|---|---|---|
+| ENC-0 | Azure trial check: expiry date and credit left ($200 / 30-day free account); upgrade to pay-as-you-go if it ends before 15 Oct | S | - | todo (Fri 9 Oct) |
+| ENC-1 | Key Vault: login-signing key and database connection secrets; Databricks secret scope backed by Key Vault | S | - | todo (Fri 9 Oct) |
+| ENC-2 | Regression baseline before any change: pytest (244) + vitest (218) results; snapshot of KPIs, data-quality exceptions, flagged transactions, reconciliation counts and Neon row counts / totals | S | - | todo (Fri 9 Oct) |
+| ENC-3 | Databricks TLS: `sslmode=verify-full` in `load_to_postgres.py`, `core_banking_ingest` and the Neon ingestion notebook (Java's built-in certificate store on serverless); confirm the loan API call uses HTTPS with certificate checks; pipeline run compared with the baseline (every number must match) | S | - | todo (Mon 12 Oct) |
+| ENC-4 | Backend: `verify-full` to Neon, signing key from Key Vault, scripts updated; masking module + which roles see real names in `roles.py`; names masked in every API response; pytest for all 7 roles | M | **Which roles see real names** (suggested: Reconciliation Analyst and Compliance Officer) | todo (Wed 14 Oct) |
+| ENC-5 | Masked PDF / Excel exports; logged Reveal endpoint (one `audit_log` row per reveal) with the button on the reconciliation and duplicate-review panels; HTTPS on the app (mkcert); vitest; Camunda routes, outcomes and poll-worker idempotency re-checked | M | - | todo (Wed 14 Oct) |
+| ENC-6 | Final regression: live pipeline run and baseline comparison (zero differences expected), browser check as each of the 7 roles, no real names in API responses or exports for masked roles, TLS scan (testssl.sh), sign-off | S | - | todo (checkpoint Fri 16 Oct, final Mon 2 Nov) |
+
+**Phase 2 (~12 days):**
+
+| ID | Task | Size | Bank input | Status |
+|---|---|---|---|---|
+| ENC-7 | Full tokenisation of stored names (HMAC tokens at Bronze, encrypted `token_vault` in Databricks and Neon); name clean-up must match today's comparison (trim only) so reconciliation counts don't change; migrate the names already in `reconciliation_exceptions` and `entity_match_candidates` | L | Data classification (which fields are sensitive) | todo |
+| ENC-8 | Duplicate detection on tokenised data: trusted, logged reveal for `duplicates_db.py` so name-similarity scoring keeps working | S | - | todo (needs ENC-7) |
+| ENC-9 | Camunda security: local certificate authority, Elasticsearch security + TLS, Zeebe gateway TLS, Tasklist HTTPS, workers on `create_secure_channel`, Tasklist calls behind a FastAPI proxy (removes `demo/demo` from the browser) | L | - | todo |
+| ENC-10 | Bank-controlled keys in Databricks (managed services, workspace storage, managed disks) and on the Unity Catalog storage account. Only after the subscription can't lapse: an expired trial would leave the data unreadable | M | Who holds the keys (our subscription for the POC; the bank's tenant for production) | todo |
+| ENC-11 | Tamper-evident `audit_log`: each row hashes the previous one (serialised inserts), existing rows backfilled, IP recorded at all 12 insert sites, chain-check script | M | - | todo |
+| ENC-12 | Login token in a secure cookie (HttpOnly, SameSite) with CSRF protection | S | - | todo |
+| ENC-13 | Key rotation tested for real; rotation runbook, key-management procedure, evidence pack for auditors | M | - | todo |
+| ENC-14 | Optional: tokenise customer / account / loan IDs (+3 days); move Neon to Azure PostgreSQL in UAE North with bank-controlled keys (+5 days, fixes key custody and data residency); Camunda Identity with OAuth (+4 days) | L | Hosting and residency decision | todo |
+
+**Schedule (revised 2026-10-08): phases 1 and 2 together, ENC-14 excluded, 7 hours a day.** Both phases
+need ~50-57 hours of hands-on time, so they can't fit in 5 days. The developer is off **Mon 19 - Mon 26 Oct**,
+so the work is split into two blocks, and the first block ends in a stable, fully tested state: no
+half-finished Camunda or key change is left running over the break. Realistic finish **Mon 2 Nov**
+(best case Thu 29 Oct, worst case Wed 4 Nov).
+
+| Day | Tasks | Stop rule |
+|---|---|---|
+| Fri 9 Oct | ENC-0 (**upgrade to pay-as-you-go before the break**: the trial ends by ~22 Oct), ENC-1 Key Vault (signing, master, token keys), ENC-2 baseline; encryption/tokenisation library + tests; backups: Neon branch, Camunda volumes | Not upgraded → ENC-10 is dropped, and app-critical keys need a local fallback |
+| Mon 12 Oct | ENC-3 Databricks TLS; ENC-7 tokenisation in the notebooks **on a test schema**, compared with the baseline | Numbers or reconciliation counts differ → no Neon migration until fixed |
+| Tue 13 Oct | ENC-7 Neon side (TLS, `token_vault`, migrate names incl. `reconciliation_exceptions` / `entity_match_candidates`); ENC-8 duplicate detection | Migration fails → restore the Neon branch |
+| Wed 14 Oct | ENC-4 masking by role; ENC-5 masked exports, Reveal, HTTPS; pytest + vitest | - |
+| Thu 15 Oct | ENC-11 audit hash chain; regression check | - |
+| Fri 16 Oct | Buffer for fixes; ENC-6 full regression as a **checkpoint sign-off** (phase 1 + tokenisation + audit chain); budget alert set; pipeline trigger paused for the break | Anything unstable is rolled back before leaving |
+| *Mon 19 - Mon 26 Oct* | *Off* | |
+| Tue 27 Oct | Quick re-check against the baseline; ENC-9 Camunda security starts (certificates, Elasticsearch security + TLS) | - |
+| Wed 28 Oct | ENC-9 continued: Zeebe TLS, Tasklist HTTPS, secure worker channels | - |
+| Thu 29 Oct | ENC-9 finished: Tasklist proxy; routes, outcomes and poll-worker idempotency re-tested | Camunda not healthy by end of day → restore the volumes and the compose file, rethink before continuing |
+| Fri 30 Oct | ENC-10 bank-controlled keys in Databricks; ENC-12 secure cookie + CSRF | - |
+| Mon 2 Nov | ENC-13 one real key rotation + evidence pack; ENC-6 final regression and sign-off | Any regression difference → fix before sign-off |
+
+**Done when:** every connection uses TLS 1.2+ with certificate checks, every key lives in Key Vault, real
+customer names are only seen by roles allowed to see them (and every reveal is logged), and the
+regression comparison shows no change to any number or reconciliation count.
+
+---
+
 ## Why this order
 
 1. **5 + 6** - relabelling rules and grouping flags into cases makes the Tasks screen credible
@@ -382,3 +448,5 @@ left) and the assistant ticks every area listed under "Querying".
 - Source-system list and transaction-code lists (SRC-4)
 - A reliable company identifier (DUP-2)
 - List of reports and filters the chatbot must cover (CHT-1)
+- The bank's cryptography policy and data classification; which roles may see real customer names;
+  who holds the encryption keys in production (ENC-4/7/10)
