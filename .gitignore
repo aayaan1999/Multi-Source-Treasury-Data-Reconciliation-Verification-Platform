@@ -41,3 +41,9 @@ frontend/dist/
 # Hosting-tool local state (created by the Netlify / Render / Vercel CLIs, not needed in Git)
 .netlify/
 .vercel/
+
+# Local-only files, kept out of Git on purpose
+Microsoft Edge.lnk
+bank-data/upload-test_2026-09-30/Demo Flow.pdf
+project-docs/Platform Production Cost Summary.pdf
+project-docs/Sample Files/
