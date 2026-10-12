@@ -32,6 +32,100 @@ Postgres on Neon ◄──── FastAPI backend (backend/app) ◄──── R
 
 ---
 
+## Getting started (new team member)
+
+This section is the short version. The full steps are in the documents it links to; follow those
+when they disagree with this summary.
+
+### Step 1: get access (ask the project owner)
+
+No document can give you these. Ask for each one you need:
+
+| Access | Needed for | Where it goes |
+|---|---|---|
+| **App database** (Neon connection string) | Running the app at all | `DATABASE_URL` in `backend/.env` |
+| **Databricks workspace** + personal token | Running or deploying the data pipeline, the Refresh Now button | `DATABRICKS_HOST` / `DATABRICKS_TOKEN` in `backend/.env`; `databricks auth login` for the CLI |
+| Core banking Neon project, Supabase loan API, Salesforce | Only for the reconciliation sources | Connected from the app's **Data ingestion** tab (stored in the Databricks secret scope, never in Postgres) |
+| Ollama (or another OpenAI-compatible server) | Only for the **Ask** screen | `LLM_BASE_URL` / `LLM_MODEL` in `backend/.env` |
+
+Never paste these values into chat, commits or `.env.example`; `.env.example` is committed and the
+repo is public.
+
+### Step 2: install and run the app
+
+Full steps: the `setup-new-machine` skill (`.claude/skills/setup-new-machine/SKILL.md`) and
+`project-docs/PREREQUISITES.md`. In short:
+
+1. Install Git, **Python 3.10+**, Node.js, and Docker Desktop (Docker is only needed for Camunda).
+2. Backend: `cd backend`, create `.venv`, `pip install -r requirements.txt`, copy `.env.example` to
+   `.env` and fill in `DATABASE_URL` (direct host, no `-pooler`, ending `?sslmode=require`) and
+   `JWT_SECRET`.
+3. Frontend: `cd frontend`, `npm install`.
+4. Demo users (once per database, safe to re-run): `backend\.venv\Scripts\python.exe backend\seed_demo_users.py`.
+5. Start: `scripts\run-local.ps1` starts the backend (`http://127.0.0.1:8000`, API docs at
+   `/docs`) and the site (`http://localhost:5173`) with no extra windows. `-NoBrowser` skips opening
+   the browser; `-Stop` stops everything.
+6. Optional, for the Tasks and Audit & Oversight screens: start Docker Desktop, run
+   `docker compose up -d` in `camunda/`, then `python camunda/bridge/deploy.py` once. Run
+   `run-local.ps1` again and it starts the three bridge workers too.
+
+If the dashboard says there are no numbers yet, the Databricks pipeline hasn't loaded the
+database. The app itself is working.
+
+### Step 3: log in as each role
+
+`seed_demo_users.py` creates seven users. Their passwords are listed in `specs/user-roles.md`, and
+the login page lists the users. Each role lands on a different home screen:
+
+| User | Role | Home screen |
+|---|---|---|
+| `cfo@bankx.demo` | CFO (approves, signs off) | Executive Summary |
+| `cro@bankx.demo` | CRO (risk, breach tasks) | Portfolio |
+| `recon.analyst@bankx.demo` | Reconciliation Analyst | Tasks |
+| `reporting@bankx.demo` | Reporting Officer | Reports |
+| `compliance@bankx.demo` | Compliance Officer (fraud tasks) | Tasks |
+| `auditor@bankx.demo` | Internal Auditor (read-only) | Audit & Oversight |
+| `admin@bankx.demo` | Platform Admin | Data ingestion |
+
+`project-docs/DEMO-GUIDE.md` walks through the demo story screen by screen.
+
+### Step 4: everyday commands
+
+| Task | Command |
+|---|---|
+| Backend tests | `cd backend; .\.venv\Scripts\python.exe -m pytest` |
+| Frontend tests | `cd frontend; npm test` |
+| Frontend dev server only | `cd frontend; npm run dev` (always `npm run`, never `npx`) |
+| Apply a database migration | `backend\.venv\Scripts\python.exe db\apply_migration.py db\migrations\<file>.sql` |
+| Deploy the Databricks job | `databricks bundle validate`, then `databricks bundle deploy` from the repo root (see `project-docs/DATABRICKS-SETUP.md`) |
+| Run the pipeline now | **Run now** in the Databricks Workflows UI, or the **Refresh Now** button in the app |
+
+### Step 5: how work is done here
+
+1. **Spec first.** Every feature has a spec in `specs/`. Write or update it before or alongside
+   the code, including acceptance criteria. Mark anything not checked for real (for example "not
+   run on a live cluster") instead of claiming it passes.
+2. **Tests with the change.** Backend changes come with pytest tests, frontend changes with vitest
+   tests next to the file.
+3. **Database changes go in a new numbered migration** in `db/migrations/`. Never edit an old one.
+4. **Notebooks are edited in Databricks**, pushed to GitHub from there, then pulled locally. Don't
+   edit `notebooks/` locally at the same time.
+5. **Check scope against `3-WEEK-POC-PLAN.md`** before building anything from
+   `PLATFORM-BUILD-PLAN.md`.
+6. Commits go to `main`, with a message that says what changed and why (see `git log` for the style).
+
+### Step 6: what to read, in order
+
+1. This file: the map.
+2. `CLAUDE.md`: the current state of each part and the house rules.
+3. `project-docs/3-WEEK-POC-PLAN.md`: what's in scope now.
+4. `project-docs/Middle East bank data cleaning and reporting.md`: the source of truth, including
+   the banking terms (CAR, LCR, NPL, IFRS 9 staging). Read the parts for the area you're working on.
+5. The spec in `specs/` for whatever you're about to change.
+6. `project-docs/PLATFORM-TECHNICAL-SPECIFICATION.md`: the full technical reference, for depth.
+
+---
+
 ## 1. Data layer: `notebooks/` + `databricks.yml`
 
 **`databricks.yml`** defines the Databricks job `bank-data-pipeline`. It runs by itself when a
