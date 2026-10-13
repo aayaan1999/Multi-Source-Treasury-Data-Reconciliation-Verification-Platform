@@ -264,3 +264,127 @@ ingest → quality → ┬ kpi_summary
   Databricks Repo, then pull locally, so the copy in `notebooks/` can be overwritten.
 - **Use `npm run` in `frontend/`.** Don't use `npx` there: the `&` in the folder name breaks
   Windows' command wrappers.
+
+---
+
+## Architecture deep-dive
+
+Written 2026-10-13 from reading the code, without running it. "Fragile" below means large files
+with a lot of logic packed in, not a measured complexity score.
+
+### 1. Entry points and the main data flow
+
+**Entry points:**
+- `backend/app/main.py`: the FastAPI app.
+- `frontend/src/main.jsx` → `App.jsx`: the React app.
+- `databricks.yml`: the Databricks job (14 steps).
+- `camunda/bridge/poll_worker.py`, `outcome_worker.py` and `breach_check.py`: three long-running
+  workers.
+- `scripts/run-local.ps1`: starts everything locally.
+
+**How one flagged item travels from data to decision** (for example, a suspicious transaction or
+a reconciliation difference):
+
+1. A file arrives in the Databricks landing folder. It gets there from a source system, or from an
+   upload on the Ingestion screen (`POST /ingestion/upload` checks the CSV, then copies it there).
+2. The job runs: ingest → data-quality checks → fraud rules and reconciliation →
+   `load_to_postgres.py`. That last step merges everything into Neon in one transaction, and it
+   never overwrites a review `status` a person has set.
+3. `poll_worker.py` finds new flagged rows that have no `camunda_process_tracking` entry yet. For
+   each one it starts a Camunda process routed to the right group (fraud, compliance or
+   operations), then records the process so the same row is never started twice.
+4. In the browser, the Tasks screen calls **Camunda Tasklist directly**
+   (`frontend/src/workflow/tasklistApi.js`), not through the backend. The backend only adds the
+   full source record, comments and the audit trail (`routers/workflow.py`,
+   `routers/reconciliation.py`).
+5. When a person completes a task, Camunda creates a job. `outcome_worker.py` picks it up and
+   writes the decision to Postgres (`review_outcomes`, the `recon_*` tables). Rule violations, such
+   as someone approving their own decision, are sent back to the person as a task instead of
+   failing.
+
+**Document handling:** PDF and Excel exports are built in `backend/app/reports/documents.py`
+(ReportLab and openpyxl, both using the same number formatting).
+
+**Masking: none exists yet.** Customer names are currently shown unmasked to every role. Masking
+is planned in `project-docs/CLIENT-FEEDBACK-BACKLOG.md`, items ENC-4 and ENC-5, scheduled for
+14 Oct and not built.
+
+### 2. Where state lives, and authentication
+
+- **Data that persists:** Postgres on Neon. **Workflow state:** Camunda. The link between the two
+  is the `camunda_process_tracking` table.
+- **Backend login:** each request carries a signed token (JWT, HS256) checked in `security.py`.
+  Passwords are stored as PBKDF2 hashes. There are no server-side sessions.
+- **Who can see what:** one table in `roles.py`. `main.py` applies two checks to every router:
+  `screen(...)` returns 403 if the role doesn't have that screen, and `no_writes_for_read_only`
+  blocks the auditor from changing anything.
+- **Frontend:** a single React context (`auth.jsx`); there is no Redux. The login is kept per
+  browser tab (`sessionStorage`), and any 401 signs the user out.
+  - `api.js` refuses to send a request if the stored login has changed to a different person.
+  - Tasklist uses its own separate session cookie.
+- **Caches:** `cache.py` holds in-memory data per backend process, so it's lost on restart and not
+  shared if you run more than one backend. KPI explanations are cached per pipeline run.
+
+### 3. Outside services and how failures are handled
+
+| Service | Configured in | What happens when it fails |
+|---|---|---|
+| Neon Postgres | `DATABASE_URL`, `db.py` | 30 s connect timeout, keepalives, **one retry** on a dropped connection (and idle connections are discarded, because Neon sleeps). Still failing → 503 |
+| Databricks Jobs API | `DATABRICKS_HOST` / `TOKEN` / `JOB_ID`, `routers/refresh.py` | 20 s timeout → 502 with Databricks' own message. Not configured → 503 |
+| Databricks Files (uploads) | `routers/ingestion.py` | 120 s timeout |
+| Camunda Zeebe (gRPC) | `ZEEBE_ADDRESS`, `camunda/.env` | 45 s per call. A failed pass is retried on the next poll (every 5 min). The connection is unencrypted |
+| Camunda Tasklist | Proxied by Vite at `/tasklist`, `VITE_TASKLIST_*` | One retry after logging in again on a 401. Other errors are shown to the user. **The login is the default demo/demo, and it ships in the browser code** |
+| Ollama (Ask, KPI explanations) | `LLM_*`, `ask/llm.py` | 90 s timeout. Ask returns 503; KPI explanations fall back to fixed wording and try the model again later |
+| Source connectors | `connectors.py` | 10–15 s timeouts. Passwords and keys go to the Databricks secret store, never to Postgres |
+
+Nothing has a circuit breaker or exponential backoff. Retries are a single extra attempt, or the
+next scheduled pass.
+
+### 4. Fragile zones
+
+1. **`notebooks/load_to_postgres.py`**: each table group has its own merge rule. The riskiest is
+   that `flagged_transactions` only ever inserts, so it never resets a status a reviewer set.
+   Getting a rule wrong either wipes people's decisions or leaves stale rows behind.
+2. **`camunda/bridge/poll_worker.py` plus `recon_runs_db.py` / `recon_tasks_db.py`**: these decide
+   when processes start, when old reviews are cancelled because a newer run replaced them, when a
+   run is ready for sign-off, carry-over, escalation after three carries, and send-back. A bug here
+   creates duplicate tasks or lost tasks. The duplicate protection depends on the tracking table's
+   `ON CONFLICT` key.
+3. **`backend/app/ask/service.py` + `extract.py`**: rules for combining what the AI model guessed
+   with what the code read directly from the question. These are the safety net that stops a wrong
+   model answer. Change them only alongside the question test sets in
+   `backend/tests/ask_questions*.json`.
+4. **`frontend/src/pages/Tasks.jsx` + `ReconTaskPanel.jsx`**: the two largest UI files. They depend
+   on Tasklist's exact request shapes: `/assign`, not `/claim`, and variables sent as a list of
+   `{name, value}` pairs.
+
+One easy-to-miss trap: on Windows, the bridge workers must build their Zeebe connection inside the
+running event loop. `camunda/bridge/_env.py` sets the Windows event-loop policy so this works.
+
+### 5. Error handling and diagnostics
+
+- **Backend:** `main.py` turns database errors into 503s: a missing table or column gets a message
+  telling you to run a migration, and an unreachable database gets "Database unavailable". The
+  routers raise explicit HTTP errors (mostly 400, 404 and 409; also 422, 503, 502, 403, and one
+  429).
+- **Logging is the weak spot.** Only `main.py` logs, and only database outages. The bridge workers
+  use `print`. There are no request IDs, no structured logs and no metrics. The `/health` endpoint
+  reports whether the database is reachable.
+- **Environment variables needed to start from scratch:**
+  - `backend/.env`:
+    - **Required:** `DATABASE_URL` and `JWT_SECRET`.
+    - **Optional:**
+      - `JWT_EXPIRE_MINUTES`, `CORS_ORIGINS`, `DB_POOL_MAX`
+      - `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `DATABRICKS_JOB_ID`
+      - `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TIMEOUT_SECONDS`
+  - `camunda/.env`: image versions, `ZEEBE_AUTHENTICATION_MODE`, client ID and secret.
+  - `camunda/bridge/.env`: `ZEEBE_ADDRESS`. The workers reuse `DATABASE_URL` from `backend/.env`.
+  - `frontend/.env`: `VITE_API_URL`, `VITE_BANK_NAME`, `VITE_DEV_API_TARGET`.
+  - In Databricks: a secret scope `neon` with `host`, `database`, `user` and `password`, plus the
+    `bank-data-sources` scope.
+
+**Biggest production gaps:**
+- No masking.
+- Demo Tasklist login and an unencrypted Zeebe connection.
+- In-memory caches that only work with a single backend process.
+- Thin logging.
